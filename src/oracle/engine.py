@@ -17,14 +17,14 @@ class Forecast:
 
 
 async def run_forecast(day: date) -> Forecast:
-    gradient, snapshot, winds = await asyncio.gather(
-        pressure.fetch_gradient(),
+    snapshot, meteo_snap, winds = await asyncio.gather(
+        pressure.fetch_snapshot(),
         meteo.fetch_snapshot(day),
         measurements.fetch_latest(),
     )
     verdicts = [
-        rules.pressure_threshold(gradient),
-        rules.synoptic_override(snapshot),
+        rules.alpenpumpe_threshold(snapshot),
+        rules.synoptic_override(meteo_snap),
         rules.thermal_ignition(winds),
     ]
     return Forecast(overall=_aggregate(verdicts), verdicts=verdicts)

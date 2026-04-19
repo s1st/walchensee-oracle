@@ -1,8 +1,9 @@
 """Heuristic knowledge base.
 
-Each rule consumes whatever pillar data it needs and returns a `Verdict`. The engine
-combines verdicts into an overall forecast. Rules encode local experience that global
-weather models miss — keep them short, named, and individually testable.
+Each rule consumes whatever pillar data it needs and returns a `Verdict`. The
+engine combines verdicts into an overall forecast. Rules encode local experience
+that global weather models miss — keep them short, named, and individually
+testable.
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from enum import Enum
 from oracle import config
 from oracle.pillars.measurements import WindReading
 from oracle.pillars.meteo import MeteoSnapshot
-from oracle.pillars.pressure import PressureGradient
+from oracle.pillars.pressure import PressureSnapshot
 
 
 class Signal(str, Enum):
@@ -28,11 +29,11 @@ class Verdict:
     reason: str
 
 
-def pressure_threshold(gradient: PressureGradient) -> Verdict:
-    delta = gradient.delta_hpa
-    if delta >= config.MIN_PRESSURE_DELTA_HPA:
-        return Verdict("pressure_threshold", Signal.GO, f"Δ={delta:.1f} hPa ≥ threshold")
-    return Verdict("pressure_threshold", Signal.NO_GO, f"Δ={delta:.1f} hPa below threshold")
+def alpenpumpe_threshold(snapshot: PressureSnapshot) -> Verdict:
+    delta = snapshot.alpenpumpe_delta_hpa
+    if delta >= config.MIN_ALPENPUMPE_DELTA_HPA:
+        return Verdict("alpenpumpe_threshold", Signal.GO, f"Δ={delta:.1f} hPa ≥ threshold")
+    return Verdict("alpenpumpe_threshold", Signal.NO_GO, f"Δ={delta:.1f} hPa below threshold")
 
 
 def synoptic_override(meteo: MeteoSnapshot) -> Verdict:
