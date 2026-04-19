@@ -36,6 +36,17 @@ def alpenpumpe_threshold(snapshot: PressureSnapshot) -> Verdict:
     return Verdict("alpenpumpe_threshold", Signal.NO_GO, f"Δ={delta:.1f} hPa below threshold")
 
 
+def foehn_override(snapshot: PressureSnapshot) -> Verdict:
+    delta = snapshot.foehn_delta_hpa
+    if delta >= config.FOEHN_TRIGGER_DELTA_HPA:
+        return Verdict(
+            "foehn_override",
+            Signal.NO_GO,
+            f"Bolzano−Innsbruck Δ={delta:.1f} hPa indicates Föhn — thermal suppressed",
+        )
+    return Verdict("foehn_override", Signal.GO, f"no Föhn pressure signature (Δ={delta:.1f} hPa)")
+
+
 def synoptic_override(meteo: MeteoSnapshot) -> Verdict:
     if meteo.synoptic_wind_knots >= config.SYNOPTIC_OVERRIDE_KNOTS:
         return Verdict(

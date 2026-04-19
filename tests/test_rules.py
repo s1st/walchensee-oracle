@@ -4,6 +4,7 @@ from oracle.config import StationRole
 from oracle.knowledge.rules import (
     Signal,
     alpenpumpe_threshold,
+    foehn_override,
     synoptic_override,
     thermal_ignition,
 )
@@ -28,6 +29,14 @@ def test_alpenpumpe_threshold_go():
 
 def test_alpenpumpe_threshold_no_go():
     assert alpenpumpe_threshold(_snapshot(1.0)).signal is Signal.NO_GO
+
+
+def test_foehn_override_flags_southerly_pressure():
+    assert foehn_override(_snapshot(3.0, foehn_delta=5.0)).signal is Signal.NO_GO
+
+
+def test_foehn_override_clear_when_pressure_balanced():
+    assert foehn_override(_snapshot(3.0, foehn_delta=0.5)).signal is Signal.GO
 
 
 def test_synoptic_override_kills_thermal():
