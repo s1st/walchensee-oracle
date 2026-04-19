@@ -5,6 +5,8 @@ from oracle.knowledge.rules import (
     Signal,
     alpenpumpe_threshold,
     foehn_override,
+    overnight_cooling,
+    solar_radiation,
     synoptic_override,
     thermal_ignition,
 )
@@ -39,14 +41,33 @@ def test_foehn_override_clear_when_pressure_balanced():
     assert foehn_override(_snapshot(3.0, foehn_delta=0.5)).signal is Signal.GO
 
 
-def test_synoptic_override_kills_thermal():
-    snap = MeteoSnapshot(
+def _meteo(*, cloud: float = 10, solar: float = 800, synoptic: float = 5) -> MeteoSnapshot:
+    return MeteoSnapshot(
         day=datetime.now().date(),
-        overnight_cloud_cover_pct=10,
-        morning_solar_radiation_wm2=800,
-        synoptic_wind_knots=20,
+        overnight_cloud_cover_pct=cloud,
+        morning_solar_radiation_wm2=solar,
+        synoptic_wind_knots=synoptic,
     )
-    assert synoptic_override(snap).signal is Signal.NO_GO
+
+
+def test_overnight_cooling_clear_night_go():
+    assert overnight_cooling(_meteo(cloud=15)).signal is Signal.GO
+
+
+def test_overnight_cooling_cloudy_night_no_go():
+    assert overnight_cooling(_meteo(cloud=60)).signal is Signal.NO_GO
+
+
+def test_solar_radiation_bright_morning_go():
+    assert solar_radiation(_meteo(solar=750)).signal is Signal.GO
+
+
+def test_solar_radiation_dim_morning_no_go():
+    assert solar_radiation(_meteo(solar=400)).signal is Signal.NO_GO
+
+
+def test_synoptic_override_kills_thermal():
+    assert synoptic_override(_meteo(synoptic=20)).signal is Signal.NO_GO
 
 
 def test_thermal_ignition_detects_ignited_station():

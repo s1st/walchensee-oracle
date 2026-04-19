@@ -25,6 +25,8 @@ async def run_forecast(day: date) -> Forecast:
     verdicts = [
         rules.alpenpumpe_threshold(snapshot),
         rules.foehn_override(snapshot),
+        rules.overnight_cooling(meteo_snap),
+        rules.solar_radiation(meteo_snap),
         rules.synoptic_override(meteo_snap),
         rules.thermal_ignition(winds),
     ]
