@@ -1,0 +1,321 @@
+- generic [active] [ref=e1]:
+  - dialog "Wir benötigen Deine Zustimmung" [ref=e3]:
+    - document [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]:
+          - heading "Wir benötigen Deine Zustimmung" [level=1] [ref=e7]
+          - generic [ref=e8]: Mit Klick auf „Akzeptieren“ hilfst Du uns dabei, indem Du in die Verwendung von Cookies und anderen Technologien einwilligst, die wir dafür nutzen. Vielen Dank schonmal dafür. Einige unserer Werbepartner wie z.B. Google und Facebook verarbeiten Deine Daten in den USA, wo Deine Daten nicht so gut wie nach europäischem Datenschutzrecht geschützt sind. Um welche Daten von Dir es dabei geht, und wer darauf zugreifen könnte, kannst Du in unserer Datenschutzerklärung nachlesen. Mit Klick auf „Akzeptieren“ willigst Du daher auch ausdrücklich gem. Art. 49 Abs. 1 S. 1 lit. a) DSGVO ein, dass Deine Daten auch in den USA verarbeitet werden. Wenn Du das nicht möchtest, kannst Du das in den Einstellungen speichern bzw. kannst du dort bereits erteilte Einwilligungen jederzeit mit Wirkung für die Zukunft widerrufen.
+        - form "Zweck" [ref=e9]:
+          - generic [ref=e11]: Speichern von oder Zugriff auf Informationen auf einem Endgerät
+          - generic [ref=e13]: Personalisierte Werbung und Inhalte, Messung von Werbeleistung und der Performance von Inhalten, Zielgruppenforschung sowie Entwicklung und Verbesserung von Angeboten
+      - form [ref=e14]:
+        - button "EINSTELLUNGEN" [ref=e16] [cursor=pointer]
+        - button "AKZEPTIEREN" [ref=e18] [cursor=pointer]:
+          - generic [ref=e19]: AKZEPTIEREN
+        - generic [ref=e20]:
+          - link "Cookies" [ref=e21] [cursor=pointer]:
+            - /url: "#"
+          - text: "|"
+          - link "Datenschutzerklärung" [ref=e22] [cursor=pointer]:
+            - /url: https://www.addicted-sports.com/koimnu/impressum-addicted-sports/
+          - text: "|"
+          - link "AGB" [ref=e23] [cursor=pointer]:
+            - /url: https://www.addicted-sports.com/koimnu/nutzungsbedinungen-addicted/
+          - text: "|"
+          - link "Impressum" [ref=e24] [cursor=pointer]:
+            - /url: https://www.addicted-sports.com/koimnu/impressum-addicted-sports/
+    - generic [ref=e25]:
+      - text: Cookie Banner powered by
+      - link "consentmanager.net" [ref=e26] [cursor=pointer]:
+        - /url: https://www.consentmanager.net/en/cookie-banner/?utm_source=cmplogo2A&utm_medium=banner&utm_campaign=cmplogo2A&utm_term=47077&utm_content=addicted-sports.com
+        - img "consentmanager.net" [ref=e27]
+    - 'button "Sprache: de" [ref=e28] [cursor=pointer]':
+      - img [ref=e29]
+  - generic [ref=e31]:
+    - navigation [ref=e32]:
+      - generic [ref=e33]:
+        - list [ref=e34]:
+          - listitem [ref=e35]:
+            - link "aktuelles" [ref=e36] [cursor=pointer]:
+              - /url: /aktuelles/
+        - list [ref=e37]:
+          - listitem [ref=e38]:
+            - link "reports" [ref=e39] [cursor=pointer]:
+              - /url: /reports/
+        - list [ref=e40]:
+          - listitem [ref=e41]:
+            - link "Webcam" [ref=e42] [cursor=pointer]:
+              - /url: /webcam/
+        - generic [ref=e43]:
+          - list [ref=e44]:
+            - listitem [ref=e45]:
+              - link "Mein addicted" [ref=e46] [cursor=pointer]:
+                - /url: /meinaddicted/
+          - list [ref=e47]:
+            - listitem [ref=e48]:
+              - link "Kontakt & Feedback" [ref=e49] [cursor=pointer]:
+                - /url: /koimnu/kontakt-addicted-sports/
+          - list [ref=e50]:
+            - listitem [ref=e51]:
+              - link "DE" [ref=e52] [cursor=pointer]:
+                - /url: https://www.addicted-sports.com/webcam/walchensee/urfeld/
+      - link "addictedSports" [ref=e53] [cursor=pointer]:
+        - /url: https://www.addicted-sports.com
+        - img "addictedSports" [ref=e54]
+    - generic [ref=e57]:
+      - link [ref=e58] [cursor=pointer]:
+        - /url: https://www.severnesails.de/crossover-segel/
+        - img [ref=e59]
+      - link [ref=e60] [cursor=pointer]:
+        - /url: https://www.starboard.de/index.php/wave-freestyle/
+        - img [ref=e61]
+    - generic [ref=e62]:
+      - generic [ref=e63]:
+        - generic [ref=e64]:
+          - heading "Walchensee Urfeld, Deutschland" [level=1] [ref=e65]
+          - link [ref=e66] [cursor=pointer]:
+            - /url: http://www.hotel-karwendelblick.de/
+          - button [ref=e68] [cursor=pointer]
+          - button [ref=e70] [cursor=pointer]
+        - generic [ref=e72]:
+          - generic [ref=e73]:
+            - img [ref=e75]
+            - link [ref=e77] [cursor=pointer]:
+              - /url: https://www.hang-five.de
+              - img [ref=e78]
+          - img "Klick zum Anzeigen des Bildes in voller Größe (6000x4000 Pixel)" [ref=e79]
+          - generic [ref=e81]:
+            - generic [ref=e84]:
+              - button [ref=e85] [cursor=pointer]
+              - generic [ref=e90]:
+                - button "Luft Taupunkt" [ref=e91] [cursor=pointer]:
+                  - generic [ref=e92]: Luft
+                  - generic [ref=e94]: Taupunkt
+                - button "Luftdruck" [ref=e96] [cursor=pointer]:
+                  - generic [ref=e97]: Luftdruck
+                - button "Luftfeuchtigkeit" [ref=e99] [cursor=pointer]:
+                  - generic [ref=e100]: Luftfeuchtigkeit
+                - button "Wasser" [ref=e102] [cursor=pointer]:
+                  - generic [ref=e103]: Wasser
+                - button "Niederschlagsmenge" [ref=e105] [cursor=pointer]:
+                  - generic [ref=e106]: Niederschlagsmenge
+                - button "Wind Böen" [ref=e108] [cursor=pointer]:
+                  - generic [ref=e109]: Wind
+                  - generic [ref=e111]: Böen
+            - generic [ref=e113]:
+              - generic [ref=e114]:
+                - button "ein Tag vorwärts" [ref=e115]
+                - button "So, 19." [ref=e117] [cursor=pointer]
+                - button "ein Tag zurück" [ref=e118] [cursor=pointer]
+              - generic [ref=e120]:
+                - button "ein Monat vorwärts" [ref=e121]
+                - button "04." [ref=e123] [cursor=pointer]
+                - button "ein Monat zurück" [ref=e124] [cursor=pointer]
+              - generic [ref=e126]:
+                - button "ein Jahr vorwärts" [ref=e127]
+                - button "2026" [ref=e129] [cursor=pointer]
+                - button "ein Jahr zurück" [ref=e130] [cursor=pointer]
+              - generic [ref=e132]:
+                - button "eine Stunde vorwärts" [ref=e133]
+                - button "20 :" [ref=e135] [cursor=pointer]
+                - button "eine Stunde zurück" [ref=e136] [cursor=pointer]
+              - generic [ref=e138]:
+                - button "ein Bild vorwärts" [ref=e139]
+                - button "20" [ref=e141] [cursor=pointer]
+                - button "ein Bild zurück" [ref=e142] [cursor=pointer]
+              - generic [ref=e144]:
+                - button [ref=e145]
+                - button "Aktuell" [ref=e146] [cursor=pointer]
+                - button [ref=e147]
+          - generic:
+            - button "Wetterdaten" [ref=e148] [cursor=pointer]:
+              - generic [ref=e150]: Wetterdaten
+            - button "Live Video deaktivieren" [ref=e151] [cursor=pointer]:
+              - generic [ref=e153]: Live Video deaktivieren
+            - button "Zeitraffer" [ref=e154] [cursor=pointer]:
+              - generic [ref=e156]: Zeitraffer
+            - button "Beste Bilder" [ref=e157] [cursor=pointer]:
+              - generic [ref=e159]: Beste Bilder
+            - button "Hinzufügen zu \"Beste Bilder\"" [ref=e160] [cursor=pointer]:
+              - generic [ref=e162]: Hinzufügen zu "Beste Bilder"
+            - link "Infos zu Hotel Karwendelblick" [ref=e163] [cursor=pointer]:
+              - /url: http://www.hotel-karwendelblick.de/
+              - generic [ref=e166]: Infos zu Hotel Karwendelblick
+            - button "Webcam Info" [ref=e167] [cursor=pointer]:
+              - generic [ref=e170]: Webcam Info
+            - button "Meteomedia Föhndiagramm" [ref=e171] [cursor=pointer]:
+              - generic [ref=e174]: Meteomedia Föhndiagramm
+            - button "Zurück" [ref=e175] [cursor=pointer]:
+              - generic [ref=e177]: Zurück
+          - generic [ref=e178]:
+            - button "Wetterdaten" [ref=e179] [cursor=pointer]:
+              - generic:
+                - generic: Wetterdaten
+            - button "Live Video deaktivieren" [ref=e181] [cursor=pointer]:
+              - generic:
+                - generic: Live Video deaktivieren
+            - button "Zeitraffer" [ref=e183] [cursor=pointer]:
+              - generic:
+                - generic: Zeitraffer
+            - button "Beste Bilder" [ref=e185] [cursor=pointer]:
+              - generic:
+                - generic: Beste Bilder
+            - button "Hinzufügen zu \"Beste Bilder\"" [ref=e187] [cursor=pointer]:
+              - generic:
+                - generic: Hinzufügen zu "Beste Bilder"
+            - button "Zoom" [ref=e189] [cursor=pointer]:
+              - generic:
+                - generic: Zoom
+            - button "Wind & Wetter" [ref=e191] [cursor=pointer]:
+              - generic:
+                - generic: Wind & Wetter
+          - generic [ref=e193]:
+            - button [ref=e196] [cursor=pointer]
+            - generic [ref=e201]: 19.04.2026 20:00:00
+      - link [ref=e207] [cursor=pointer]:
+        - /url: https://www.hang-five.de/
+        - img [ref=e208]
+      - navigation [ref=e209]:
+        - list [ref=e210]:
+          - listitem [ref=e211] [cursor=pointer]:
+            - link "Afrika" [ref=e212]:
+              - /url: "#"
+          - listitem [ref=e213] [cursor=pointer]:
+            - link "Deutschland" [ref=e214]:
+              - /url: "#"
+          - listitem [ref=e215] [cursor=pointer]:
+            - link "Frankreich" [ref=e216]:
+              - /url: "#"
+          - listitem [ref=e217] [cursor=pointer]:
+            - link "Italien" [ref=e218]:
+              - /url: "#"
+          - listitem [ref=e219] [cursor=pointer]:
+            - link "Österreich" [ref=e220]:
+              - /url: "#"
+      - generic [ref=e221]:
+        - generic [ref=e222]:
+          - link "Ostsee, Prerow, DE Ostsee, Prerow, DE" [ref=e223] [cursor=pointer]:
+            - /url: /webcam/ostsee/prerow/
+            - generic [ref=e224]: Ostsee, Prerow, DE
+            - img "Ostsee, Prerow, DE" [ref=e225]
+          - link "Boa Vista, Tortuga, CV Boa Vista, Tortuga, CV" [ref=e226] [cursor=pointer]:
+            - /url: /webcam/kapverde/boavista/
+            - generic [ref=e227]: Boa Vista, Tortuga, CV
+            - img "Boa Vista, Tortuga, CV" [ref=e228]
+          - link "Boa Vista, Liowa, CV Boa Vista, Liowa, CV" [ref=e229] [cursor=pointer]:
+            - /url: /webcam/kapverde/boavistabahia/
+            - generic [ref=e230]: Boa Vista, Liowa, CV
+            - img "Boa Vista, Liowa, CV" [ref=e231]
+          - link "Schladitzer See, All On Sea, DE Schladitzer See, All On Sea, DE" [ref=e232] [cursor=pointer]:
+            - /url: /webcam/schladitzersee/allonsea/
+            - generic [ref=e233]: Schladitzer See, All On Sea, DE
+            - img "Schladitzer See, All On Sea, DE" [ref=e234]
+          - link "Starnbergersee, St. Heinrich, DE Starnbergersee, St. Heinrich, DE" [ref=e235] [cursor=pointer]:
+            - /url: /webcam/starnbergersee/ammerland/
+            - generic [ref=e236]: Starnbergersee, St. Heinrich, DE
+            - img "Starnbergersee, St. Heinrich, DE" [ref=e237]
+          - link "Mandichosee, Mering, DE Mandichosee, Mering, DE" [ref=e238] [cursor=pointer]:
+            - /url: /webcam/lechstaustufe/mandichosee/
+            - generic [ref=e239]: Mandichosee, Mering, DE
+            - img "Mandichosee, Mering, DE" [ref=e240]
+          - link "Gardasee, Malcesine, IT Gardasee, Malcesine, IT" [ref=e241] [cursor=pointer]:
+            - /url: /webcam/gardasee/malcesine/
+            - generic [ref=e242]: Gardasee, Malcesine, IT
+            - img "Gardasee, Malcesine, IT" [ref=e243]
+          - link "Achensee, Pertisau, AT Achensee, Pertisau, AT" [ref=e244] [cursor=pointer]:
+            - /url: /webcam/achensee/achenkirch/
+            - generic [ref=e245]: Achensee, Pertisau, AT
+            - img "Achensee, Pertisau, AT" [ref=e246]
+          - link "Spitzingsee, Obere Maxlraineralm, DE Spitzingsee, Obere Maxlraineralm, DE" [ref=e247] [cursor=pointer]:
+            - /url: /webcam/spitzingsee/oberemaxlraineralm/
+            - generic [ref=e248]: Spitzingsee, Obere Maxlraineralm, DE
+            - img "Spitzingsee, Obere Maxlraineralm, DE" [ref=e249]
+          - link "Gardasee, Campione, IT Gardasee, Campione, IT" [ref=e250] [cursor=pointer]:
+            - /url: /webcam/gardasee/campione/
+            - generic [ref=e251]: Gardasee, Campione, IT
+            - img "Gardasee, Campione, IT" [ref=e252]
+          - link "Gardasee, Malcesine, IT Gardasee, Malcesine, IT" [ref=e253] [cursor=pointer]:
+            - /url: /webcam/gardasee/malcesinenord/
+            - generic [ref=e254]: Gardasee, Malcesine, IT
+            - img "Gardasee, Malcesine, IT" [ref=e255]
+          - link "Gardasee, Torbole, IT Gardasee, Torbole, IT" [ref=e256] [cursor=pointer]:
+            - /url: /webcam/gardasee/torbole/
+            - generic [ref=e257]: Gardasee, Torbole, IT
+            - img "Gardasee, Torbole, IT" [ref=e258]
+          - link "Wolfgangsee, Lindenstrand, AT Wolfgangsee, Lindenstrand, AT" [ref=e259] [cursor=pointer]:
+            - /url: /webcam/wolfgangsee/lindenstrand/
+            - generic [ref=e260]: Wolfgangsee, Lindenstrand, AT
+            - img "Wolfgangsee, Lindenstrand, AT" [ref=e261]
+          - link "Kochelsee, Trimini, DE Kochelsee, Trimini, DE" [ref=e262] [cursor=pointer]:
+            - /url: /webcam/kochelsee/trimini/
+            - generic [ref=e263]: Kochelsee, Trimini, DE
+            - img "Kochelsee, Trimini, DE" [ref=e264]
+          - link "Brombachsee, Allmannsdorf, DE Brombachsee, Allmannsdorf, DE" [ref=e265] [cursor=pointer]:
+            - /url: /webcam/brombachsee/allmannsdorf/
+            - generic [ref=e266]: Brombachsee, Allmannsdorf, DE
+            - img "Brombachsee, Allmannsdorf, DE" [ref=e267]
+          - link "Safaga South, Lost Lagoon, EG Safaga South, Lost Lagoon, EG" [ref=e268] [cursor=pointer]:
+            - /url: /webcam/aegypten/safaga/
+            - generic [ref=e269]: Safaga South, Lost Lagoon, EG
+            - img "Safaga South, Lost Lagoon, EG" [ref=e270]
+          - link "Hyeres, Almanarre, FR Hyeres, Almanarre, FR" [ref=e271] [cursor=pointer]:
+            - /url: /webcam/hyeres/almanarre/
+            - generic [ref=e272]: Hyeres, Almanarre, FR
+            - img "Hyeres, Almanarre, FR" [ref=e273]
+          - link "Walchensee, Urfeld, DE Walchensee, Urfeld, DE" [ref=e274] [cursor=pointer]:
+            - /url: /webcam/walchensee/urfeld/
+            - generic [ref=e275]: Walchensee, Urfeld, DE
+            - img "Walchensee, Urfeld, DE" [ref=e276]
+          - link "Gardasee, Limone, IT Gardasee, Limone, IT" [ref=e277] [cursor=pointer]:
+            - /url: /webcam/gardasee/caporeamol/
+            - generic [ref=e278]: Gardasee, Limone, IT
+            - img "Gardasee, Limone, IT" [ref=e279]
+        - generic [ref=e281]:
+          - generic [ref=e282]: partner
+          - link "Tegernsee, DE Tegernsee, , DE" [ref=e283] [cursor=pointer]:
+            - /url: https://www.foto-webcam.org/webcam/prasserbad/
+            - generic [ref=e284]: Tegernsee, DE
+            - img "Tegernsee, , DE" [ref=e285]
+          - link "Tegernsee, DE Tegernsee, , DE" [ref=e286] [cursor=pointer]:
+            - /url: https://www.foto-webcam.org/webcam/ycbw/
+            - generic [ref=e287]: Tegernsee, DE
+            - img "Tegernsee, , DE" [ref=e288]
+          - link "Tegernsee, DE Tegernsee, , DE" [ref=e289] [cursor=pointer]:
+            - /url: https://www.foto-webcam.org/webcam/tegernseewest/
+            - generic [ref=e290]: Tegernsee, DE
+            - img "Tegernsee, , DE" [ref=e291]
+          - link "Tegernsee, DE Tegernsee, , DE" [ref=e292] [cursor=pointer]:
+            - /url: https://www.foto-webcam.org/webcam/wallberg/
+            - generic [ref=e293]: Tegernsee, DE
+            - img "Tegernsee, , DE" [ref=e294]
+          - link "Tegernsee, DE Tegernsee, , DE" [ref=e295] [cursor=pointer]:
+            - /url: https://www.foto-webcam.eu/webcam/sonnenbichl/
+            - generic [ref=e296]: Tegernsee, DE
+            - img "Tegernsee, , DE" [ref=e297]
+          - link "Walchensee, DE Walchensee, , DE" [ref=e298] [cursor=pointer]:
+            - /url: https://www.foto-webcam.eu/webcam/herzogstand/
+            - generic [ref=e299]: Walchensee, DE
+            - img "Walchensee, , DE" [ref=e300]
+          - link "Kochelsee, DE Kochelsee, , DE" [ref=e301] [cursor=pointer]:
+            - /url: https://www.foto-webcam.eu/webcam/kochelsee/
+            - generic [ref=e302]: Kochelsee, DE
+            - img "Kochelsee, , DE" [ref=e303]
+          - link "Wörthsee, DE Wörthsee, , DE" [ref=e304] [cursor=pointer]:
+            - /url: https://www.foto-webcam.net/webcam/woerthsee/
+            - generic [ref=e305]: Wörthsee, DE
+            - img "Wörthsee, , DE" [ref=e306]
+          - link "Gardasee, IT Gardasee, , IT" [ref=e307] [cursor=pointer]:
+            - /url: https://www.foto-webcam.eu/webcam/malcesine/
+            - generic [ref=e308]: Gardasee, IT
+            - img "Gardasee, , IT" [ref=e309]
+    - generic [ref=e310]:
+      - generic:
+        - link "Kontakt & Feedback" [ref=e311] [cursor=pointer]:
+          - /url: /koimnu/kontakt-addicted-sports/
+        - link "Impressum & Datenschutz" [ref=e312] [cursor=pointer]:
+          - /url: /koimnu/impressum-addicted-sports/
+        - link "Nutzungsbedingungen" [ref=e313] [cursor=pointer]:
+          - /url: /koimnu/nutzungsbedinungen-addicted/
+      - generic [ref=e314]: © 2026 ADDICTED-SPORTS.COM - ALLE RECHTE VORBEHALTEN
+  - button "Datenschutz-Einstellungen" [ref=e316] [cursor=pointer]:
+    - img "Datenschutz-Einstellungen" [ref=e317]
