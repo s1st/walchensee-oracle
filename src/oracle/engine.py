@@ -2,25 +2,28 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from oracle.knowledge import rules
 from oracle.knowledge.rules import Signal, Verdict
-from oracle.pillars import measurements, meteo, pressure
+from oracle.pillars import chat, measurements, meteo, pressure
+from oracle.pillars.chat import ChatMessage
 
 
 @dataclass
 class Forecast:
     overall: Signal
     verdicts: list[Verdict]
+    chat_messages: list[ChatMessage] = field(default_factory=list)
 
 
 async def run_forecast(day: date) -> Forecast:
-    snapshot, meteo_snap, winds = await asyncio.gather(
+    snapshot, meteo_snap, winds, messages = await asyncio.gather(
         pressure.fetch_snapshot(),
         meteo.fetch_snapshot(day),
         measurements.fetch_latest(),
+        _fetch_chat_tolerant(),
     )
     verdicts = [
         rules.alpenpumpe_threshold(snapshot),
@@ -30,7 +33,20 @@ async def run_forecast(day: date) -> Forecast:
         rules.synoptic_override(meteo_snap),
         rules.thermal_ignition(winds),
     ]
-    return Forecast(overall=_aggregate(verdicts), verdicts=verdicts)
+    return Forecast(
+        overall=_aggregate(verdicts),
+        verdicts=verdicts,
+        chat_messages=messages,
+    )
+
+
+async def _fetch_chat_tolerant() -> list[ChatMessage]:
+    """Chat is qualitative and optional — failures must not take out the forecast."""
+    try:
+        return await chat.fetch_recent_messages(limit=10)
+    except Exception as exc:
+        print(f"[chat] source failed: {type(exc).__name__}: {exc}")
+        return []
 
 
 def _aggregate(verdicts: list[Verdict]) -> Signal:
