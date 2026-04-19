@@ -26,7 +26,8 @@ cp .env.example .env
 ## Usage
 
 ```bash
-oracle forecast
+oracle              # forecast for today
+oracle --day 2026-05-15   # forecast for a specific day
 ```
 
 ## Layout
