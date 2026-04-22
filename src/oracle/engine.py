@@ -34,7 +34,7 @@ async def run_forecast(day: date) -> Forecast:
         _fetch_chat_tolerant(),
     )
     verdicts = [
-        rules.alpenpumpe_threshold(snapshot),
+        rules.thermik(snapshot),
         rules.foehn_override(snapshot),
         rules.overnight_cooling(meteo_snap),
         rules.solar_radiation(meteo_snap),

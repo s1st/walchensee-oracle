@@ -21,10 +21,10 @@ def _forecast() -> Forecast:
     now = datetime(2026, 4, 22, 9, 0)
     return Forecast(
         overall=Signal.NO_GO,
-        verdicts=[Verdict("alpenpumpe_threshold", Signal.NO_GO, "Δ=1.0 hPa below threshold")],
+        verdicts=[Verdict("thermik", Signal.NO_GO, "Δ=1.0 hPa below threshold")],
         pressure=PressureSnapshot(
-            alpenpumpe_north=PressureReading("Munich", 1020.0, now),
-            alpenpumpe_south=PressureReading("Innsbruck", 1019.0, now),
+            thermik_north=PressureReading("Munich", 1020.0, now),
+            thermik_south=PressureReading("Innsbruck", 1019.0, now),
             foehn_south=PressureReading("Bolzano", 1017.0, now),
         ),
         meteo=MeteoSnapshot(
@@ -45,7 +45,7 @@ def _forecast() -> Forecast:
 def test_forecast_to_dict_round_trips_raw_inputs():
     d = forecast_to_dict(_forecast(), date(2026, 4, 22))
     assert d["overall"] == "no_go"
-    assert d["inputs"]["pressure"]["alpenpumpe_delta_hpa"] == pytest.approx(1.0)
+    assert d["inputs"]["pressure"]["thermik_delta_hpa"] == pytest.approx(1.0)
     assert d["inputs"]["pressure"]["foehn_delta_hpa"] == pytest.approx(-2.0)
     assert d["inputs"]["meteo"]["overnight_cloud_cover_pct"] == 35.0
     assert d["inputs"]["measurements"][0]["station"] == "Urfeld"

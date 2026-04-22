@@ -29,11 +29,11 @@ class Verdict:
     reason: str
 
 
-def alpenpumpe_threshold(snapshot: PressureSnapshot) -> Verdict:
-    delta = snapshot.alpenpumpe_delta_hpa
-    if delta >= config.MIN_ALPENPUMPE_DELTA_HPA:
-        return Verdict("alpenpumpe_threshold", Signal.GO, f"Δ={delta:.1f} hPa ≥ threshold")
-    return Verdict("alpenpumpe_threshold", Signal.NO_GO, f"Δ={delta:.1f} hPa below threshold")
+def thermik(snapshot: PressureSnapshot) -> Verdict:
+    delta = snapshot.thermik_delta_hpa
+    if delta >= config.MIN_THERMIK_DELTA_HPA:
+        return Verdict("thermik", Signal.GO, f"Δ={delta:.1f} hPa ≥ threshold")
+    return Verdict("thermik", Signal.NO_GO, f"Δ={delta:.1f} hPa below threshold")
 
 
 def foehn_override(snapshot: PressureSnapshot) -> Verdict:

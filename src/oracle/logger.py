@@ -223,12 +223,12 @@ def _pressure_dict(result: Forecast) -> dict | None:
         return None
     p = result.pressure
     return {
-        "munich_hpa": p.alpenpumpe_north.hpa,
-        "innsbruck_hpa": p.alpenpumpe_south.hpa,
+        "munich_hpa": p.thermik_north.hpa,
+        "innsbruck_hpa": p.thermik_south.hpa,
         "bolzano_hpa": p.foehn_south.hpa,
-        "alpenpumpe_delta_hpa": round(p.alpenpumpe_delta_hpa, 2),
+        "thermik_delta_hpa": round(p.thermik_delta_hpa, 2),
         "foehn_delta_hpa": round(p.foehn_delta_hpa, 2),
-        "measured_at": p.alpenpumpe_north.measured_at.isoformat(),
+        "measured_at": p.thermik_north.measured_at.isoformat(),
     }
 
 

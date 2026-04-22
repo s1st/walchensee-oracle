@@ -3,7 +3,7 @@ from datetime import datetime
 from oracle.config import StationRole
 from oracle.knowledge.rules import (
     Signal,
-    alpenpumpe_threshold,
+    thermik,
     boundary_layer_height,
     dew_point_spread,
     foehn_override,
@@ -18,22 +18,22 @@ from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureReading, PressureSnapshot
 
 
-def _snapshot(alpenpumpe_delta: float, foehn_delta: float = 0.0) -> PressureSnapshot:
+def _snapshot(thermik_delta: float, foehn_delta: float = 0.0) -> PressureSnapshot:
     now = datetime.now()
     innsbruck_hpa = 1018.0
     return PressureSnapshot(
-        alpenpumpe_north=PressureReading("Munich", innsbruck_hpa + alpenpumpe_delta, now),
-        alpenpumpe_south=PressureReading("Innsbruck", innsbruck_hpa, now),
+        thermik_north=PressureReading("Munich", innsbruck_hpa + thermik_delta, now),
+        thermik_south=PressureReading("Innsbruck", innsbruck_hpa, now),
         foehn_south=PressureReading("Bolzano", innsbruck_hpa + foehn_delta, now),
     )
 
 
-def test_alpenpumpe_threshold_go():
-    assert alpenpumpe_threshold(_snapshot(5.0)).signal is Signal.GO
+def test_thermik_go():
+    assert thermik(_snapshot(5.0)).signal is Signal.GO
 
 
-def test_alpenpumpe_threshold_no_go():
-    assert alpenpumpe_threshold(_snapshot(1.0)).signal is Signal.NO_GO
+def test_thermik_no_go():
+    assert thermik(_snapshot(1.0)).signal is Signal.NO_GO
 
 
 def test_foehn_override_flags_southerly_pressure():

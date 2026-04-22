@@ -60,7 +60,7 @@ The JSON shape:
   "day": "2026-04-20",
   "overall": "go" | "maybe" | "no_go",
   "verdicts": [
-    {"rule": "alpenpumpe_threshold", "signal": "go|maybe|no_go", "reason": "..."},
+    {"rule": "thermik", "signal": "go|maybe|no_go", "reason": "..."},
     ... 5 more rules ...
   ],
   "chat_messages": [

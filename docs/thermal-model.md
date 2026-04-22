@@ -16,9 +16,11 @@ compressed through the narrow saddle between the two peaks — the
 across the lake.
 
 The windsurfing community calls this the **"Thermik"** or
-**"Walchensee-Thermik"**. The codebase uses the term "Alpenpumpe" (the
-larger-scale cross-Alps thermal pumping from Munich toward Innsbruck), which
-is the synoptic driver behind the local thermal cell.
+**"Walchensee-Thermik"**. Meteorologists call the larger-scale cross-Alps
+pumping (Munich toward Innsbruck) the "Alpenpumpe" — the synoptic driver
+behind the local thermal cell. The codebase follows the community and uses
+**"Thermik"** for this pressure signal, noting the meteorological term in
+comments where disambiguation helps.
 
 ### The formula
 
@@ -110,7 +112,7 @@ only.
 
 ## Pressure pairs
 
-### Alpenpumpe: Munich minus Innsbruck
+### Thermik (Alpenpumpe): Munich minus Innsbruck
 
 The large-scale thermal pump from the Bavarian plains toward the Alps. A
 positive delta (Munich higher than Innsbruck) indicates air flowing southward
@@ -198,7 +200,7 @@ pairs and enable data-driven calibration.
 
 | Threshold | Current value | Confidence | Notes |
 |---|---|---|---|
-| Alpenpumpe delta | >= 2.5 hPa | Low | Garda uses ~3; scaled down for smaller cell |
+| Thermik delta | >= 2.5 hPa | Low | Garda uses ~3; scaled down for smaller cell |
 | Föhn trigger delta | >= 4.0 hPa | Medium | Well-established Föhn indicator |
 | Synoptic override | >= 15 kt | Medium | Standard ~3 Bft threshold |
 | Ignition wind | >= 8 kt | Low | Needs shore-station validation |

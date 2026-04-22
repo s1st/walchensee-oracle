@@ -11,8 +11,9 @@ readings to fill the gap.
 1. **Oracle Chat** — authenticated read-only polling of the windinfo.eu
    Wind-Wetter-Chat (WordPress Wise Chat Pro) for messages mentioning
    Walchensee spots.
-2. **Pressure Gradient** — real-time Munich − Innsbruck hPa delta (Alpenpumpe)
-   and Bolzano − Innsbruck delta (Föhn detection).
+2. **Pressure Gradient** — real-time Munich − Innsbruck hPa delta (the
+   community calls this "Thermik"; meteorologists call it "Alpenpumpe") and
+   Bolzano − Innsbruck delta (Föhn detection).
 3. **Meteorological Conditions** — overnight cooling, morning solar radiation,
    synoptic wind aloft, dew-point spread, boundary-layer height, soil
    moisture + recent precipitation.

@@ -12,8 +12,8 @@ from enum import Enum
 
 
 class StationRole(str, Enum):
-    ALPENPUMPE_NORTH = "alpenpumpe_north"  # north-of-Alps pressure anchor
-    ALPENPUMPE_SOUTH = "alpenpumpe_south"  # south-of-Alps pressure anchor
+    THERMIK_NORTH = "thermik_north"  # north-of-Alps pressure anchor
+    THERMIK_SOUTH = "thermik_south"  # south-of-Alps pressure anchor
     FOEHN_NORTH = "foehn_north"            # north side of the Föhn pressure pair
     FOEHN_SOUTH = "foehn_south"            # south side of the Föhn pressure pair
     IGNITION_REFERENCE = "ignition_reference"  # first station to show the thermal
@@ -31,12 +31,13 @@ class Station:
 
 
 # --- Pressure-pair anchors ------------------------------------------------
-# Alpenpumpe: north minus south drives the cross-Alps thermal engine.
-MUNICH = Station("Munich", 48.1374, 11.5755, StationRole.ALPENPUMPE_NORTH)
-INNSBRUCK_N = Station("Innsbruck", 47.2692, 11.4041, StationRole.ALPENPUMPE_SOUTH)
+# Thermik (meteorology term: "Alpenpumpe"): north minus south drives the
+# cross-Alps thermal engine. The community just calls it "Thermik".
+MUNICH = Station("Munich", 48.1374, 11.5755, StationRole.THERMIK_NORTH)
+INNSBRUCK_N = Station("Innsbruck", 47.2692, 11.4041, StationRole.THERMIK_SOUTH)
 
 # Föhn pair: Bolzano (south) minus Innsbruck (north) positive = Föhn risk.
-# Innsbruck appears in both pairs — south for Alpenpumpe, north for Föhn.
+# Innsbruck appears in both pairs — south for Thermik, north for Föhn.
 INNSBRUCK_F = Station("Innsbruck", 47.2692, 11.4041, StationRole.FOEHN_NORTH)
 BOLZANO = Station("Bolzano", 46.4983, 11.3548, StationRole.FOEHN_SOUTH)
 
@@ -66,7 +67,7 @@ ALL_LOCAL_STATIONS: tuple[Station, ...] = (
 # TODO(calibrate): all values below are informed guesses from research; replace
 # once we have a log of (inputs, actual-conditions) pairs from real sessions.
 
-MIN_ALPENPUMPE_DELTA_HPA = 2.5   # Munich − Innsbruck; Garda uses ~3, Walchensee smaller
+MIN_THERMIK_DELTA_HPA = 2.5   # Munich − Innsbruck (cross-Alps "Thermik" driver); Garda uses ~3
 FOEHN_TRIGGER_DELTA_HPA = 4.0    # Bolzano − Innsbruck positive ≥ this => Föhn risk
 SYNOPTIC_OVERRIDE_KNOTS = 15.0   # ≥ 3 Bft base wind deforms the thermal cell
 IGNITION_WIND_KNOTS = 8.0        # shore reading that signals ignition

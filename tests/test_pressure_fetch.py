@@ -39,8 +39,8 @@ async def test_fetch_snapshot_parses_open_meteo_response():
     assert req.url.params["latitude"].count(",") == 2  # three stations
     assert req.url.params["longitude"].count(",") == 2
 
-    assert snapshot.alpenpumpe_north.station == "Munich"
-    assert snapshot.alpenpumpe_south.station == "Innsbruck"
+    assert snapshot.thermik_north.station == "Munich"
+    assert snapshot.thermik_south.station == "Innsbruck"
     assert snapshot.foehn_south.station == "Bolzano"
-    assert snapshot.alpenpumpe_delta_hpa == pytest.approx(3.5)
+    assert snapshot.thermik_delta_hpa == pytest.approx(3.5)
     assert snapshot.foehn_delta_hpa == pytest.approx(1.0)

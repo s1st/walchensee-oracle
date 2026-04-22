@@ -2,8 +2,10 @@
 
 Two pairs matter at Walchensee:
 
-1. **Alpenpumpe** (Munich − Innsbruck) — the north-minus-south pumping that
-   drives the thermal engine. Positive delta = favourable.
+1. **Thermik** (Munich − Innsbruck) — the north-minus-south pumping that
+   drives the thermal engine. Positive delta = favourable. Meteorologists
+   call this phenomenon "Alpenpumpe"; the windsurfing community just calls
+   it Thermik, so the code uses that name.
 2. **Föhn** (Bolzano − Innsbruck) — south-minus-north; a positive delta signals
    Föhn risk, which suppresses the local thermal.
 
@@ -30,17 +32,17 @@ class PressureReading:
 
 @dataclass
 class PressureSnapshot:
-    alpenpumpe_north: PressureReading  # Munich
-    alpenpumpe_south: PressureReading  # Innsbruck (also serves as Föhn north)
-    foehn_south: PressureReading       # Bolzano
+    thermik_north: PressureReading  # Munich
+    thermik_south: PressureReading  # Innsbruck (also serves as Föhn north)
+    foehn_south: PressureReading    # Bolzano
 
     @property
-    def alpenpumpe_delta_hpa(self) -> float:
-        return self.alpenpumpe_north.hpa - self.alpenpumpe_south.hpa
+    def thermik_delta_hpa(self) -> float:
+        return self.thermik_north.hpa - self.thermik_south.hpa
 
     @property
     def foehn_delta_hpa(self) -> float:
-        return self.foehn_south.hpa - self.alpenpumpe_south.hpa
+        return self.foehn_south.hpa - self.thermik_south.hpa
 
 
 _STATIONS: tuple[Station, ...] = (MUNICH, INNSBRUCK_N, BOLZANO)
@@ -70,8 +72,8 @@ async def fetch_snapshot(client: httpx.AsyncClient | None = None) -> PressureSna
     readings = [_to_reading(station, loc) for station, loc in zip(_STATIONS, locations, strict=True)]
     munich, innsbruck, bolzano = readings
     return PressureSnapshot(
-        alpenpumpe_north=munich,
-        alpenpumpe_south=innsbruck,
+        thermik_north=munich,
+        thermik_south=innsbruck,
         foehn_south=bolzano,
     )
 
