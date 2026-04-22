@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from oracle.engine import Forecast, run_forecast
-from oracle.logger import DEFAULT_RUNS_DIR, backfill_run, forecast_to_dict, write_run
+from oracle.logger import backfill_run, forecast_to_dict, load_run, write_run
 
 load_dotenv()
 
@@ -34,9 +34,9 @@ def forecast(
     result = asyncio.run(run_forecast(target))
 
     if log:
-        path = write_run(result, target)
+        location = write_run(result, target)
         if not json_output:
-            console.print(f"[dim]logged to {path}[/dim]")
+            console.print(f"[dim]logged to {location}[/dim]")
 
     if json_output:
         sys.stdout.write(json.dumps(forecast_to_dict(result, target), ensure_ascii=False) + "\n")
@@ -51,10 +51,10 @@ def backfill(
 ) -> None:
     """Merge the day's Urfeld wind curve into the existing run log."""
     target = date.fromisoformat(day) if day else date.today()
-    path = asyncio.run(backfill_run(target))
-    data = json.loads(path.read_text(encoding="utf-8"))
+    location = asyncio.run(backfill_run(target))
+    data = load_run(target)
     machine = data.get("ground_truth", {}).get("machine") or {}
-    console.print(f"[bold]Backfilled:[/bold] {path}")
+    console.print(f"[bold]Backfilled:[/bold] {location}")
     if not machine:
         console.print("[yellow]no Urfeld samples landed in that day's window[/yellow]")
         return

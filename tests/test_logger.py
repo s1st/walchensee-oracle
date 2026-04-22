@@ -11,7 +11,7 @@ import pytest
 from oracle.config import ADDICTED_SPORTS_BASE_URL, StationRole
 from oracle.engine import Forecast
 from oracle.knowledge.rules import Signal, Verdict
-from oracle.logger import backfill_run, forecast_to_dict, write_run
+from oracle.logger import LocalRunStore, backfill_run, forecast_to_dict, write_run
 from oracle.pillars.measurements import WindReading
 from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureReading, PressureSnapshot
@@ -60,8 +60,8 @@ def test_write_run_preserves_existing_ground_truth(tmp_path: Path):
         "ground_truth": {"machine": {"peak_avg_knots": 14.0}, "human": "great day"},
     }))
 
-    written = write_run(_forecast(), target, runs_dir=tmp_path)
-    assert written == path
+    written = write_run(_forecast(), target, store=LocalRunStore(tmp_path))
+    assert written == str(path)
     data = json.loads(path.read_text())
     # New verdict written, but ground truth must survive the overwrite.
     assert data["overall"] == "no_go"
@@ -72,7 +72,7 @@ def test_write_run_preserves_existing_ground_truth(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_backfill_merges_machine_ground_truth(tmp_path: Path):
     target = date(2026, 4, 22)
-    write_run(_forecast(), target, runs_dir=tmp_path)
+    write_run(_forecast(), target, store=LocalRunStore(tmp_path))
 
     _URFELD_HTML = (
         '<html><head><meta name="csrf-token" content="T"></head></html>'
@@ -105,7 +105,7 @@ async def test_backfill_merges_machine_ground_truth(tmp_path: Path):
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
-        await backfill_run(target, runs_dir=tmp_path, client=client)
+        await backfill_run(target, store=LocalRunStore(tmp_path), client=client)
 
     data = json.loads((tmp_path / f"{target.isoformat()}.json").read_text())
     machine = data["ground_truth"]["machine"]
@@ -120,4 +120,4 @@ async def test_backfill_merges_machine_ground_truth(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_backfill_raises_when_no_forecast_logged(tmp_path: Path):
     with pytest.raises(FileNotFoundError, match="run `oracle forecast` first"):
-        await backfill_run(date(2026, 4, 22), runs_dir=tmp_path)
+        await backfill_run(date(2026, 4, 22), store=LocalRunStore(tmp_path))

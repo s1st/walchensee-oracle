@@ -1,15 +1,23 @@
-"""Calibration log — one JSON file per forecast day under `data/runs/`.
+"""Calibration log — per-day JSON records of forecast + ground truth.
 
-Each file stores the raw pillar inputs, the verdict, and a `ground_truth`
-block that starts empty and is filled in later — machine-observed values from
-`backfill_run`, plus any subjective human notes the user hand-edits.
+Backends are pluggable via the `RunStore` protocol. Two implementations:
+
+- **Local**: files under `data/runs/<iso>.json` (default, used for development).
+- **GCS**: objects under `gs://<bucket>/runs/<iso>.json` (used in Cloud Run
+  deployments). Activated when `RUNS_BUCKET` is set in the environment.
+
+Each record keeps the raw pillar inputs, the verdict, and a `ground_truth`
+block. `ground_truth.machine` is filled automatically by `backfill_run` from
+the Urfeld anemometer; `ground_truth.human` stays for hand-edited notes.
 """
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Protocol
 
 import httpx
 
@@ -18,11 +26,84 @@ from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
 
 DEFAULT_RUNS_DIR = Path("data/runs")
 
-# Ignition and "session-worthy" thresholds used for post-hoc duration metrics.
-# Kept intentionally separate from config.IGNITION_WIND_KNOTS so changing the
-# forecaster's threshold doesn't silently rewrite historical metrics.
+# Thresholds used for post-hoc duration metrics only — intentionally separate
+# from config.IGNITION_WIND_KNOTS so tuning the forecaster's threshold doesn't
+# silently rewrite historical metrics.
 _IGNITION_KT = 8.0
 _SESSION_KT = 12.0
+
+
+# --- store protocol --------------------------------------------------------
+
+
+class RunStore(Protocol):
+    def read(self, iso_day: str) -> dict | None: ...
+    def write(self, iso_day: str, data: dict) -> str: ...
+
+
+@dataclass
+class LocalRunStore:
+    directory: Path
+
+    def __post_init__(self) -> None:
+        self.directory.mkdir(parents=True, exist_ok=True)
+
+    def read(self, iso_day: str) -> dict | None:
+        path = self.directory / f"{iso_day}.json"
+        if not path.exists():
+            return None
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return None
+
+    def write(self, iso_day: str, data: dict) -> str:
+        path = self.directory / f"{iso_day}.json"
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(path)
+
+
+@dataclass
+class GCSRunStore:
+    bucket_name: str
+
+    def __post_init__(self) -> None:
+        # Import lazily so CI / local runs don't need the package loaded.
+        from google.cloud import storage
+
+        self._client = storage.Client()
+        self._bucket = self._client.bucket(self.bucket_name)
+
+    def _blob(self, iso_day: str):
+        return self._bucket.blob(f"runs/{iso_day}.json")
+
+    def read(self, iso_day: str) -> dict | None:
+        blob = self._blob(iso_day)
+        if not blob.exists():
+            return None
+        try:
+            return json.loads(blob.download_as_text())
+        except json.JSONDecodeError:
+            return None
+
+    def write(self, iso_day: str, data: dict) -> str:
+        blob = self._blob(iso_day)
+        blob.upload_from_string(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            content_type="application/json",
+        )
+        return f"gs://{self.bucket_name}/runs/{iso_day}.json"
+
+
+def default_store() -> RunStore:
+    """Pick a store based on environment — GCS if $RUNS_BUCKET, else local."""
+    bucket = os.environ.get("RUNS_BUCKET")
+    if bucket:
+        return GCSRunStore(bucket)
+    return LocalRunStore(DEFAULT_RUNS_DIR)
+
+
+# --- public API ------------------------------------------------------------
 
 
 def forecast_to_dict(result: Forecast, target_day: date) -> dict:
@@ -54,57 +135,52 @@ def forecast_to_dict(result: Forecast, target_day: date) -> dict:
 def write_run(
     result: Forecast,
     target_day: date,
-    runs_dir: Path = DEFAULT_RUNS_DIR,
-) -> Path:
-    """Write today's forecast to `runs_dir/<iso>.json`, preserving any
-    `ground_truth` that a previous run (or backfill) already saved."""
-    runs_dir.mkdir(parents=True, exist_ok=True)
-    path = runs_dir / f"{target_day.isoformat()}.json"
+    store: RunStore | None = None,
+) -> str:
+    """Write forecast as <iso>.json, preserving any pre-existing ground_truth."""
+    store = store or default_store()
+    iso = target_day.isoformat()
 
     ground_truth = {"machine": None, "human": None}
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-            ground_truth = existing.get("ground_truth", ground_truth)
-        except json.JSONDecodeError:
-            pass  # corrupt — overwrite
+    existing = store.read(iso)
+    if existing is not None:
+        ground_truth = existing.get("ground_truth", ground_truth)
 
     record = {
         "run_at": datetime.now(timezone.utc).isoformat(),
         **forecast_to_dict(result, target_day),
         "ground_truth": ground_truth,
     }
-    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
-    return path
+    return store.write(iso, record)
 
 
-def load_run(target_day: date, runs_dir: Path = DEFAULT_RUNS_DIR) -> dict:
-    path = runs_dir / f"{target_day.isoformat()}.json"
-    if not path.exists():
+def load_run(target_day: date, store: RunStore | None = None) -> dict:
+    store = store or default_store()
+    iso = target_day.isoformat()
+    data = store.read(iso)
+    if data is None:
         raise FileNotFoundError(
-            f"No forecast log for {target_day.isoformat()} at {path} — "
-            "run `oracle forecast` first so there's something to back-fill."
+            f"No forecast log for {iso} — run `oracle forecast` first so there's "
+            "something to back-fill."
         )
-    return json.loads(path.read_text(encoding="utf-8"))
+    return data
 
 
 async def backfill_run(
     target_day: date,
-    runs_dir: Path = DEFAULT_RUNS_DIR,
+    store: RunStore | None = None,
     client: httpx.AsyncClient | None = None,
-) -> Path:
-    """Pull the full Urfeld curve for `target_day` and merge machine ground
-    truth into the existing run file. Leaves `ground_truth.human` untouched."""
-    record = load_run(target_day, runs_dir)
+) -> str:
+    """Pull Urfeld's full-day curve and merge machine ground truth into the
+    existing run record. Leaves ground_truth.human untouched."""
+    store = store or default_store()
+    iso = target_day.isoformat()
+    record = load_run(target_day, store=store)
     samples = await fetch_urfeld_day_curve(target_day, client=client)
-    machine = _machine_ground_truth(samples)
 
     record.setdefault("ground_truth", {"machine": None, "human": None})
-    record["ground_truth"]["machine"] = machine
-
-    path = runs_dir / f"{target_day.isoformat()}.json"
-    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
-    return path
+    record["ground_truth"]["machine"] = _machine_ground_truth(samples)
+    return store.write(iso, record)
 
 
 # --- internals -------------------------------------------------------------
