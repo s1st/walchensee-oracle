@@ -1,0 +1,22 @@
+# Minimal image for the scheduled Cloud Run Job.
+# No OpenClaw, no dashboard — just the oracle CLI and its runtime deps.
+# Invoked by Cloud Run Jobs as `oracle forecast` or `oracle backfill`.
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Install package first (copied source into the image).
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install --upgrade pip && pip install .
+
+# Non-root runtime user. Cloud Run honours this.
+RUN useradd --system --uid 1001 --create-home oracle
+USER oracle
+
+ENTRYPOINT ["oracle"]
+CMD ["forecast"]
