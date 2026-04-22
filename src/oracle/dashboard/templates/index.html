@@ -130,7 +130,9 @@
 
   h3 { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .1em; margin: 24px 0 8px; }
 
-  .strip { display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; margin-bottom: 6px; }
+  .strip-row { margin-bottom: 10px; }
+  .strip-row-label { color: var(--muted); font-size: 11px; margin-bottom: 4px; letter-spacing: .04em; }
+  .strip { display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; }
   .cell {
     aspect-ratio: 1; border-radius: 3px; background: var(--panel);
     border: 1px solid transparent;
@@ -138,9 +140,20 @@
   .cell.go    { background: var(--go); }
   .cell.maybe { background: var(--maybe); }
   .cell.no_go { background: var(--no-go); }
-  .cell.empty { background: var(--panel); opacity: .4; }
-  .cell.hit   { outline: 2px solid #ffffff55; }
+  .cell.empty { background: var(--panel); opacity: .35; }
   .strip-labels { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+  .strip-legend {
+    display: flex; flex-wrap: wrap; gap: 10px 16px;
+    color: var(--muted); font-size: 11px; margin-top: 8px;
+  }
+  .strip-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .strip-legend i {
+    width: 10px; height: 10px; border-radius: 2px; display: inline-block;
+  }
+  .strip-legend i.go    { background: var(--go); }
+  .strip-legend i.maybe { background: var(--maybe); }
+  .strip-legend i.no_go { background: var(--no-go); }
+  .strip-legend i.empty { background: var(--panel); border: 1px solid var(--border); }
 
   .advanced-toggle { display: none; }
   .advanced-label {
@@ -298,17 +311,37 @@
 {% endif %}
 
 <h3>{{ t.last_30_days }}</h3>
-<div class="strip">
-  {% for d in history %}
-    {% set cls = d.verdict or 'empty' %}
-    {% set hit = d.peak_avg_knots and d.peak_avg_knots >= 12 %}
-    <div class="cell {{ cls }} {% if hit %}hit{% endif %}"
-         title="{{ d.day }} — {{ d.verdict or 'no data' }}{% if d.peak_avg_knots %} · peak {{ '%.1f'|format(d.peak_avg_knots) }} kt{% endif %}"></div>
-  {% endfor %}
+
+<div class="strip-row">
+  <div class="strip-row-label">{{ t.strip_forecast }}</div>
+  <div class="strip">
+    {% for d in history %}
+      <div class="cell {{ d.verdict or 'empty' }}"
+           title="{{ d.day }} — {{ t.strip_forecast }}: {{ d.verdict or '—' }}"></div>
+    {% endfor %}
+  </div>
 </div>
+
+<div class="strip-row">
+  <div class="strip-row-label">{{ t.strip_actual }}</div>
+  <div class="strip">
+    {% for d in history %}
+      <div class="cell {{ d.actual or 'empty' }}"
+           title="{{ d.day }} — {{ t.strip_actual }}: {% if d.peak_avg_knots %}{{ '%.1f'|format(d.peak_avg_knots) }} kt peak{% else %}—{% endif %}"></div>
+    {% endfor %}
+  </div>
+</div>
+
 <div class="strip-labels">
   <span>{{ history[0].day if history else '' }}</span>
   <span>{{ history[-1].day if history else '' }}</span>
+</div>
+
+<div class="strip-legend">
+  <span><i class="go"></i>{{ t.strip_legend_go }}</span>
+  <span><i class="maybe"></i>{{ t.strip_legend_maybe }}</span>
+  <span><i class="no_go"></i>{{ t.strip_legend_no_go }}</span>
+  <span><i class="empty"></i>{{ t.strip_legend_empty }}</span>
 </div>
 
 {% if current %}
@@ -351,7 +384,6 @@
 {% endif %}
 
 <footer>
-  {{ t.footer_outline }}<br>
   {{ t.footer_urfeld }}
   <a href="https://www.addicted-sports.com/webcam/walchensee/urfeld/" target="_blank" rel="noopener">addicted-sports.com</a>.
   {{ t.footer_dwd }} <a href="https://brightsky.dev/" target="_blank" rel="noopener">Bright Sky</a>.

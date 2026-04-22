@@ -158,6 +158,12 @@ _RULE_DESCRIPTIONS: dict[str, dict[str, str]] = {
 # need a proper refactor of the rules module to emit bilingual reasons.
 _UI: dict[str, dict[str, str]] = {
     "de": {
+        "strip_forecast": "Vorhersage",
+        "strip_actual": "Realität (Urfeld-Peak)",
+        "strip_legend_go": "Wind (≥ 12 kt)",
+        "strip_legend_maybe": "marginal (8–12 kt)",
+        "strip_legend_no_go": "kein Wind (< 8 kt)",
+        "strip_legend_empty": "keine Daten",
         "live_header": "Aktuell an Urfeld",
         "live_now": "jetzt",
         "live_last_hour": "Schnitt letzte Stunde",
@@ -186,7 +192,7 @@ _UI: dict[str, dict[str, str]] = {
         "chat_header_advanced": "Chat-Auszüge (anonymisiert)",
         "chat_footer": "Anonymisiert. Quelle:",
         "windinfo_label": "windinfo.eu Community-Chat",
-        "footer_outline": "Outline = Urfeld-Böe ≥ 12 kt (Session-würdig). Schwellwerte noch Schätzungen auf Basis von Lake-Garda-Analoga — Kalibrierung läuft.",
+        "footer_outline": "Schwellwerte noch Schätzungen auf Basis von Lake-Garda-Analoga — Kalibrierung läuft.",
         "footer_urfeld": "Urfeld-Wind: © Panoramahotel Karwendelblick, via",
         "footer_dwd": "DWD-Synoptik via",
         "footer_openmeteo": "Druck & Meteorologie via",
@@ -194,6 +200,12 @@ _UI: dict[str, dict[str, str]] = {
         "footer_chat_suffix": "-Chats.",
     },
     "en": {
+        "strip_forecast": "Forecast",
+        "strip_actual": "Actual (Urfeld peak)",
+        "strip_legend_go": "wind (≥ 12 kt)",
+        "strip_legend_maybe": "marginal (8–12 kt)",
+        "strip_legend_no_go": "no wind (< 8 kt)",
+        "strip_legend_empty": "no data",
         "live_header": "Live at Urfeld",
         "live_now": "now",
         "live_last_hour": "last-hour average",
@@ -222,7 +234,7 @@ _UI: dict[str, dict[str, str]] = {
         "chat_header_advanced": "Chat excerpts (anonymised)",
         "chat_footer": "Anonymised. Source:",
         "windinfo_label": "windinfo.eu community chat",
-        "footer_outline": "Outline = Urfeld gust ≥ 12 kt (session-worthy). Thresholds still guesses from Lake Garda analogues — calibration in progress.",
+        "footer_outline": "Thresholds still guesses from Lake Garda analogues — calibration in progress.",
         "footer_urfeld": "Urfeld wind: © Panoramahotel Karwendelblick, via",
         "footer_dwd": "DWD synoptic via",
         "footer_openmeteo": "Pressure & meteorology via",
@@ -396,6 +408,21 @@ def _most_recent(today: date) -> dict | None:
     return None
 
 
+def _actual_verdict(peak_avg_kt: float | None) -> str | None:
+    """Categorise the Urfeld-peak ground truth onto the same go/maybe/no_go scale.
+
+    ≥ 12 kt = session-worthy (go); 8–12 kt = ignited but marginal (maybe);
+    < 8 kt = didn't fire (no_go). None when no ground truth was logged.
+    """
+    if peak_avg_kt is None:
+        return None
+    if peak_avg_kt >= 12:
+        return "go"
+    if peak_avg_kt >= 8:
+        return "maybe"
+    return "no_go"
+
+
 def _history(today: date, lang: str, days: int = 30) -> list[dict]:
     """30-day strip: one entry per day, oldest first."""
     items: list[dict] = []
@@ -411,6 +438,7 @@ def _history(today: date, lang: str, days: int = 30) -> list[dict]:
             "day": _fmt_date(d, lang, "strip"),
             "verdict": record.get("overall") if record else None,
             "peak_avg_knots": peak,
+            "actual": _actual_verdict(peak),
         })
     return items
 
