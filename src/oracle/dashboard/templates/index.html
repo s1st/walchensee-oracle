@@ -48,9 +48,10 @@
   .chat h3 { margin-top: 0; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
   .chat-msg { padding: 8px 0; border-bottom: 1px solid var(--border); }
   .chat-msg:last-child { border-bottom: none; }
-  .chat-msg .who { font-weight: 600; font-size: 13px; }
-  .chat-msg .when { color: var(--muted); font-size: 12px; margin-left: 8px; }
+  .chat-msg .when { color: var(--muted); font-size: 12px; }
   .chat-msg .text { margin: 4px 0 0; }
+  .chat-footer { color: var(--muted); font-size: 11px; margin: 12px 0 0; }
+  .chat-footer a { color: var(--muted); }
 
   .strip { display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; margin-bottom: 8px; }
   .cell {
@@ -101,11 +102,11 @@
     <h3>windinfo.eu — recent mentions</h3>
     {% for m in current.chat_messages[-5:] %}
       <div class="chat-msg">
-        <span class="who">{{ m.author }}</span>
         <span class="when">{{ m.posted_at[:16]|replace('T', ' ') }}</span>
         <p class="text">{{ m.text }}</p>
       </div>
     {% endfor %}
+    <p class="chat-footer">Anonymised. Source: <a href="https://windinfo.eu/wind-wetter-chat/" target="_blank" rel="noopener">windinfo.eu community chat</a>.</p>
   </div>
   {% endif %}
 {% else %}

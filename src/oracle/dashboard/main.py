@@ -9,6 +9,7 @@ Reads per-day records from the same store the scheduled job writes
 """
 from __future__ import annotations
 
+import re
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -18,6 +19,11 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from oracle.logger import default_store
+
+# @handle tags embedded in message bodies also identify authors — strip those
+# so the public HTML never ships a windinfo.eu username. Match Unicode word
+# chars so German-style names with umlauts stay intact in the final text.
+_HANDLE_RE = re.compile(r"@[\w\-]+", re.UNICODE)
 
 app = FastAPI(title="Walchi Oracle")
 
@@ -72,10 +78,29 @@ def healthz() -> dict:
     return {"ok": True}
 
 
+def _public_view(record: dict | None) -> dict | None:
+    """Strip personal data (chat authors, channel names) before rendering.
+
+    Raw logs in GCS keep the full fields for calibration — only this
+    projection is what ends up in HTML served at the public custom domain.
+    """
+    if record is None:
+        return None
+    projection = dict(record)
+    projection["chat_messages"] = [
+        {
+            "posted_at": m.get("posted_at"),
+            "text": _HANDLE_RE.sub("@…", m.get("text") or ""),
+        }
+        for m in record.get("chat_messages", [])
+    ]
+    return projection
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     today = date.today()
-    current = _most_recent(today)
+    current = _public_view(_most_recent(today))
     return templates.TemplateResponse(
         request=request,
         name="index.html",

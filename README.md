@@ -8,15 +8,36 @@ readings to fill the gap.
 
 ## Data pillars
 
-1. **Oracle Chat** — scrapes windinfo.eu live chat for insider tips.
+1. **Oracle Chat** — authenticated read-only polling of the windinfo.eu
+   Wind-Wetter-Chat (WordPress Wise Chat Pro) for messages mentioning
+   Walchensee spots.
 2. **Pressure Gradient** — real-time Munich − Innsbruck hPa delta (Alpenpumpe)
    and Bolzano − Innsbruck delta (Föhn detection).
-3. **Meteorological Conditions** — overnight cooling, forecasted solar
-   radiation, and synoptic wind aloft.
-4. **Live Measurements** — wind speeds from Urfeld and the nearest DWD station.
+3. **Meteorological Conditions** — overnight cooling, morning solar radiation,
+   synoptic wind aloft, dew-point spread, boundary-layer height, soil
+   moisture + recent precipitation.
+4. **Live Measurements** — shore wind from the Addicted-Sports anemometer at
+   Urfeld + the nearest DWD synoptic station (via Bright Sky).
 
-Six heuristic rules (synoptic override, Föhn suppression, hPa threshold, …)
-turn raw pillar data into a GO / MAYBE / NO_GO forecast verdict.
+Nine heuristic rules (synoptic override, Föhn suppression, hPa threshold,
+overnight cooling, solar radiation, dew-point spread, boundary-layer height,
+post-rain moisture, thermal ignition) turn raw pillar data into a
+GO / MAYBE / NO_GO forecast verdict.
+
+## Public dashboard
+
+Deployed at **https://walchensee.simon-stieber.de** (Cloud Run + custom
+domain via Cloudflare DNS). Shows today's verdict, the rule breakdown, a
+30-day strip of verdict vs. actual Urfeld peak wind, and an anonymised
+excerpt of recent Walchensee-mentioning chat messages.
+
+**Privacy note on chat:** the raw log captured by the scheduled job contains
+windinfo.eu usernames (used privately for calibration analysis of who tends
+to call conditions correctly). The public dashboard strips all author fields
+and redacts `@handle` mentions from message bodies so no windinfo identities
+surface on the open web. The windinfo.eu operators were informed of the
+polling before the dashboard went public. External polling is twice daily
+(08:00 and 21:00 CET) to stay comfortably below any reasonable rate limit.
 
 ## Documentation
 
