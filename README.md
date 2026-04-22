@@ -1,18 +1,31 @@
 # Walchi Thermic Oracle
 
-A proactive forecasting system for thermal wind conditions at Lake Walchensee (Bavaria).
-Combines local expert chat, pressure gradients, meteorological data, and live sensor
-readings to outperform standard weather models for this notoriously tricky spot.
+A proactive forecasting system for thermal wind conditions at Lake Walchensee
+(Bavaria) — one of Germany's premier windsurfing lakes. Standard forecast
+models (GFS, ECMWF) don't resolve the Walchensee thermal; this tool combines
+local expert chat, pressure gradients, meteorological data, and live sensor
+readings to fill the gap.
 
 ## Data pillars
 
 1. **Oracle Chat** — scrapes windinfo.eu live chat for insider tips.
-2. **Pressure Gradient** — real-time Munich − Innsbruck hPa delta.
-3. **Meteorological Conditions** — overnight cooling + forecasted solar radiation.
-4. **Live Measurements** — wind speeds from Urfeld, Galerie, Sachenbach.
+2. **Pressure Gradient** — real-time Munich − Innsbruck hPa delta (Alpenpumpe)
+   and Bolzano − Innsbruck delta (Föhn detection).
+3. **Meteorological Conditions** — overnight cooling, forecasted solar
+   radiation, and synoptic wind aloft.
+4. **Live Measurements** — wind speeds from Urfeld and the nearest DWD station.
 
-A knowledge base of heuristics (synoptic override, hPa threshold, …) turns raw
-pillar data into a forecast verdict.
+Six heuristic rules (synoptic override, Föhn suppression, hPa threshold, …)
+turn raw pillar data into a GO / MAYBE / NO_GO forecast verdict.
+
+## Documentation
+
+- **[docs/thermal-model.md](docs/thermal-model.md)** — domain knowledge:
+  how the thermal works, triggering conditions, spatial progression,
+  seasonal patterns, pressure pairs, and threshold calibration status.
+- **[docs/future-factors.md](docs/future-factors.md)** — additional forecast
+  factors not yet implemented (dew point, boundary layer height, soil
+  moisture, lake temperature, etc.) with prioritization.
 
 ## Setup
 
