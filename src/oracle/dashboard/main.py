@@ -394,6 +394,7 @@ async def _fetch_urfeld_live() -> dict:
     else:
         trend = "flat"
 
+    chart_samples = list(reversed(chart_window))
     _urfeld_live = {
         "available": True,
         "latest_avg_kt": round(latest.avg_knots, 1),
@@ -402,18 +403,38 @@ async def _fetch_urfeld_live() -> dict:
         "last_hour_avg": round(last_hour_avg, 1),
         "prev_hour_avg": round(prev_hour_avg, 1) if prev_hour_avg is not None else None,
         "trend": trend,
-        "chart_svg": _wind_chart_svg(list(reversed(chart_window))),
+        "chart_svg": {
+            lang: _wind_chart_svg(chart_samples, lang=lang) for lang in _UI
+        },
     }
     _urfeld_live_at = now
     return _urfeld_live
 
 
-def _wind_chart_svg(samples: list[UrfeldSample], width: int = 720, height: int = 120) -> str:
+# Tooltip format per language. Kept compact so the browser's native tooltip
+# stays one line even on narrow viewports.
+_CHART_TOOLTIP_FMT = {
+    "de": "{t} · Ø {avg:.1f} kt · Böe {gust:.1f} kt",
+    "en": "{t} · avg {avg:.1f} kt · gust {gust:.1f} kt",
+}
+_CHART_ARIA = {
+    "de": "Urfeld-Wind, letzte 6 Stunden",
+    "en": "Urfeld wind, last 6 hours",
+}
+
+
+def _wind_chart_svg(
+    samples: list[UrfeldSample],
+    width: int = 720,
+    height: int = 120,
+    lang: str = "en",
+) -> str:
     """Render the last-N-hours wind curve as inline SVG (no JS / chart lib).
 
     Expects `samples` ordered oldest → newest. Returns "" when there's nothing
     meaningful to draw (< 2 samples). Y-axis scales so calm days still show
-    the 8 / 12 kt reference lines legibly.
+    the 8 / 12 kt reference lines legibly. Each sample also gets a transparent
+    hover disc with a native `<title>` tooltip.
     """
     if len(samples) < 2:
         return ""
@@ -445,10 +466,26 @@ def _wind_chart_svg(samples: list[UrfeldSample], width: int = 720, height: int =
     y8, y12 = y(8), y(12)
     start_label = samples[0].measured_at.strftime("%H:%M")
     end_label = samples[-1].measured_at.strftime("%H:%M")
+    tip_fmt = _CHART_TOOLTIP_FMT.get(lang, _CHART_TOOLTIP_FMT["en"])
+    aria = _CHART_ARIA.get(lang, _CHART_ARIA["en"])
+
+    # Hover discs over each sample. Transparent fill + a <title> child = native
+    # browser tooltip on hover, no JS. Small visible dot on the avg line too so
+    # there's an obvious hit target.
+    hover_layer = []
+    for s, (px, py) in zip(samples, avg_pts):
+        label = tip_fmt.format(
+            t=s.measured_at.strftime("%H:%M"), avg=s.avg_knots, gust=s.gust_knots,
+        )
+        hover_layer.append(
+            f'<circle cx="{px:.1f}" cy="{py:.1f}" r="2" fill="#c9d1d9" />'
+            f'<circle cx="{px:.1f}" cy="{py:.1f}" r="10" fill="transparent" '
+            f'pointer-events="all"><title>{_svg_escape(label)}</title></circle>'
+        )
 
     return (
         f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
-        f'class="wind-chart" role="img" aria-label="Urfeld wind, last 6 hours">'
+        f'class="wind-chart" role="img" aria-label="{_svg_escape(aria)}">'
         f'<polygon points="{pts_str(gust_poly)}" fill="#8b949e" fill-opacity="0.18" />'
         f'<line x1="{pad_l}" y1="{y8:.1f}" x2="{width - pad_r}" y2="{y8:.1f}" '
         f'stroke="#d29922" stroke-opacity="0.55" stroke-dasharray="3 4" stroke-width="1" />'
@@ -463,7 +500,15 @@ def _wind_chart_svg(samples: list[UrfeldSample], width: int = 720, height: int =
         f'<text x="{pad_l}" y="{height - 3}" fill="#8b949e" font-size="10">{start_label}</text>'
         f'<text x="{width - pad_r}" y="{height - 3}" fill="#8b949e" font-size="10" '
         f'text-anchor="end">{end_label}</text>'
+        f'{"".join(hover_layer)}'
         f'</svg>'
+    )
+
+
+def _svg_escape(text: str) -> str:
+    return (
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace('"', "&quot;")
     )
 
 

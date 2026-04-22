@@ -295,9 +295,9 @@
     {% endif %}
   </div>
 </div>
-{% if live.available and live.chart_svg %}
+{% if live.available and live.chart_svg and live.chart_svg[lang] %}
 <div class="wind-chart-row" aria-label="{{ t.chart_aria }}">
-  {{ live.chart_svg|safe }}
+  {{ live.chart_svg[lang]|safe }}
   <div class="wind-chart-legend">
     <span><i class="avg"></i>{{ t.chart_legend_avg }}</span>
     <span><i class="gust"></i>{{ t.chart_legend_gust }}</span>
