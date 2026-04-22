@@ -262,7 +262,7 @@
     <a href="?day={{ d.iso }}{% if lang %}&lang={{ lang }}{% endif %}"
        class="day-tab {% if d.selected %}selected{% endif %} {% if d.verdict %}dot-{{ d.verdict }}{% endif %}">
       <span class="day-tab-label">{{ d.label }}</span>
-      <span class="day-tab-date">{{ d.iso[5:] }}</span>
+      <span class="day-tab-date">{{ d.short_date }}</span>
     </a>
   {% endfor %}
 </nav>
@@ -274,7 +274,7 @@
       {% if v == 'go' %}{{ t.verdict_go }}{% elif v == 'maybe' %}{{ t.verdict_maybe }}{% else %}{{ t.verdict_no_go }}{% endif %}
     </h2>
     <p class="verdict-summary">{{ summary }}</p>
-    <div class="verdict-meta">{{ t.for_day }} {{ current.day }}.</div>
+    <div class="verdict-meta">{{ t.for_day }} {{ selected_date_label }}.</div>
   </section>
 
   {% if sentiment %}

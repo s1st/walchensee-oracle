@@ -237,6 +237,32 @@ _HORIZON_LABELS = {
     "en": ["Today", "Tomorrow", "Day after"],
 }
 
+_DE_WEEKDAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+_EN_WEEKDAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def _fmt_date(d: date | str, lang: str, style: str) -> str:
+    """Locale-aware date formatter. Styles:
+      short — "23.4." (de) / "Apr 23" (en)          — day-tab date, etc.
+      full  — "23.04.2026" (de) / "Apr 23, 2026" (en) — verdict meta
+      strip — "Di 24.04." (de) / "Tue Apr 24" (en)    — 30-day strip labels
+    """
+    if isinstance(d, str):
+        d = date.fromisoformat(d)
+    if style == "short":
+        return f"{d.day}.{d.month}." if lang == "de" else f"{d.strftime('%b')} {d.day}"
+    if style == "full":
+        if lang == "de":
+            return f"{d.day:02d}.{d.month:02d}.{d.year}"
+        return f"{d.strftime('%b')} {d.day}, {d.year}"
+    if style == "strip":
+        names = _DE_WEEKDAY_SHORT if lang == "de" else _EN_WEEKDAY_SHORT
+        wd = names[d.weekday()]
+        if lang == "de":
+            return f"{wd} {d.day:02d}.{d.month:02d}."
+        return f"{wd} {d.strftime('%b')} {d.day}"
+    return d.isoformat()
+
 
 def _horizon_days(today: date, lang: str, selected_iso: str) -> list[dict]:
     """Return today + next 2 days with label, verdict (if logged), selection flag."""
@@ -248,6 +274,7 @@ def _horizon_days(today: date, lang: str, selected_iso: str) -> list[dict]:
         out.append({
             "iso": d.isoformat(),
             "label": label,
+            "short_date": _fmt_date(d, lang, "short"),
             "verdict": record.get("overall") if record else None,
             "selected": d.isoformat() == selected_iso,
         })
@@ -369,7 +396,7 @@ def _most_recent(today: date) -> dict | None:
     return None
 
 
-def _history(today: date, days: int = 30) -> list[dict]:
+def _history(today: date, lang: str, days: int = 30) -> list[dict]:
     """30-day strip: one entry per day, oldest first."""
     items: list[dict] = []
     for i in range(days - 1, -1, -1):
@@ -381,7 +408,7 @@ def _history(today: date, days: int = 30) -> list[dict]:
             peak = machine.get("peak_avg_knots")
         items.append({
             "iso": d.isoformat(),
-            "day": d.strftime("%a %d.%m"),
+            "day": _fmt_date(d, lang, "strip"),
             "verdict": record.get("overall") if record else None,
             "peak_avg_knots": peak,
         })
@@ -499,7 +526,8 @@ async def index(request: Request) -> Response:
             "current": _public_view(raw, messages=day_messages),
             "summary": summary,
             "sentiment": sentiment,
-            "history": _history(today),
+            "history": _history(today, lang),
+            "selected_date_label": _fmt_date(selected_day, lang, "full"),
             "today_iso": today.isoformat(),
             "selected_iso": selected_day.isoformat(),
             "horizon": horizon,
