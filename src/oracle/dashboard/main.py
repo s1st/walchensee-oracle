@@ -40,6 +40,65 @@ _NEG_KW = (
     "kommt nicht", "bleibt aus", "absagen",
 )
 
+# German weekday names → isoweekday index (Monday=0 … Sunday=6).
+_DE_WEEKDAYS = {
+    "montag": 0, "dienstag": 1, "mittwoch": 2, "donnerstag": 3,
+    "freitag": 4, "samstag": 5, "sonntag": 6,
+}
+_MORGEN_RE = re.compile(r"\bmorgen\b", re.IGNORECASE)
+_UEBERMORGEN_RE = re.compile(r"\büber[- ]?morgen\b", re.IGNORECASE)
+_HEUTE_RE = re.compile(r"\bheute\b", re.IGNORECASE)
+
+
+def _infer_day_reference(message: dict) -> date | None:
+    """If the message body clearly references one day, return that date.
+
+    Resolution order: übermorgen → morgen → heute → next-upcoming weekday
+    by name (from the posting date). Returns None when the message has no
+    unambiguous day reference.
+    """
+    try:
+        posted = datetime.fromisoformat(message["posted_at"]).date()
+    except (KeyError, ValueError):
+        return None
+    text = message.get("text") or ""
+
+    if _UEBERMORGEN_RE.search(text):
+        return posted + timedelta(days=2)
+    if _MORGEN_RE.search(text) and not _UEBERMORGEN_RE.search(text):
+        return posted + timedelta(days=1)
+    if _HEUTE_RE.search(text):
+        return posted
+
+    low = text.lower()
+    for name, idx in _DE_WEEKDAYS.items():
+        if re.search(rf"\b{name}\b", low):
+            days_ahead = (idx - posted.weekday()) % 7
+            if days_ahead == 0:
+                days_ahead = 7  # next-occurrence semantics, never the posting day itself
+            return posted + timedelta(days=days_ahead)
+
+    return None
+
+
+def _messages_for_day(
+    messages: list[dict], target_day: date, today: date
+) -> list[dict]:
+    """Filter chat messages down to those talking about `target_day`.
+
+    Messages without a clear day reference fall into "today" as the default —
+    they're most likely general current-conditions chatter.
+    """
+    out: list[dict] = []
+    for m in messages:
+        ref = _infer_day_reference(m)
+        if ref is None:
+            if target_day == today:
+                out.append(m)
+        elif ref == target_day:
+            out.append(m)
+    return out
+
 # Rule descriptions — one short sentence each, keyed by rule and language.
 # Shown as `?` hover tooltips in the Advanced panel.
 _RULE_DESCRIPTIONS: dict[str, dict[str, str]] = {
@@ -358,9 +417,8 @@ def _summary_line(record: dict, lang: str) -> str:
     return "Mixed signals." if lang == "en" else "Gemischte Signale."
 
 
-def _chat_sentiment(record: dict) -> dict:
-    """Derive a go/no_go/quiet/mixed signal from the raw chat messages."""
-    messages = record.get("chat_messages") or []
+def _chat_sentiment(messages: list[dict]) -> dict:
+    """Derive a go/no_go/quiet/mixed signal from a list of chat messages."""
     pos = neg = 0
     for m in messages:
         text = (m.get("text") or "").lower()
@@ -378,21 +436,24 @@ def _chat_sentiment(record: dict) -> dict:
     return {"code": "mixed", "label": "gemischt", "arrow": "↕", "count": len(messages)}
 
 
-def _public_view(record: dict | None) -> dict | None:
+def _public_view(record: dict | None, messages: list[dict] | None = None) -> dict | None:
     """Strip personal data (chat authors, channel names) before rendering.
 
     Raw logs in GCS keep the full fields for calibration — only this
     projection is what ends up in HTML served at the public custom domain.
+    `messages` overrides the record's chat_messages (used when filtering by
+    day-reference); if not passed, falls back to the record's full list.
     """
     if record is None:
         return None
     projection = dict(record)
+    source = messages if messages is not None else record.get("chat_messages", [])
     projection["chat_messages"] = [
         {
             "posted_at": m.get("posted_at"),
             "text": _HANDLE_RE.sub("@…", m.get("text") or ""),
         }
-        for m in record.get("chat_messages", [])
+        for m in source
     ]
     return projection
 
@@ -420,7 +481,11 @@ async def index(request: Request) -> Response:
         raw = _most_recent(today)
 
     summary = _summary_line(raw, lang) if raw else ""
-    sentiment = _chat_sentiment(raw) if raw else None
+    # Filter chat messages by day-reference heuristic so the badge + Advanced
+    # panel both reflect what the community said ABOUT the selected day.
+    all_messages = (raw or {}).get("chat_messages", []) or []
+    day_messages = _messages_for_day(all_messages, selected_day, today)
+    sentiment = _chat_sentiment(day_messages) if raw else None
     tooltips = {name: _rule_tooltip(name, lang) for name in _RULE_DESCRIPTIONS}
     horizon = _horizon_days(today, lang, selected_day.isoformat())
     # Only show live wind on the "today" tab — yesterday/tomorrow views
@@ -431,7 +496,7 @@ async def index(request: Request) -> Response:
         request=request,
         name="index.html",
         context={
-            "current": _public_view(raw),
+            "current": _public_view(raw, messages=day_messages),
             "summary": summary,
             "sentiment": sentiment,
             "history": _history(today),
