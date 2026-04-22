@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de">
+<html lang="{{ lang }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -22,9 +22,23 @@
     margin: 0; padding: 24px;
     max-width: 720px; margin-inline: auto;
     line-height: 1.5;
+    position: relative;
   }
   h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; }
   .lead { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
+
+  .lang-toggle {
+    position: absolute; top: 24px; right: 24px;
+    display: flex; gap: 4px;
+  }
+  .lang-toggle a {
+    font-size: 18px; text-decoration: none;
+    padding: 2px 6px; border-radius: 4px;
+    filter: grayscale(1); opacity: .45;
+    transition: filter .1s, opacity .1s;
+  }
+  .lang-toggle a:hover { filter: none; opacity: 1; }
+  .lang-toggle a.active { filter: none; opacity: 1; }
 
   .verdict-card {
     padding: 28px 24px; border-radius: 10px; margin-bottom: 20px;
@@ -90,17 +104,47 @@
   .advanced-toggle:checked ~ .advanced-panel { display: block; }
 
   table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
-  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { font-weight: 500; color: var(--muted); }
   td.signal { font-weight: 600; }
   td.signal.go    { color: var(--go); }
   td.signal.maybe { color: var(--maybe); }
   td.signal.no_go { color: var(--no-go); }
 
+  .help {
+    display: inline-block; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--border); color: var(--muted);
+    font-size: 10px; font-weight: 600; text-align: center; line-height: 14px;
+    margin-left: 6px; cursor: help; position: relative;
+    font-family: system-ui, sans-serif;
+  }
+  .help:hover, .help:focus {
+    background: var(--text); color: var(--panel); outline: none;
+  }
+  .help::after {
+    content: attr(data-tooltip);
+    position: absolute; bottom: calc(100% + 8px); left: 50%;
+    transform: translateX(-50%);
+    width: 280px; max-width: 85vw;
+    background: #000; color: var(--text);
+    padding: 8px 12px; border-radius: 6px;
+    font-size: 12px; font-weight: 400; line-height: 1.5;
+    text-align: left;
+    white-space: normal;
+    box-shadow: 0 4px 12px rgba(0,0,0,.5);
+    opacity: 0; visibility: hidden;
+    transition: opacity .15s;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .help:hover::after, .help:focus::after { opacity: 1; visibility: visible; }
+
   .chat-msg { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .chat-msg:last-child { border-bottom: none; }
   .chat-msg .when { color: var(--muted); font-size: 11px; }
   .chat-msg .text { margin: 2px 0 0; }
+  .chat-footer { color: var(--muted); font-size: 11px; margin: 12px 0 0; }
+  .chat-footer a { color: var(--muted); }
 
   footer { color: var(--muted); font-size: 11px; margin-top: 32px; line-height: 1.6; }
   footer a { color: var(--muted); }
@@ -108,36 +152,45 @@
 </head>
 <body>
 
+<nav class="lang-toggle">
+  <a href="?lang=de" class="{% if lang == 'de' %}active{% endif %}" aria-label="Deutsch">🇩🇪</a>
+  <a href="?lang=en" class="{% if lang == 'en' %}active{% endif %}" aria-label="English">🇬🇧</a>
+</nav>
+
 <h1>Walchi Oracle</h1>
-<p class="lead">Geht heute Thermik am Walchensee?</p>
+<p class="lead">{{ t.lead }}</p>
 
 {% if current %}
   {% set v = current.overall %}
   <section class="verdict-card {{ v }}">
     <h2 class="verdict-word {{ v }}">
-      {% if v == 'go' %}GEHT{% elif v == 'maybe' %}GRENZWERTIG{% else %}NIX{% endif %}
+      {% if v == 'go' %}{{ t.verdict_go }}{% elif v == 'maybe' %}{{ t.verdict_maybe }}{% else %}{{ t.verdict_no_go }}{% endif %}
     </h2>
     <p class="verdict-summary">{{ summary }}</p>
-    <div class="verdict-meta">Für {{ current.day }}.</div>
+    <div class="verdict-meta">{{ t.for_day }} {{ current.day }}.</div>
   </section>
 
   {% if sentiment %}
   <div class="badges">
-    <span class="badge {{ sentiment.code }}" title="Aus anonymisierten Walchensee-Erwähnungen der letzten Tage.">
+    <span class="badge {{ sentiment.code }}" title="{{ t.chat_footer }} windinfo.eu">
       <span class="arrow">{{ sentiment.arrow }}</span>
-      Community: {{ sentiment.label }}
+      {{ t.community_prefix }}:
+      {% if sentiment.code == 'positive' %}{{ t.sentiment_positive }}
+      {%- elif sentiment.code == 'negative' %}{{ t.sentiment_negative }}
+      {%- elif sentiment.code == 'mixed' %}{{ t.sentiment_mixed }}
+      {%- else %}{{ t.sentiment_quiet }}{% endif %}
       {% if sentiment.count %}<span style="opacity: .7; margin-left: 4px;">({{ sentiment.count }})</span>{% endif %}
     </span>
   </div>
   {% endif %}
 {% else %}
   <section class="verdict-card">
-    <h2 class="verdict-word">—</h2>
-    <p class="verdict-summary">Keine Daten — warte auf den nächsten morgendlichen Forecast (08:00 MEZ).</p>
+    <h2 class="verdict-word">{{ t.no_data_headline }}</h2>
+    <p class="verdict-summary">{{ t.no_data }}</p>
   </section>
 {% endif %}
 
-<h3>Letzte 30 Tage</h3>
+<h3>{{ t.last_30_days }}</h3>
 <div class="strip">
   {% for d in history %}
     {% set cls = d.verdict or 'empty' %}
@@ -153,15 +206,21 @@
 
 {% if current %}
 <input type="checkbox" id="advanced" class="advanced-toggle">
-<label for="advanced" class="advanced-label">Advanced — alle 9 Regeln &amp; Chat-Auszüge</label>
+<label for="advanced" class="advanced-label">{{ t.advanced_label }}</label>
 
 <div class="advanced-panel">
   <table>
-    <thead><tr><th>Regel</th><th>Signal</th><th>Begründung</th></tr></thead>
+    <thead><tr><th>{{ t.col_rule }}</th><th>{{ t.col_signal }}</th><th>{{ t.col_reason }}</th></tr></thead>
     <tbody>
       {% for rule in current.verdicts %}
       <tr>
-        <td>{{ rule.rule }}</td>
+        <td>
+          {{ rule.rule }}{% if rule_descriptions.get(rule.rule) %}<span
+              class="help"
+              tabindex="0"
+              data-tooltip="{{ rule_descriptions[rule.rule] }}"
+              title="{{ rule_descriptions[rule.rule] }}">?</span>{% endif %}
+        </td>
         <td class="signal {{ rule.signal }}">{{ rule.signal }}</td>
         <td>{{ rule.reason }}</td>
       </tr>
@@ -170,25 +229,28 @@
   </table>
 
   {% if current.chat_messages %}
-    <h3 style="margin-top: 20px;">Chat-Auszüge (anonymisiert)</h3>
+    <h3 style="margin-top: 20px;">{{ t.chat_header_advanced }}</h3>
     {% for m in current.chat_messages[-5:] %}
       <div class="chat-msg">
         <span class="when">{{ m.posted_at[:16]|replace('T', ' ') }}</span>
         <p class="text">{{ m.text }}</p>
       </div>
     {% endfor %}
+    <p class="chat-footer">{{ t.chat_footer }}
+      <a href="https://windinfo.eu/wind-wetter-chat/" target="_blank" rel="noopener">{{ t.windinfo_label }}</a>.
+    </p>
   {% endif %}
 </div>
 {% endif %}
 
 <footer>
-  Outline = Urfeld-Böe ≥ 12 kt (Session-würdig). Schwellwerte noch Schätzungen auf Basis von Lake-Garda-Analoga — Kalibrierung läuft.<br>
-  Urfeld-Wind: © Panoramahotel Karwendelblick, via
+  {{ t.footer_outline }}<br>
+  {{ t.footer_urfeld }}
   <a href="https://www.addicted-sports.com/webcam/walchensee/urfeld/" target="_blank" rel="noopener">addicted-sports.com</a>.
-  DWD-Synoptik via <a href="https://brightsky.dev/" target="_blank" rel="noopener">Bright Sky</a>.
-  Druck &amp; Meteorologie via <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.
-  Community-Signal aus anonymisierten Auszügen des
-  <a href="https://windinfo.eu/wind-wetter-chat/" target="_blank" rel="noopener">windinfo.eu</a>-Chats.
+  {{ t.footer_dwd }} <a href="https://brightsky.dev/" target="_blank" rel="noopener">Bright Sky</a>.
+  {{ t.footer_openmeteo }} <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.
+  {{ t.footer_chat }}
+  <a href="https://windinfo.eu/wind-wetter-chat/" target="_blank" rel="noopener">windinfo.eu</a>{{ t.footer_chat_suffix }}
 </footer>
 
 </body>
