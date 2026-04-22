@@ -165,6 +165,11 @@ def _meteo_dict(result: Forecast) -> dict | None:
         "overnight_cloud_cover_pct": m.overnight_cloud_cover_pct,
         "morning_solar_radiation_wm2": m.morning_solar_radiation_wm2,
         "synoptic_wind_knots": m.synoptic_wind_knots,
+        "min_dew_point_spread_c": m.min_dew_point_spread_c,
+        "max_boundary_layer_height_m": m.max_boundary_layer_height_m,
+        "soil_moisture_m3m3": m.soil_moisture_m3m3,
+        "rained_yesterday": m.rained_yesterday,
+        "yesterday_precipitation_mm": m.yesterday_precipitation_mm,
     }
 
 

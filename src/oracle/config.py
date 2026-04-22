@@ -72,6 +72,12 @@ SYNOPTIC_OVERRIDE_KNOTS = 15.0   # ≥ 3 Bft base wind deforms the thermal cell
 IGNITION_WIND_KNOTS = 8.0        # shore reading that signals ignition
 MAX_OVERNIGHT_CLOUD_COVER_PCT = 30.0  # 22:00→06:00 average; above this, weak inversion
 MIN_MORNING_SOLAR_WM2 = 600.0    # max hourly shortwave radiation 09:00–13:00
+MIN_DEW_POINT_SPREAD_C = 5.0     # min(T − Td) in morning; below = moisture-suppressed
+COMFORTABLE_DEW_POINT_SPREAD_C = 8.0  # above this = confidently dry air
+MIN_BOUNDARY_LAYER_HEIGHT_M = 600.0   # max BLH in morning; below = capped thermal
+GOOD_BOUNDARY_LAYER_HEIGHT_M = 1000.0 # above this = deep mixing, strong thermal potential
+WET_SOIL_MOISTURE_M3M3 = 0.35    # soil_moisture_0_to_1cm above this = ground still wet
+RAINED_YESTERDAY_MM = 2.0        # threshold for treating target-1 as a wet day
 
 # Classic Urfeld ignition window 10:30–11:30; propagation done by ~15:00.
 IGNITION_WINDOW_LOCAL: tuple[time, time] = (time(10, 30), time(15, 0))

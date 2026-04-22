@@ -38,6 +38,9 @@ async def run_forecast(day: date) -> Forecast:
         rules.foehn_override(snapshot),
         rules.overnight_cooling(meteo_snap),
         rules.solar_radiation(meteo_snap),
+        rules.dew_point_spread(meteo_snap),
+        rules.boundary_layer_height(meteo_snap),
+        rules.post_rain_moisture(meteo_snap),
         rules.synoptic_override(meteo_snap),
         rules.thermal_ignition(winds),
     ]

@@ -69,6 +69,68 @@ def solar_radiation(meteo: MeteoSnapshot) -> Verdict:
     )
 
 
+def dew_point_spread(meteo: MeteoSnapshot) -> Verdict:
+    s = meteo.min_dew_point_spread_c
+    if s < config.MIN_DEW_POINT_SPREAD_C:
+        return Verdict(
+            "dew_point_spread",
+            Signal.NO_GO,
+            f"dew-point spread {s:.1f}°C — air too moist, solar energy lost to evaporation",
+        )
+    if s < config.COMFORTABLE_DEW_POINT_SPREAD_C:
+        return Verdict(
+            "dew_point_spread",
+            Signal.MAYBE,
+            f"dew-point spread {s:.1f}°C — marginal",
+        )
+    return Verdict(
+        "dew_point_spread",
+        Signal.GO,
+        f"dew-point spread {s:.1f}°C — dry air",
+    )
+
+
+def boundary_layer_height(meteo: MeteoSnapshot) -> Verdict:
+    h = meteo.max_boundary_layer_height_m
+    if h < config.MIN_BOUNDARY_LAYER_HEIGHT_M:
+        return Verdict(
+            "boundary_layer_height",
+            Signal.NO_GO,
+            f"boundary layer capped at {h:.0f} m — thermal can't develop depth",
+        )
+    if h < config.GOOD_BOUNDARY_LAYER_HEIGHT_M:
+        return Verdict(
+            "boundary_layer_height",
+            Signal.MAYBE,
+            f"boundary layer {h:.0f} m — shallow mixing",
+        )
+    return Verdict(
+        "boundary_layer_height",
+        Signal.GO,
+        f"boundary layer {h:.0f} m — deep mixing",
+    )
+
+
+def post_rain_moisture(meteo: MeteoSnapshot) -> Verdict:
+    if meteo.rained_yesterday:
+        return Verdict(
+            "post_rain_moisture",
+            Signal.NO_GO,
+            f"{meteo.yesterday_precipitation_mm:.1f} mm rain yesterday — solar energy lost to evaporation",
+        )
+    if meteo.soil_moisture_m3m3 > config.WET_SOIL_MOISTURE_M3M3:
+        return Verdict(
+            "post_rain_moisture",
+            Signal.NO_GO,
+            f"soil moisture {meteo.soil_moisture_m3m3:.2f} m³/m³ — ground still wet",
+        )
+    return Verdict(
+        "post_rain_moisture",
+        Signal.GO,
+        f"dry ground (soil moisture {meteo.soil_moisture_m3m3:.2f} m³/m³)",
+    )
+
+
 def synoptic_override(meteo: MeteoSnapshot) -> Verdict:
     if meteo.synoptic_wind_knots >= config.SYNOPTIC_OVERRIDE_KNOTS:
         return Verdict(

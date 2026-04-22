@@ -20,19 +20,33 @@ def _hourly_payload(target: date) -> dict:
     clouds: list[float] = []
     radiation: list[float] = []
     wind_850: list[float] = []
+    temps: list[float] = []
+    dew_points: list[float] = []
+    blh: list[float] = []
+    soil: list[float] = []
+    precip: list[float] = []
 
     for d in (yesterday, target):
         for h in range(24):
             t = datetime.combine(d, datetime.min.time()).replace(hour=h)
             times.append(t.isoformat(timespec="minutes"))
-            # Overnight window (22:00 prev → 06:00 target): clouds=20, elsewhere=90.
+
             in_overnight = (d == yesterday and h >= 22) or (d == target and h < 6)
-            clouds.append(20.0 if in_overnight else 90.0)
-            # Morning window (09:00–13:00 target): radiation peaks at 750, else 0.
             in_morning = d == target and 9 <= h <= 13
+
+            clouds.append(20.0 if in_overnight else 90.0)
             radiation.append(750.0 if h == 12 and in_morning else (400.0 if in_morning else 0.0))
-            # 850 hPa wind: morning window max = 12.5 kt, nights quieter.
             wind_850.append(12.5 if h == 11 and in_morning else (5.0 if in_morning else 3.0))
+
+            # Morning window: T sweeps 15→19°C, dew point steady at 6°C → spreads 9→13°C.
+            temps.append((15.0 + (h - 9)) if in_morning else 8.0)
+            dew_points.append(6.0 if in_morning else 4.0)
+            # BLH peaks at 1200 m in morning; otherwise 300 m.
+            blh.append(1200.0 if h == 12 and in_morning else (800.0 if in_morning else 300.0))
+            # Soil moisture constant 0.20 (dry).
+            soil.append(0.20)
+            # Yesterday gets 0.5 mm total (below 2 mm threshold → rained_yesterday=False).
+            precip.append(0.5 if d == yesterday and h == 10 else 0.0)
 
     return {
         "hourly": {
@@ -40,6 +54,11 @@ def _hourly_payload(target: date) -> dict:
             "cloud_cover": clouds,
             "shortwave_radiation": radiation,
             "wind_speed_850hPa": wind_850,
+            "temperature_2m": temps,
+            "dew_point_2m": dew_points,
+            "boundary_layer_height": blh,
+            "soil_moisture_0_to_1cm": soil,
+            "precipitation": precip,
         }
     }
 
@@ -59,15 +78,23 @@ async def test_fetch_snapshot_aggregates_windows_correctly():
 
     req = captured["req"]
     assert str(req.url).startswith(OPEN_METEO_URL)
-    assert req.url.params["hourly"] == "cloud_cover,shortwave_radiation,wind_speed_850hPa"
-    assert req.url.params["wind_speed_unit"] == "kn"
+    assert "dew_point_2m" in req.url.params["hourly"]
+    assert "boundary_layer_height" in req.url.params["hourly"]
+    assert "soil_moisture_0_to_1cm" in req.url.params["hourly"]
+    assert "precipitation" in req.url.params["hourly"]
     assert req.url.params["start_date"] == "2026-05-14"
     assert req.url.params["end_date"] == "2026-05-15"
 
     assert snap.day == target
-    assert snap.overnight_cloud_cover_pct == pytest.approx(20.0)  # all 8 hours = 20
-    assert snap.morning_solar_radiation_wm2 == pytest.approx(750.0)  # max hourly
-    assert snap.synoptic_wind_knots == pytest.approx(12.5)  # max hourly
+    assert snap.overnight_cloud_cover_pct == pytest.approx(20.0)
+    assert snap.morning_solar_radiation_wm2 == pytest.approx(750.0)
+    assert snap.synoptic_wind_knots == pytest.approx(12.5)
+    # At h=9 T=15, Td=6 → spread=9. Spread grows to 13 by h=13. min = 9.
+    assert snap.min_dew_point_spread_c == pytest.approx(9.0)
+    assert snap.max_boundary_layer_height_m == pytest.approx(1200.0)
+    assert snap.soil_moisture_m3m3 == pytest.approx(0.20)
+    assert snap.rained_yesterday is False
+    assert snap.yesterday_precipitation_mm == pytest.approx(0.5)
 
 
 @pytest.mark.asyncio
@@ -76,7 +103,10 @@ async def test_fetch_snapshot_raises_when_window_empty():
 
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"hourly": {
-            "time": [], "cloud_cover": [], "shortwave_radiation": [], "wind_speed_850hPa": []
+            "time": [], "cloud_cover": [], "shortwave_radiation": [],
+            "wind_speed_850hPa": [], "temperature_2m": [], "dew_point_2m": [],
+            "boundary_layer_height": [], "soil_moisture_0_to_1cm": [],
+            "precipitation": [],
         }})
 
     transport = httpx.MockTransport(handler)

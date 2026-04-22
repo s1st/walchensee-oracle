@@ -32,6 +32,11 @@ def _forecast() -> Forecast:
             overnight_cloud_cover_pct=35.0,
             morning_solar_radiation_wm2=832.0,
             synoptic_wind_knots=8.0,
+            min_dew_point_spread_c=9.0,
+            max_boundary_layer_height_m=1200.0,
+            soil_moisture_m3m3=0.22,
+            rained_yesterday=False,
+            yesterday_precipitation_mm=0.0,
         ),
         winds=[WindReading("Urfeld", StationRole.SHORE, 2.1, 4.5, None, now)],
     )
