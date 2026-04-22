@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from oracle.logger import default_store
-from oracle.pillars.measurements import fetch_urfeld_day_curve
+from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
 
 # @handle tags embedded in message bodies also identify authors — strip those
 # so the public HTML never ships a windinfo.eu username. Match Unicode word
@@ -172,6 +172,11 @@ _UI: dict[str, dict[str, str]] = {
         "live_trend_down": "fallend",
         "live_trend_flat": "stabil",
         "live_unavailable": "Urfeld-Sensor gerade nicht erreichbar.",
+        "chart_aria": "Urfeld-Wind, letzte 6 Stunden",
+        "chart_legend_avg": "Mittelwind",
+        "chart_legend_gust": "Böe",
+        "chart_legend_ignition": "Zündung (8 kt)",
+        "chart_legend_session": "Session (12 kt)",
         "webcam_label": "Webcam Urfeld",
         "lead": "Geht heute Thermik am Walchensee?",
         "verdict_go": "GEHT",
@@ -215,6 +220,11 @@ _UI: dict[str, dict[str, str]] = {
         "live_trend_down": "dropping",
         "live_trend_flat": "steady",
         "live_unavailable": "Urfeld sensor not reachable right now.",
+        "chart_aria": "Urfeld wind, last 6 hours",
+        "chart_legend_avg": "avg wind",
+        "chart_legend_gust": "gust",
+        "chart_legend_ignition": "ignition (8 kt)",
+        "chart_legend_session": "session (12 kt)",
         "webcam_label": "Urfeld webcam",
         "lead": "Will the thermal blow at Walchensee today?",
         "verdict_go": "GO",
@@ -332,11 +342,13 @@ _urfeld_live_at: float = 0.0
 
 
 async def _fetch_urfeld_live() -> dict:
-    """Return a snapshot of the latest Urfeld samples: current / 1h avg / trend.
+    """Return a snapshot of the latest Urfeld samples: current / 1h avg / trend
+    plus an inline-SVG chart of the last 6 hours.
 
     Result shape (keys absent on failure):
       {available: True, latest_avg_kt, latest_gust_kt, latest_at,
-       last_hour_avg, prev_hour_avg, trend: "up"|"down"|"flat"}
+       last_hour_avg, prev_hour_avg, trend: "up"|"down"|"flat",
+       chart_svg: "<svg …>" (empty when too few samples)}
     """
     global _urfeld_live, _urfeld_live_at
     now = time.time()
@@ -364,6 +376,10 @@ async def _fetch_urfeld_live() -> dict:
         s for s in samples
         if 3600 < (latest.measured_at - s.measured_at).total_seconds() <= 7200
     ]
+    chart_window = [
+        s for s in samples
+        if (latest.measured_at - s.measured_at).total_seconds() <= 6 * 3600
+    ]
 
     last_hour_avg = sum(s.avg_knots for s in last_hour) / len(last_hour)
     prev_hour_avg = (
@@ -386,9 +402,69 @@ async def _fetch_urfeld_live() -> dict:
         "last_hour_avg": round(last_hour_avg, 1),
         "prev_hour_avg": round(prev_hour_avg, 1) if prev_hour_avg is not None else None,
         "trend": trend,
+        "chart_svg": _wind_chart_svg(list(reversed(chart_window))),
     }
     _urfeld_live_at = now
     return _urfeld_live
+
+
+def _wind_chart_svg(samples: list[UrfeldSample], width: int = 720, height: int = 120) -> str:
+    """Render the last-N-hours wind curve as inline SVG (no JS / chart lib).
+
+    Expects `samples` ordered oldest → newest. Returns "" when there's nothing
+    meaningful to draw (< 2 samples). Y-axis scales so calm days still show
+    the 8 / 12 kt reference lines legibly.
+    """
+    if len(samples) < 2:
+        return ""
+
+    gust_peak = max(s.gust_knots for s in samples)
+    y_max = max(15.0, gust_peak * 1.1)
+
+    pad_l, pad_r, pad_t, pad_b = 24, 8, 6, 16
+    inner_w = width - pad_l - pad_r
+    inner_h = height - pad_t - pad_b
+
+    t0 = samples[0].measured_at.timestamp()
+    t_span = max(samples[-1].measured_at.timestamp() - t0, 1.0)
+
+    def x(ts: float) -> float:
+        return pad_l + (ts - t0) / t_span * inner_w
+
+    def y(kt: float) -> float:
+        return pad_t + inner_h - min(kt, y_max) / y_max * inner_h
+
+    avg_pts = [(x(s.measured_at.timestamp()), y(s.avg_knots)) for s in samples]
+    gust_pts = [(x(s.measured_at.timestamp()), y(s.gust_knots)) for s in samples]
+    base_y = y(0)
+    gust_poly = [(gust_pts[0][0], base_y), *gust_pts, (gust_pts[-1][0], base_y)]
+
+    def pts_str(pts: list[tuple[float, float]]) -> str:
+        return " ".join(f"{px:.1f},{py:.1f}" for px, py in pts)
+
+    y8, y12 = y(8), y(12)
+    start_label = samples[0].measured_at.strftime("%H:%M")
+    end_label = samples[-1].measured_at.strftime("%H:%M")
+
+    return (
+        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
+        f'class="wind-chart" role="img" aria-label="Urfeld wind, last 6 hours">'
+        f'<polygon points="{pts_str(gust_poly)}" fill="#8b949e" fill-opacity="0.18" />'
+        f'<line x1="{pad_l}" y1="{y8:.1f}" x2="{width - pad_r}" y2="{y8:.1f}" '
+        f'stroke="#d29922" stroke-opacity="0.55" stroke-dasharray="3 4" stroke-width="1" />'
+        f'<line x1="{pad_l}" y1="{y12:.1f}" x2="{width - pad_r}" y2="{y12:.1f}" '
+        f'stroke="#2ea043" stroke-opacity="0.55" stroke-dasharray="3 4" stroke-width="1" />'
+        f'<polyline points="{pts_str(avg_pts)}" fill="none" stroke="#c9d1d9" '
+        f'stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />'
+        f'<text x="{pad_l - 4:.0f}" y="{y8 + 3:.1f}" fill="#8b949e" font-size="10" '
+        f'text-anchor="end">8</text>'
+        f'<text x="{pad_l - 4:.0f}" y="{y12 + 3:.1f}" fill="#8b949e" font-size="10" '
+        f'text-anchor="end">12</text>'
+        f'<text x="{pad_l}" y="{height - 3}" fill="#8b949e" font-size="10">{start_label}</text>'
+        f'<text x="{width - pad_r}" y="{height - 3}" fill="#8b949e" font-size="10" '
+        f'text-anchor="end">{end_label}</text>'
+        f'</svg>'
+    )
 
 
 def _cached_read(iso_day: str) -> dict | None:

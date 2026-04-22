@@ -105,6 +105,26 @@
   .live-updated { color: var(--muted); font-size: 11px; margin-top: 8px; }
   .live-unavailable { color: var(--muted); font-size: 13px; }
 
+  .wind-chart-row {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px 4px; margin: -8px 0 20px;
+  }
+  .wind-chart-row .wind-chart { display: block; width: 100%; height: auto; }
+  .wind-chart-legend {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    color: var(--muted); font-size: 11px; margin-top: 2px;
+  }
+  .wind-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .wind-chart-legend i { width: 14px; height: 2px; display: inline-block; }
+  .wind-chart-legend i.avg   { background: var(--text); height: 2px; }
+  .wind-chart-legend i.gust  { background: var(--muted); opacity: .35; height: 8px; }
+  .wind-chart-legend i.ref8  { background: var(--maybe); opacity: .55; height: 2px;
+                               background-image: linear-gradient(90deg, var(--maybe) 60%, transparent 0);
+                               background-size: 4px 2px; }
+  .wind-chart-legend i.ref12 { background: var(--go); opacity: .55; height: 2px;
+                               background-image: linear-gradient(90deg, var(--go) 60%, transparent 0);
+                               background-size: 4px 2px; }
+
   .verdict-card {
     padding: 28px 24px; border-radius: 10px; margin-bottom: 20px;
     border-left: 6px solid var(--border);
@@ -275,6 +295,17 @@
     {% endif %}
   </div>
 </div>
+{% if live.available and live.chart_svg %}
+<div class="wind-chart-row" aria-label="{{ t.chart_aria }}">
+  {{ live.chart_svg|safe }}
+  <div class="wind-chart-legend">
+    <span><i class="avg"></i>{{ t.chart_legend_avg }}</span>
+    <span><i class="gust"></i>{{ t.chart_legend_gust }}</span>
+    <span><i class="ref8"></i>{{ t.chart_legend_ignition }}</span>
+    <span><i class="ref12"></i>{{ t.chart_legend_session }}</span>
+  </div>
+</div>
+{% endif %}
 {% endif %}
 
 <nav class="day-tabs">
