@@ -246,6 +246,12 @@ def _meteo_dict(result: Forecast) -> dict | None:
         "soil_moisture_m3m3": m.soil_moisture_m3m3,
         "rained_yesterday": m.rained_yesterday,
         "yesterday_precipitation_mm": m.yesterday_precipitation_mm,
+        "max_lifted_index": m.max_lifted_index,
+        "min_lifted_index": m.min_lifted_index,
+        "max_cape_j_kg": m.max_cape_j_kg,
+        "max_daytime_low_cloud_pct": m.max_daytime_low_cloud_pct,
+        "wind_850_direction_at_peak_deg": m.wind_850_direction_at_peak_deg,
+        "max_wind_700_knots": m.max_wind_700_knots,
     }
 
 

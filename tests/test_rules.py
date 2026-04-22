@@ -3,8 +3,9 @@ from datetime import datetime
 from oracle.config import StationRole
 from oracle.knowledge.rules import (
     Signal,
-    thermik,
+    atmospheric_stability,
     boundary_layer_height,
+    daytime_clouds,
     dew_point_spread,
     foehn_override,
     overnight_cooling,
@@ -12,6 +13,8 @@ from oracle.knowledge.rules import (
     solar_radiation,
     synoptic_override,
     thermal_ignition,
+    thermik,
+    upper_level_wind,
 )
 from oracle.pillars.measurements import WindReading
 from oracle.pillars.meteo import MeteoSnapshot
@@ -54,6 +57,12 @@ def _meteo(
     soil: float = 0.20,
     rained_yesterday: bool = False,
     yesterday_mm: float = 0.0,
+    max_li: float = 3.0,
+    min_li: float = 1.0,
+    cape: float = 0.0,
+    daytime_low_cloud: float = 20.0,
+    wind_850_dir: float = 30.0,
+    wind_700: float = 10.0,
 ) -> MeteoSnapshot:
     return MeteoSnapshot(
         day=datetime.now().date(),
@@ -65,6 +74,12 @@ def _meteo(
         soil_moisture_m3m3=soil,
         rained_yesterday=rained_yesterday,
         yesterday_precipitation_mm=yesterday_mm,
+        max_lifted_index=max_li,
+        min_lifted_index=min_li,
+        max_cape_j_kg=cape,
+        max_daytime_low_cloud_pct=daytime_low_cloud,
+        wind_850_direction_at_peak_deg=wind_850_dir,
+        max_wind_700_knots=wind_700,
     )
 
 
@@ -124,6 +139,46 @@ def test_post_rain_wet_soil_blocks():
 
 def test_post_rain_dry_ground_go():
     assert post_rain_moisture(_meteo(soil=0.18)).signal is Signal.GO
+
+
+def test_atmospheric_stability_too_stable_no_go():
+    assert atmospheric_stability(_meteo(max_li=7.0, min_li=5.0)).signal is Signal.NO_GO
+
+
+def test_atmospheric_stability_storm_risk_no_go():
+    assert atmospheric_stability(_meteo(max_li=0.0, min_li=-3.0)).signal is Signal.NO_GO
+
+
+def test_atmospheric_stability_normal_go():
+    assert atmospheric_stability(_meteo(max_li=3.0, min_li=1.0)).signal is Signal.GO
+
+
+def test_daytime_clouds_clear_go():
+    assert daytime_clouds(_meteo(daytime_low_cloud=15)).signal is Signal.GO
+
+
+def test_daytime_clouds_overcast_no_go():
+    assert daytime_clouds(_meteo(daytime_low_cloud=80)).signal is Signal.NO_GO
+
+
+def test_daytime_clouds_mixed_maybe():
+    assert daytime_clouds(_meteo(daytime_low_cloud=45)).signal is Signal.MAYBE
+
+
+def test_upper_level_wind_opposing_direction_no_go():
+    v = upper_level_wind(_meteo(wind_850_dir=180))  # pure S
+    assert v.signal is Signal.NO_GO
+    assert "SSE" in v.reason or "180" in v.reason
+
+
+def test_upper_level_wind_crossflow_too_strong_no_go():
+    v = upper_level_wind(_meteo(wind_850_dir=30, wind_700=30))
+    assert v.signal is Signal.NO_GO
+    assert "Querströmung" in v.reason or "700" in v.reason
+
+
+def test_upper_level_wind_neutral_go():
+    assert upper_level_wind(_meteo(wind_850_dir=10, wind_700=8)).signal is Signal.GO
 
 
 def test_thermal_ignition_detects_ignited_station():

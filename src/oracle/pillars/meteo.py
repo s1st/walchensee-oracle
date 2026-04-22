@@ -37,6 +37,13 @@ class MeteoSnapshot:
     soil_moisture_m3m3: float           # target day 09:00 soil_moisture_0_to_1cm
     rained_yesterday: bool              # target-1 day total precipitation ≥ threshold
     yesterday_precipitation_mm: float   # raw value for the log
+    # Medium-priority signals (added from docs/future-factors.md):
+    max_lifted_index: float             # 09:00–13:00; > +6 = too stable
+    min_lifted_index: float             # 09:00–13:00; < −2 = storm risk
+    max_cape_j_kg: float                # 09:00–13:00; captured for future calibration
+    max_daytime_low_cloud_pct: float    # 09:00–13:00; low clouds shade slopes
+    wind_850_direction_at_peak_deg: float  # direction at the morning 850 hPa speed peak
+    max_wind_700_knots: float           # 09:00–13:00; 700 hPa crossflow aloft
 
 
 _OVERNIGHT = (time(22, 0), time(6, 0))
@@ -51,6 +58,11 @@ _HOURLY_VARS = ",".join([
     "boundary_layer_height",
     "soil_moisture_0_to_1cm",
     "precipitation",
+    "cape",
+    "lifted_index",
+    "cloud_cover_low",
+    "wind_speed_700hPa",
+    "wind_direction_850hPa",
 ])
 
 
@@ -110,6 +122,18 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
     morning_blh = _in_window(
         times, hourly["boundary_layer_height"], morning_start, morning_end, inclusive_end=True
     )
+    morning_li = _in_window(
+        times, hourly["lifted_index"], morning_start, morning_end, inclusive_end=True
+    )
+    morning_cape = _in_window(
+        times, hourly["cape"], morning_start, morning_end, inclusive_end=True
+    )
+    morning_low_clouds = _in_window(
+        times, hourly["cloud_cover_low"], morning_start, morning_end, inclusive_end=True
+    )
+    morning_wind_700 = _in_window(
+        times, hourly["wind_speed_700hPa"], morning_start, morning_end, inclusive_end=True
+    )
     yesterday_rain = _in_window(times, hourly["precipitation"], yesterday_start, yesterday_end)
 
     if (
@@ -119,10 +143,20 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
         or not morning_temp
         or not morning_dew
         or not morning_blh
+        or not morning_li
+        or not morning_low_clouds
+        or not morning_wind_700
     ):
         raise RuntimeError(
             f"Open-Meteo did not return expected hourly windows for {target.isoformat()}"
         )
+
+    # Direction at the morning's peak 850 hPa wind — captures the dominant
+    # upper-level flow without the circular-mean headaches of averaging angles.
+    peak_hour_idx = _argmax_in_window(
+        times, hourly["wind_speed_850hPa"], morning_start, morning_end
+    )
+    wind_850_dir = float(hourly["wind_direction_850hPa"][peak_hour_idx])
 
     # Soil moisture sampled at morning_start (09:00 target day).
     soil_moisture = _value_at(times, hourly["soil_moisture_0_to_1cm"], morning_start)
@@ -142,6 +176,12 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
         soil_moisture_m3m3=soil_moisture,
         rained_yesterday=yesterday_mm >= RAINED_YESTERDAY_MM,
         yesterday_precipitation_mm=round(yesterday_mm, 2),
+        max_lifted_index=max(morning_li),
+        min_lifted_index=min(morning_li),
+        max_cape_j_kg=max(morning_cape) if morning_cape else 0.0,
+        max_daytime_low_cloud_pct=max(morning_low_clouds),
+        wind_850_direction_at_peak_deg=wind_850_dir,
+        max_wind_700_knots=max(morning_wind_700),
     )
 
 
@@ -156,6 +196,23 @@ def _in_window(
         return start <= t <= end if inclusive_end else start <= t < end
 
     return [float(v) for t, v in zip(times, values, strict=True) if v is not None and keep(t)]
+
+
+def _argmax_in_window(
+    times: list[datetime], values: list, start: datetime, end: datetime
+) -> int:
+    """Return the index (into the original arrays) of the max value within the window."""
+    best_idx = -1
+    best_val = float("-inf")
+    for i, (t, v) in enumerate(zip(times, values, strict=True)):
+        if v is None or not (start <= t <= end):
+            continue
+        if v > best_val:
+            best_val = v
+            best_idx = i
+    if best_idx < 0:
+        raise RuntimeError("window is empty for argmax lookup")
+    return best_idx
 
 
 def _value_at(times: list[datetime], values: list, target: datetime) -> float | None:

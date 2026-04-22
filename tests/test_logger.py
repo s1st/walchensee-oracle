@@ -37,6 +37,12 @@ def _forecast() -> Forecast:
             soil_moisture_m3m3=0.22,
             rained_yesterday=False,
             yesterday_precipitation_mm=0.0,
+            max_lifted_index=3.0,
+            min_lifted_index=1.0,
+            max_cape_j_kg=0.0,
+            max_daytime_low_cloud_pct=20.0,
+            wind_850_direction_at_peak_deg=30.0,
+            max_wind_700_knots=10.0,
         ),
         winds=[WindReading("Urfeld", StationRole.SHORE, 2.1, 4.5, None, now)],
     )

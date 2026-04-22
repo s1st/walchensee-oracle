@@ -131,6 +131,70 @@ def post_rain_moisture(meteo: MeteoSnapshot) -> Verdict:
     )
 
 
+def atmospheric_stability(meteo: MeteoSnapshot) -> Verdict:
+    if meteo.max_lifted_index >= config.MAX_LIFTED_INDEX:
+        return Verdict(
+            "atmospheric_stability",
+            Signal.NO_GO,
+            f"LI {meteo.max_lifted_index:.1f} — Atmosphäre zu stabil, Thermik gedeckelt",
+        )
+    if meteo.min_lifted_index <= config.MIN_LIFTED_INDEX:
+        return Verdict(
+            "atmospheric_stability",
+            Signal.NO_GO,
+            f"LI {meteo.min_lifted_index:.1f} — Gewittergefahr, Thermik wird zerstört",
+        )
+    return Verdict(
+        "atmospheric_stability",
+        Signal.GO,
+        f"LI {meteo.min_lifted_index:.1f}…{meteo.max_lifted_index:.1f} — Stabilität im Normbereich",
+    )
+
+
+def daytime_clouds(meteo: MeteoSnapshot) -> Verdict:
+    pct = meteo.max_daytime_low_cloud_pct
+    if pct > config.MAX_DAYTIME_LOW_CLOUD_PCT:
+        return Verdict(
+            "daytime_clouds",
+            Signal.NO_GO,
+            f"{pct:.0f}% tiefe Bewölkung tagsüber — beschattet die Hänge",
+        )
+    if pct < config.GOOD_DAYTIME_LOW_CLOUD_PCT:
+        return Verdict(
+            "daytime_clouds",
+            Signal.GO,
+            f"{pct:.0f}% tiefe Bewölkung — Hänge bekommen Sonne",
+        )
+    return Verdict(
+        "daytime_clouds",
+        Signal.MAYBE,
+        f"{pct:.0f}% tiefe Bewölkung — grenzwertig",
+    )
+
+
+def upper_level_wind(meteo: MeteoSnapshot) -> Verdict:
+    direction = meteo.wind_850_direction_at_peak_deg
+    crossflow = meteo.max_wind_700_knots
+    lo, hi = config.SYNOPTIC_OPPOSING_DEG
+    if lo <= direction <= hi:
+        return Verdict(
+            "upper_level_wind",
+            Signal.NO_GO,
+            f"850 hPa aus {direction:.0f}° (SSE) — Gegenströmung zur N-Thermik",
+        )
+    if crossflow > config.MAX_UPPER_CROSSFLOW_KNOTS:
+        return Verdict(
+            "upper_level_wind",
+            Signal.NO_GO,
+            f"700 hPa Querströmung {crossflow:.0f} kt — Tal-Wind-System entkoppelt",
+        )
+    return Verdict(
+        "upper_level_wind",
+        Signal.GO,
+        f"Höhenwind aus {direction:.0f}° @ 700 hPa {crossflow:.0f} kt — neutral",
+    )
+
+
 def synoptic_override(meteo: MeteoSnapshot) -> Verdict:
     if meteo.synoptic_wind_knots >= config.SYNOPTIC_OVERRIDE_KNOTS:
         return Verdict(

@@ -25,6 +25,11 @@ def _hourly_payload(target: date) -> dict:
     blh: list[float] = []
     soil: list[float] = []
     precip: list[float] = []
+    lifted: list[float] = []
+    cape: list[float] = []
+    low_clouds: list[float] = []
+    wind_700: list[float] = []
+    wind_850_dir: list[float] = []
 
     for d in (yesterday, target):
         for h in range(24):
@@ -38,15 +43,20 @@ def _hourly_payload(target: date) -> dict:
             radiation.append(750.0 if h == 12 and in_morning else (400.0 if in_morning else 0.0))
             wind_850.append(12.5 if h == 11 and in_morning else (5.0 if in_morning else 3.0))
 
-            # Morning window: T sweeps 15→19°C, dew point steady at 6°C → spreads 9→13°C.
             temps.append((15.0 + (h - 9)) if in_morning else 8.0)
             dew_points.append(6.0 if in_morning else 4.0)
-            # BLH peaks at 1200 m in morning; otherwise 300 m.
             blh.append(1200.0 if h == 12 and in_morning else (800.0 if in_morning else 300.0))
-            # Soil moisture constant 0.20 (dry).
             soil.append(0.20)
-            # Yesterday gets 0.5 mm total (below 2 mm threshold → rained_yesterday=False).
             precip.append(0.5 if d == yesterday and h == 10 else 0.0)
+
+            # LI stays in the healthy 1..3 range in morning; strongly stable
+            # otherwise so the min/max don't trip the stability rule.
+            lifted.append(2.0 if in_morning else 5.0)
+            cape.append(50.0 if in_morning else 0.0)
+            low_clouds.append(25.0 if in_morning else 10.0)
+            wind_700.append(15.0 if in_morning else 8.0)
+            # Direction at the 850hPa wind peak (h=11): 20° (NNE), favourable.
+            wind_850_dir.append(20.0 if in_morning else 90.0)
 
     return {
         "hourly": {
@@ -59,6 +69,11 @@ def _hourly_payload(target: date) -> dict:
             "boundary_layer_height": blh,
             "soil_moisture_0_to_1cm": soil,
             "precipitation": precip,
+            "cape": cape,
+            "lifted_index": lifted,
+            "cloud_cover_low": low_clouds,
+            "wind_speed_700hPa": wind_700,
+            "wind_direction_850hPa": wind_850_dir,
         }
     }
 
@@ -95,6 +110,11 @@ async def test_fetch_snapshot_aggregates_windows_correctly():
     assert snap.soil_moisture_m3m3 == pytest.approx(0.20)
     assert snap.rained_yesterday is False
     assert snap.yesterday_precipitation_mm == pytest.approx(0.5)
+    assert snap.min_lifted_index == pytest.approx(2.0)
+    assert snap.max_lifted_index == pytest.approx(2.0)
+    assert snap.max_daytime_low_cloud_pct == pytest.approx(25.0)
+    assert snap.max_wind_700_knots == pytest.approx(15.0)
+    assert snap.wind_850_direction_at_peak_deg == pytest.approx(20.0)
 
 
 @pytest.mark.asyncio
@@ -106,7 +126,8 @@ async def test_fetch_snapshot_raises_when_window_empty():
             "time": [], "cloud_cover": [], "shortwave_radiation": [],
             "wind_speed_850hPa": [], "temperature_2m": [], "dew_point_2m": [],
             "boundary_layer_height": [], "soil_moisture_0_to_1cm": [],
-            "precipitation": [],
+            "precipitation": [], "cape": [], "lifted_index": [],
+            "cloud_cover_low": [], "wind_speed_700hPa": [], "wind_direction_850hPa": [],
         }})
 
     transport = httpx.MockTransport(handler)

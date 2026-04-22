@@ -79,6 +79,12 @@ MIN_BOUNDARY_LAYER_HEIGHT_M = 600.0   # max BLH in morning; below = capped therm
 GOOD_BOUNDARY_LAYER_HEIGHT_M = 1000.0 # above this = deep mixing, strong thermal potential
 WET_SOIL_MOISTURE_M3M3 = 0.35    # soil_moisture_0_to_1cm above this = ground still wet
 RAINED_YESTERDAY_MM = 2.0        # threshold for treating target-1 as a wet day
+MAX_LIFTED_INDEX = 6.0           # above = atmosphere too stable, thermal capped
+MIN_LIFTED_INDEX = -2.0          # below = thunderstorm risk, thermal destroyed
+MAX_DAYTIME_LOW_CLOUD_PCT = 60.0 # max cloud_cover_low 09:00–13:00; above = slopes shaded
+GOOD_DAYTIME_LOW_CLOUD_PCT = 30.0 # below this = unobstructed sun
+SYNOPTIC_OPPOSING_DEG = (150, 210)  # 850 hPa wind from SSE counters the N→S thermal
+MAX_UPPER_CROSSFLOW_KNOTS = 25.0    # 700 hPa above this decouples valley-wind system
 
 # Classic Urfeld ignition window 10:30–11:30; propagation done by ~15:00.
 IGNITION_WINDOW_LOCAL: tuple[time, time] = (time(10, 30), time(15, 0))
