@@ -25,6 +25,18 @@ from oracle.logger import default_store
 # chars so German-style names with umlauts stay intact in the final text.
 _HANDLE_RE = re.compile(r"@[\w\-]+", re.UNICODE)
 
+# Simple keyword lists for community-sentiment derivation. Hand-curated from
+# reading a week of Walchensee chat — not a general German-sentiment model.
+_POS_KW = (
+    "läuft", "geht", "bläst", "weht", "thermik", "legt los", "kabbelwasser",
+    "nordwind", "brise", "session", "gut", "solide", "top", "passt",
+)
+_NEG_KW = (
+    "tot", "flau", "flaute", "nix los", "nichts", "nicht gelohnt",
+    "kein wind", "lohnt nicht", "abgeraten", "plan b", "pennt", "pennen",
+    "kommt nicht", "bleibt aus", "absagen",
+)
+
 app = FastAPI(title="Walchi Oracle")
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -78,6 +90,40 @@ def healthz() -> dict:
     return {"ok": True}
 
 
+def _summary_line(record: dict) -> str:
+    """One-liner reason shown under the verdict headline."""
+    overall = record.get("overall")
+    verdicts = record.get("verdicts", [])
+    if overall == "no_go":
+        blocker = next((v for v in verdicts if v["signal"] == "no_go"), None)
+        return blocker["reason"] if blocker else "—"
+    if overall == "go":
+        go_count = sum(1 for v in verdicts if v["signal"] == "go")
+        return f"{go_count} von {len(verdicts)} Regeln grün."
+    maybe = next((v for v in verdicts if v["signal"] == "maybe"), None)
+    return maybe["reason"] if maybe else "Gemischte Signale."
+
+
+def _chat_sentiment(record: dict) -> dict:
+    """Derive a go/no_go/quiet/mixed signal from the raw chat messages."""
+    messages = record.get("chat_messages") or []
+    pos = neg = 0
+    for m in messages:
+        text = (m.get("text") or "").lower()
+        if any(kw in text for kw in _POS_KW):
+            pos += 1
+        if any(kw in text for kw in _NEG_KW):
+            neg += 1
+
+    if pos == 0 and neg == 0:
+        return {"code": "quiet", "label": "ruhig", "arrow": "·", "count": len(messages)}
+    if pos >= neg * 1.5 and pos > 0:
+        return {"code": "positive", "label": "positiv", "arrow": "↑", "count": len(messages)}
+    if neg >= pos * 1.5 and neg > 0:
+        return {"code": "negative", "label": "skeptisch", "arrow": "↓", "count": len(messages)}
+    return {"code": "mixed", "label": "gemischt", "arrow": "↕", "count": len(messages)}
+
+
 def _public_view(record: dict | None) -> dict | None:
     """Strip personal data (chat authors, channel names) before rendering.
 
@@ -100,12 +146,16 @@ def _public_view(record: dict | None) -> dict | None:
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     today = date.today()
-    current = _public_view(_most_recent(today))
+    raw = _most_recent(today)
+    summary = _summary_line(raw) if raw else ""
+    sentiment = _chat_sentiment(raw) if raw else None
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
-            "current": current,
+            "current": _public_view(raw),
+            "summary": summary,
+            "sentiment": sentiment,
             "history": _history(today),
             "today_iso": today.isoformat(),
         },

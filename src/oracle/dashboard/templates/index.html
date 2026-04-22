@@ -20,43 +20,45 @@
     font-family: system-ui, -apple-system, sans-serif;
     background: var(--bg); color: var(--text);
     margin: 0; padding: 24px;
-    max-width: 960px; margin-inline: auto;
+    max-width: 720px; margin-inline: auto;
     line-height: 1.5;
   }
-  h1 { margin: 0 0 4px; font-size: 28px; }
-  .lead { color: var(--muted); margin: 0 0 32px; font-size: 14px; }
+  h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; }
+  .lead { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
 
   .verdict-card {
-    padding: 24px; border-radius: 8px; margin-bottom: 24px;
+    padding: 28px 24px; border-radius: 10px; margin-bottom: 20px;
     border-left: 6px solid var(--border);
   }
   .verdict-card.go    { background: rgba(46,160,67,.08);  border-left-color: var(--go); }
   .verdict-card.maybe { background: rgba(210,153,34,.08); border-left-color: var(--maybe); }
   .verdict-card.no_go { background: rgba(207,34,46,.08);  border-left-color: var(--no-go); }
-  .verdict-card h2 { margin: 0; font-size: 40px; letter-spacing: .02em; }
-  .verdict-meta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .verdict-word { margin: 0; font-size: 44px; letter-spacing: .01em; font-weight: 700; line-height: 1; }
+  .verdict-word.go    { color: var(--go); }
+  .verdict-word.maybe { color: var(--maybe); }
+  .verdict-word.no_go { color: var(--no-go); }
+  .verdict-summary { margin: 10px 0 0; font-size: 15px; }
+  .verdict-meta { color: var(--muted); font-size: 12px; margin-top: 14px; }
 
-  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
-  th { font-weight: 500; color: var(--muted); font-size: 13px; }
-  td.signal { font-weight: 600; }
-  td.signal.go    { color: var(--go); }
-  td.signal.maybe { color: var(--maybe); }
-  td.signal.no_go { color: var(--no-go); }
+  .badges { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--panel); font-size: 12px; color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .badge .arrow { font-weight: 700; font-size: 14px; }
+  .badge.positive .arrow { color: var(--go); }
+  .badge.negative .arrow { color: var(--no-go); }
+  .badge.mixed    .arrow { color: var(--maybe); }
+  .badge.quiet    .arrow { color: var(--muted); }
 
-  .chat { background: var(--panel); border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; }
-  .chat h3 { margin-top: 0; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
-  .chat-msg { padding: 8px 0; border-bottom: 1px solid var(--border); }
-  .chat-msg:last-child { border-bottom: none; }
-  .chat-msg .when { color: var(--muted); font-size: 12px; }
-  .chat-msg .text { margin: 4px 0 0; }
-  .chat-footer { color: var(--muted); font-size: 11px; margin: 12px 0 0; }
-  .chat-footer a { color: var(--muted); }
+  h3 { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .1em; margin: 24px 0 8px; }
 
-  .strip { display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; margin-bottom: 8px; }
+  .strip { display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; margin-bottom: 6px; }
   .cell {
     aspect-ratio: 1; border-radius: 3px; background: var(--panel);
-    position: relative; cursor: default; border: 1px solid transparent;
+    border: 1px solid transparent;
   }
   .cell.go    { background: var(--go); }
   .cell.maybe { background: var(--maybe); }
@@ -65,62 +67,77 @@
   .cell.hit   { outline: 2px solid #ffffff55; }
   .strip-labels { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
 
-  footer { color: var(--muted); font-size: 12px; margin-top: 32px; }
+  .advanced-toggle { display: none; }
+  .advanced-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    margin-top: 32px; padding: 10px 14px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--muted); font-size: 13px; cursor: pointer;
+    user-select: none;
+  }
+  .advanced-label:hover { color: var(--text); border-color: var(--text); }
+  .advanced-label::before {
+    content: ""; width: 14px; height: 14px;
+    border: 1.5px solid var(--muted); border-radius: 3px;
+    display: inline-block; flex-shrink: 0;
+    transition: background .1s, border-color .1s;
+  }
+  .advanced-toggle:checked + .advanced-label::before {
+    background: var(--text); border-color: var(--text);
+    box-shadow: inset 0 0 0 2px var(--panel);
+  }
+  .advanced-panel { display: none; background: var(--panel); border-radius: 8px; padding: 4px 20px 16px; margin-top: 8px; }
+  .advanced-toggle:checked ~ .advanced-panel { display: block; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  th { font-weight: 500; color: var(--muted); }
+  td.signal { font-weight: 600; }
+  td.signal.go    { color: var(--go); }
+  td.signal.maybe { color: var(--maybe); }
+  td.signal.no_go { color: var(--no-go); }
+
+  .chat-msg { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .chat-msg:last-child { border-bottom: none; }
+  .chat-msg .when { color: var(--muted); font-size: 11px; }
+  .chat-msg .text { margin: 2px 0 0; }
+
+  footer { color: var(--muted); font-size: 11px; margin-top: 32px; line-height: 1.6; }
   footer a { color: var(--muted); }
 </style>
 </head>
 <body>
-<h1>Walchi Thermic Oracle</h1>
-<p class="lead">
-  Thermal wind forecast for Lake Walchensee — pressure, meteo, live shore wind, community chat.
-</p>
+
+<h1>Walchi Oracle</h1>
+<p class="lead">Geht heute Thermik am Walchensee?</p>
 
 {% if current %}
   {% set v = current.overall %}
   <section class="verdict-card {{ v }}">
-    <h2>{{ v|replace('_', ' ')|upper }}</h2>
-    <div class="verdict-meta">
-      For {{ current.day }} · run at {{ current.run_at|default('?') }}
-    </div>
+    <h2 class="verdict-word {{ v }}">
+      {% if v == 'go' %}GEHT{% elif v == 'maybe' %}GRENZWERTIG{% else %}NIX{% endif %}
+    </h2>
+    <p class="verdict-summary">{{ summary }}</p>
+    <div class="verdict-meta">Für {{ current.day }}.</div>
   </section>
 
-  <table>
-    <thead><tr><th>Rule</th><th>Signal</th><th>Reason</th></tr></thead>
-    <tbody>
-      {% for rule in current.verdicts %}
-      <tr>
-        <td>{{ rule.rule }}</td>
-        <td class="signal {{ rule.signal }}">{{ rule.signal }}</td>
-        <td>{{ rule.reason }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  {% if current.chat_messages %}
-  <div class="chat">
-    <h3>windinfo.eu — recent mentions</h3>
-    {% for m in current.chat_messages[-5:] %}
-      <div class="chat-msg">
-        <span class="when">{{ m.posted_at[:16]|replace('T', ' ') }}</span>
-        <p class="text">{{ m.text }}</p>
-      </div>
-    {% endfor %}
-    <p class="chat-footer">Anonymised. Source: <a href="https://windinfo.eu/wind-wetter-chat/" target="_blank" rel="noopener">windinfo.eu community chat</a>.</p>
+  {% if sentiment %}
+  <div class="badges">
+    <span class="badge {{ sentiment.code }}" title="Aus anonymisierten Walchensee-Erwähnungen der letzten Tage.">
+      <span class="arrow">{{ sentiment.arrow }}</span>
+      Community: {{ sentiment.label }}
+      {% if sentiment.count %}<span style="opacity: .7; margin-left: 4px;">({{ sentiment.count }})</span>{% endif %}
+    </span>
   </div>
   {% endif %}
 {% else %}
   <section class="verdict-card">
-    <h2>No data yet</h2>
-    <div class="verdict-meta">
-      The scheduled job hasn't produced a forecast yet. Check back after 08:00 CET.
-    </div>
+    <h2 class="verdict-word">—</h2>
+    <p class="verdict-summary">Keine Daten — warte auf den nächsten morgendlichen Forecast (08:00 MEZ).</p>
   </section>
 {% endif %}
 
-<h3 style="color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .1em;">
-  Last 30 days
-</h3>
+<h3>Letzte 30 Tage</h3>
 <div class="strip">
   {% for d in history %}
     {% set cls = d.verdict or 'empty' %}
@@ -134,14 +151,45 @@
   <span>{{ history[-1].day if history else '' }}</span>
 </div>
 
+{% if current %}
+<input type="checkbox" id="advanced" class="advanced-toggle">
+<label for="advanced" class="advanced-label">Advanced — alle 9 Regeln &amp; Chat-Auszüge</label>
+
+<div class="advanced-panel">
+  <table>
+    <thead><tr><th>Regel</th><th>Signal</th><th>Begründung</th></tr></thead>
+    <tbody>
+      {% for rule in current.verdicts %}
+      <tr>
+        <td>{{ rule.rule }}</td>
+        <td class="signal {{ rule.signal }}">{{ rule.signal }}</td>
+        <td>{{ rule.reason }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if current.chat_messages %}
+    <h3 style="margin-top: 20px;">Chat-Auszüge (anonymisiert)</h3>
+    {% for m in current.chat_messages[-5:] %}
+      <div class="chat-msg">
+        <span class="when">{{ m.posted_at[:16]|replace('T', ' ') }}</span>
+        <p class="text">{{ m.text }}</p>
+      </div>
+    {% endfor %}
+  {% endif %}
+</div>
+{% endif %}
+
 <footer>
-  Outline hit = Urfeld buoy peaked ≥ 12 kt (session-worthy). Thresholds are placeholders pending calibration.<br>
-  Urfeld-Winddaten: © Panoramahotel Karwendelblick, via
+  Outline = Urfeld-Böe ≥ 12 kt (Session-würdig). Schwellwerte noch Schätzungen auf Basis von Lake-Garda-Analoga — Kalibrierung läuft.<br>
+  Urfeld-Wind: © Panoramahotel Karwendelblick, via
   <a href="https://www.addicted-sports.com/webcam/walchensee/urfeld/" target="_blank" rel="noopener">addicted-sports.com</a>.
   DWD-Synoptik via <a href="https://brightsky.dev/" target="_blank" rel="noopener">Bright Sky</a>.
   Druck &amp; Meteorologie via <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>.
-  Chat-Auszüge anonymisiert aus
-  <a href="https://windinfo.eu/wind-wetter-chat/" target="_blank" rel="noopener">windinfo.eu</a>.
+  Community-Signal aus anonymisierten Auszügen des
+  <a href="https://windinfo.eu/wind-wetter-chat/" target="_blank" rel="noopener">windinfo.eu</a>-Chats.
 </footer>
+
 </body>
 </html>
