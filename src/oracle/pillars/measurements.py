@@ -26,10 +26,10 @@ from oracle.config import (
 )
 
 _KMH_TO_KNOTS = 0.5399568
-_UA = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
-)
+# Self-identifying UA — better to be transparent than to pretend to be a
+# browser. If an operator wants to block the scraper they can; we'd rather
+# they open a dialogue than silently fingerprint us.
+_UA = "walchi-oracle/0.1 (+https://github.com/s1st/walchensee-oracle; hobby)"
 _CSRF_META_RE = re.compile(r'name="csrf-token"\s+content="([^"]+)"')
 
 
