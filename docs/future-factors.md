@@ -1,45 +1,55 @@
-# Future Forecast Factors
+# Forecast Factors
 
-Additional factors that could improve forecast accuracy beyond the current
-model. Prioritized by expected impact and implementation effort. All Open-Meteo
-fields mentioned below have been confirmed available.
+Factors that improve forecast accuracy beyond a plain
+"pressure + radiation + wind" triplet. The "Already shipped" section lists
+what the model uses today; the rest remains open work ordered by
+expected-value-over-effort.
 
-## High priority
+## ✅ Already shipped
 
-### Dew point spread / humidity
+The implementation details live in `src/oracle/pillars/meteo.py` and
+`src/oracle/knowledge/rules.py`. Each item below maps to one rule.
 
-The dew point spread (T - Td) controls two things: how much solar energy goes
-into sensible heating (thermal driving force) vs. latent heating (evaporation),
-and the cloud base height (early cumulus overdevelopment risk).
+### Dew point spread / humidity ✅
 
-- **Data:** Open-Meteo `dew_point_2m` for 09:00-13:00
-- **Rule sketch:** spread < 5 C = NO_GO (moisture-suppressed); 5-8 C = MAYBE;
-  > 8 C = GO
-- **Effort:** Low — one additional field + one rule.
+Min `(T − Td)` across 09:00–13:00. Below 5 °C → NO_GO (moisture-suppressed);
+5–8 °C → MAYBE; ≥ 8 °C → GO. Data: Open-Meteo `dew_point_2m` + `temperature_2m`.
 
-### Boundary layer height
+### Boundary layer height ✅
 
-The depth of the convectively mixed atmosphere. Determines how deep the thermal
-cell can become. A suppressed boundary layer (e.g. under a persistent
-inversion) prevents the valley-wind system from developing.
+Max BLH across 09:00–13:00. Below 600 m → capped thermal (NO_GO); 600–1000 m →
+shallow mixing (MAYBE); ≥ 1000 m → deep mixing (GO). Data: Open-Meteo
+`boundary_layer_height`.
 
-- **Data:** Open-Meteo `boundary_layer_height`
-- **Rule sketch:** max BLH < 600 m = NO_GO; 600-1000 m = MAYBE; > 1000 m = GO
-- **Effort:** Low — one additional field + one rule.
+### Soil moisture + precipitation history ✅
 
-### Soil moisture + precipitation history
+NO_GO if ≥ 2 mm rain fell yesterday OR current `soil_moisture_0_to_1cm` is
+above 0.35 m³/m³. GO otherwise. Captures the "2nd sunny day after rain" rule.
+Data: Open-Meteo `soil_moisture_0_to_1cm` + `precipitation` (with day-of
+window).
 
-Wet soil diverts solar energy into evaporation. The well-known "2nd or 3rd
-sunny day after rain" rule applies strongly at Walchensee. Vegetation
-transpiration stays elevated for 2-3 days post-rain.
+### Atmospheric stability (CAPE / Lifted index) ✅
 
-- **Data:** Open-Meteo `soil_moisture_0_to_1cm`, `precipitation` with
-  `past_days=3`
-- **Rule sketch:** rain yesterday or soil moisture > 0.35 m3/m3 = strong
-  dampening; 2+ dry days = no penalty; 3+ dry days = bonus
-- **Effort:** Low — expand existing Open-Meteo fetch.
+LI ≥ +6 over the morning window → atmosphere too stable, thermal capped
+(NO_GO); LI ≤ −2 → thunderstorm risk destroys the cell (NO_GO); otherwise GO.
+Raw CAPE is captured in the log too for future calibration. Data: Open-Meteo
+`lifted_index`, `cape`.
 
-## Medium priority
+### Daytime low-cloud development ✅
+
+Max `cloud_cover_low` during 09:00–13:00. Above 60 % shades the
+Herzogstand/Jochberg slopes (NO_GO); below 30 % the slopes are in full sun
+(GO); between = MAYBE. Complements `overnight_cooling` which only measures
+night-time total cloud cover.
+
+### Multi-level wind shear + direction ✅
+
+Combined rule `upper_level_wind`: NO_GO if 850 hPa wind at the morning's peak
+hour blows from 150–210° (SSE, counters the N-thermal) OR if 700 hPa max wind
+exceeds 25 kt (crossflow decouples the valley-wind system). Complements the
+existing `synoptic_override` which only looks at 850 hPa speed.
+
+## 🔜 Still open
 
 ### Lake surface temperature
 
@@ -53,40 +63,6 @@ lake breeze). In late summer (17-22 C surface) this opposition diminishes.
 - **Rule sketch:** air-lake delta > 10 C = penalize ignition timing;
   delta < 5 C = no opposition
 - **Effort:** Medium — new data source required.
-
-### CAPE / Lifted index (convective instability)
-
-The atmosphere's raw potential for vertical motion. Modulates thermal strength:
-too stable = capped thermals; moderately unstable = strong thermals; very
-unstable = thunderstorm risk and thermal destruction.
-
-- **Data:** Open-Meteo `cape`, `lifted_index`
-- **Rule sketch:** LI > 6 = too stable (NO_GO); 2-6 = normal; 0 to -2 =
-  strong support; < -2 = storm risk (NO_GO)
-- **Effort:** Low — add two fields + one rule.
-
-### Cloud cover by level (daytime development)
-
-The current model only checks overnight total cloud cover. Daytime development
-of low clouds is what actually kills the thermal mid-session. The *timing* of
-cumulus build-up determines how long the wind window lasts.
-
-- **Data:** Open-Meteo `cloud_cover_low`, `cloud_cover_mid`, `cloud_cover_high`
-- **Rule sketch:** low cloud > 60% before 13:00 = window shortened; stays
-  below 30% through 15:00 = full window
-- **Effort:** Low — three additional fields + one rule.
-
-### Multi-level wind shear + direction
-
-850 hPa speed alone isn't enough. Wind direction at 850 hPa matters (SSE flow
-opposes the N-to-S thermal; NW flow reinforces it). Strong 700 hPa crossflow
-perpendicular to the valley axis decouples the valley-wind system.
-
-- **Data:** Open-Meteo `wind_speed_700hPa`, `wind_speed_500hPa`,
-  `wind_direction_850hPa`
-- **Rule sketch:** 850 hPa from 150-210 deg = thermal opposition; 700 hPa
-  crossflow > 25 kt = decoupled valley wind (NO_GO)
-- **Effort:** Low-medium.
 
 ### Snow cover on surrounding peaks
 

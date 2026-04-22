@@ -16,11 +16,16 @@ kind: domain-forecast
 Domain-specific forecaster for the thermal wind at Lake Walchensee. Combines
 four live data sources the user's models cannot see together:
 
-- Cross-Alps pressure gradient (Munich–Innsbruck)
-- Föhn detection (Bolzano–Innsbruck)
-- Overnight cooling + morning solar radiation (Open-Meteo)
-- Live shore wind (Addicted-Sports Urfeld anemometer + DWD Bright Sky)
-- Community chat (windinfo.eu Wind-Wetter-Chat)
+- Cross-Alps pressure gradient Munich–Innsbruck ("Thermik") and Föhn
+  detection Bolzano–Innsbruck (Open-Meteo MSL pressure).
+- Meteorological conditions — overnight cooling, morning solar radiation,
+  dew-point spread, boundary-layer height, soil moisture + recent rain,
+  lifted index, daytime low-cloud development, 850 hPa wind
+  direction + 700 hPa crossflow (all Open-Meteo).
+- Live shore wind — Addicted-Sports Urfeld anemometer + nearest DWD
+  synoptic station via Bright Sky.
+- Community chat — windinfo.eu Wind-Wetter-Chat (filtered to
+  Walchensee-mentioning messages).
 
 ## ✅ When to use
 
@@ -51,17 +56,23 @@ Run the CLI with `--json` to get structured output:
 ```
 oracle forecast --json                    # today
 oracle forecast --day 2026-05-15 --json   # specific ISO date
+oracle forecast --horizon 3               # loop over today + next 2 days
+oracle backfill --day 2026-05-15          # merge actual Urfeld wind curve
 ```
 
-The JSON shape:
+The JSON shape (12 rules, each verdict carries bilingual reasons):
 
 ```
 {
-  "day": "2026-04-20",
+  "day": "2026-04-23",
   "overall": "go" | "maybe" | "no_go",
   "verdicts": [
-    {"rule": "thermik", "signal": "go|maybe|no_go", "reason": "..."},
-    ... 5 more rules ...
+    {"rule": "thermik", "signal": "go|maybe|no_go",
+     "reason_en": "…", "reason_de": "…"},
+    // … 11 more: foehn_override, overnight_cooling, solar_radiation,
+    //           dew_point_spread, boundary_layer_height, post_rain_moisture,
+    //           atmospheric_stability, daytime_clouds, upper_level_wind,
+    //           synoptic_override, thermal_ignition
   ],
   "chat_messages": [
     {"posted_at": "...", "author": "...", "channel": "...", "text": "..."}

@@ -20,34 +20,60 @@ readings to fill the gap.
 4. **Live Measurements** — shore wind from the Addicted-Sports anemometer at
    Urfeld + the nearest DWD synoptic station (via Bright Sky).
 
-Nine heuristic rules (synoptic override, Föhn suppression, hPa threshold,
-overnight cooling, solar radiation, dew-point spread, boundary-layer height,
-post-rain moisture, thermal ignition) turn raw pillar data into a
-GO / MAYBE / NO_GO forecast verdict.
+Twelve heuristic rules — `thermik`, `foehn_override`, `overnight_cooling`,
+`solar_radiation`, `dew_point_spread`, `boundary_layer_height`,
+`post_rain_moisture`, `atmospheric_stability`, `daytime_clouds`,
+`upper_level_wind`, `synoptic_override`, `thermal_ignition` — turn raw
+pillar data into a GO / MAYBE / NO_GO forecast verdict. Each rule emits
+both a German and an English reason so the dashboard can render in either
+language without post-hoc translation.
 
 ## Public dashboard
 
 Deployed at **https://walchensee.simon-stieber.de** (Cloud Run + custom
-domain via Cloudflare DNS). Shows today's verdict, the rule breakdown, a
-30-day strip of verdict vs. actual Urfeld peak wind, and an anonymised
-excerpt of recent Walchensee-mentioning chat messages.
+domain via Cloudflare DNS). Shows:
+
+- **Live webcam + wind panel** pinned on top — embedded Addicted-Sports
+  Urfeld webcam, current wind speed, peak gust, last-hour average, and a
+  trend indicator.
+- **Three-day picker** (today / tomorrow / day after). Each tab shows a
+  colour dot for its verdict. The scheduled job writes all three days'
+  forecasts every morning.
+- **Verdict card** with a single-line summary (top blocking reason for
+  NO_GO, counter of green rules for GO).
+- **Community sentiment badge** derived per-day from chat messages that
+  explicitly reference that day (`heute` / `morgen` / `übermorgen` / weekday
+  names in German).
+- **30-day strip** split into two rows — the oracle's forecast verdict on
+  top, the actual Urfeld peak wind below, same colour scale so forecast
+  misses jump out visually.
+- **Advanced panel** (checkbox-toggled) with the full rule table, `?`
+  tooltips explaining each rule, and anonymised chat excerpts.
+- **DE / EN language toggle** in the top right corner, with auto-detection
+  via `Accept-Language`.
 
 **Privacy note on chat:** the raw log captured by the scheduled job contains
 windinfo.eu usernames (used privately for calibration analysis of who tends
 to call conditions correctly). The public dashboard strips all author fields
 and redacts `@handle` mentions from message bodies so no windinfo identities
-surface on the open web. The windinfo.eu operators were informed of the
-polling before the dashboard went public. External polling is twice daily
-(08:00 and 21:00 CET) to stay comfortably below any reasonable rate limit.
+surface on the open web. External polling is twice daily (08:00 and 21:00
+CET) to stay comfortably below any reasonable rate limit. windinfo.eu
+operators can reach out via the contact on the repository's Issues tab or
+via my Impressum if they'd prefer the polling stopped.
 
 ## Documentation
 
+- **[docs/architecture.md](docs/architecture.md)** — the GCP layout, data
+  flow, and component responsibilities. Start here to understand the
+  repository.
 - **[docs/thermal-model.md](docs/thermal-model.md)** — domain knowledge:
-  how the thermal works, triggering conditions, spatial progression,
-  seasonal patterns, pressure pairs, and threshold calibration status.
-- **[docs/future-factors.md](docs/future-factors.md)** — additional forecast
-  factors not yet implemented (dew point, boundary layer height, soil
-  moisture, lake temperature, etc.) with prioritization.
+  how the Walchensee thermal works, triggering conditions, spatial
+  progression, seasonal patterns, pressure pairs, and threshold
+  calibration status.
+- **[docs/future-factors.md](docs/future-factors.md)** — forecast factors
+  already shipped and those still to add (lake temperature, snow cover,
+  Kesselberg channeling, seasonal threshold calibration, …) with
+  prioritisation.
 
 ## Setup
 
