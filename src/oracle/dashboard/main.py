@@ -488,9 +488,9 @@ async def index(request: Request) -> Response:
     sentiment = _chat_sentiment(day_messages) if raw else None
     tooltips = {name: _rule_tooltip(name, lang) for name in _RULE_DESCRIPTIONS}
     horizon = _horizon_days(today, lang, selected_day.isoformat())
-    # Only show live wind on the "today" tab — yesterday/tomorrow views
-    # would be misleading with a live reading.
-    live = await _fetch_urfeld_live() if selected_day == today else None
+    # Live wind + webcam always shown — it's "current state at the lake",
+    # independent of which forecast day is selected.
+    live = await _fetch_urfeld_live()
 
     response = templates.TemplateResponse(
         request=request,

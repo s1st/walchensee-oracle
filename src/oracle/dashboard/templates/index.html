@@ -221,6 +221,42 @@
 <h1>Walchi Oracle</h1>
 <p class="lead">{{ t.lead }}</p>
 
+{% if live is not none %}
+<div class="live-panel">
+  <div class="webcam">
+    <img src="https://www.addicted-sports.com/fileadmin/webcam/walchensee/current/400.jpg"
+         alt="{{ t.webcam_label }}" loading="lazy">
+    <div class="webcam-credit">
+      {{ t.webcam_label }} · © Panoramahotel Karwendelblick /
+      <a href="https://www.addicted-sports.com/webcam/walchensee/urfeld/" target="_blank" rel="noopener">addicted-sports.com</a>
+    </div>
+  </div>
+  <div class="live-box">
+    <h4>{{ t.live_header }}</h4>
+    {% if live.available %}
+      <div class="live-now-line">
+        {{ '%.1f'|format(live.latest_avg_kt) }}<span class="unit"> kt {{ t.live_now }}</span>
+      </div>
+      <div class="live-gust">↑ {{ '%.1f'|format(live.latest_gust_kt) }} kt</div>
+      <div class="live-avg">
+        <span class="value">⌀ {{ '%.1f'|format(live.last_hour_avg) }} kt</span>
+        <span>{{ t.live_last_hour }}</span>
+        <span class="live-trend {{ live.trend }}">
+          {% if live.trend == 'up' %}↗ {{ t.live_trend_up }}
+          {%- elif live.trend == 'down' %}↘ {{ t.live_trend_down }}
+          {%- else %}→ {{ t.live_trend_flat }}{% endif %}
+        </span>
+      </div>
+      <div class="live-updated">
+        {{ live.latest_at[11:16] }}
+      </div>
+    {% else %}
+      <div class="live-unavailable">{{ t.live_unavailable }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 <nav class="day-tabs">
   {% for d in horizon %}
     <a href="?day={{ d.iso }}{% if lang %}&lang={{ lang }}{% endif %}"
@@ -240,42 +276,6 @@
     <p class="verdict-summary">{{ summary }}</p>
     <div class="verdict-meta">{{ t.for_day }} {{ current.day }}.</div>
   </section>
-
-  {% if live is not none and selected_iso == today_iso %}
-  <div class="live-panel">
-    <div class="webcam">
-      <img src="https://www.addicted-sports.com/fileadmin/webcam/walchensee/current/400.jpg"
-           alt="{{ t.webcam_label }}" loading="lazy">
-      <div class="webcam-credit">
-        {{ t.webcam_label }} · © Panoramahotel Karwendelblick /
-        <a href="https://www.addicted-sports.com/webcam/walchensee/urfeld/" target="_blank" rel="noopener">addicted-sports.com</a>
-      </div>
-    </div>
-    <div class="live-box">
-      <h4>{{ t.live_header }}</h4>
-      {% if live.available %}
-        <div class="live-now-line">
-          {{ '%.1f'|format(live.latest_avg_kt) }}<span class="unit"> kt {{ t.live_now }}</span>
-        </div>
-        <div class="live-gust">↑ {{ '%.1f'|format(live.latest_gust_kt) }} kt</div>
-        <div class="live-avg">
-          <span class="value">⌀ {{ '%.1f'|format(live.last_hour_avg) }} kt</span>
-          <span>{{ t.live_last_hour }}</span>
-          <span class="live-trend {{ live.trend }}">
-            {% if live.trend == 'up' %}↗ {{ t.live_trend_up }}
-            {%- elif live.trend == 'down' %}↘ {{ t.live_trend_down }}
-            {%- else %}→ {{ t.live_trend_flat }}{% endif %}
-          </span>
-        </div>
-        <div class="live-updated">
-          {{ live.latest_at[11:16] }}
-        </div>
-      {% else %}
-        <div class="live-unavailable">{{ t.live_unavailable }}</div>
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
 
   {% if sentiment %}
   <div class="badges">
