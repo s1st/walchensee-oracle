@@ -112,7 +112,13 @@ def forecast_to_dict(result: Forecast, target_day: date) -> dict:
         "day": target_day.isoformat(),
         "overall": result.overall.value,
         "verdicts": [
-            {"rule": v.rule, "signal": v.signal.value, "reason": v.reason}
+            {
+                "rule": v.rule,
+                "signal": v.signal.value,
+                "reason": v.reason_en,        # legacy field — English, what pre-i18n readers expect
+                "reason_en": v.reason_en,
+                "reason_de": v.reason_de,
+            }
             for v in result.verdicts
         ],
         "inputs": {

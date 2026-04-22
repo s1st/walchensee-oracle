@@ -21,7 +21,11 @@ def _forecast() -> Forecast:
     now = datetime(2026, 4, 22, 9, 0)
     return Forecast(
         overall=Signal.NO_GO,
-        verdicts=[Verdict("thermik", Signal.NO_GO, "Δ=1.0 hPa below threshold")],
+        verdicts=[Verdict(
+            "thermik", Signal.NO_GO,
+            reason_en="Δ=1.0 hPa below threshold",
+            reason_de="Δ=1.0 hPa unter Schwellwert",
+        )],
         pressure=PressureSnapshot(
             thermik_north=PressureReading("Munich", 1020.0, now),
             thermik_south=PressureReading("Innsbruck", 1019.0, now),

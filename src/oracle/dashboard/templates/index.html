@@ -222,7 +222,7 @@
               title="{{ rule_descriptions[rule.rule] }}">?</span>{% endif %}
         </td>
         <td class="signal {{ rule.signal }}">{{ rule.signal }}</td>
-        <td>{{ rule.reason }}</td>
+        <td>{{ rule.get('reason_' + lang) or rule.reason }}</td>
       </tr>
       {% endfor %}
     </tbody>

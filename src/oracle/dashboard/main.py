@@ -227,18 +227,28 @@ def healthz() -> dict:
     return {"ok": True}
 
 
-def _summary_line(record: dict) -> str:
+def _summary_line(record: dict, lang: str) -> str:
     """One-liner reason shown under the verdict headline."""
     overall = record.get("overall")
     verdicts = record.get("verdicts", [])
+
+    def _reason(v: dict) -> str:
+        # Prefer the language-specific reason; fall back to legacy 'reason'
+        # for records written before bilingual reasons shipped.
+        return v.get(f"reason_{lang}") or v.get("reason") or ""
+
     if overall == "no_go":
         blocker = next((v for v in verdicts if v["signal"] == "no_go"), None)
-        return blocker["reason"] if blocker else "—"
+        return _reason(blocker) if blocker else "—"
     if overall == "go":
         go_count = sum(1 for v in verdicts if v["signal"] == "go")
+        if lang == "en":
+            return f"{go_count} of {len(verdicts)} rules green."
         return f"{go_count} von {len(verdicts)} Regeln grün."
     maybe = next((v for v in verdicts if v["signal"] == "maybe"), None)
-    return maybe["reason"] if maybe else "Gemischte Signale."
+    if maybe:
+        return _reason(maybe)
+    return "Mixed signals." if lang == "en" else "Gemischte Signale."
 
 
 def _chat_sentiment(record: dict) -> dict:
@@ -285,7 +295,7 @@ def index(request: Request) -> Response:
     lang = _resolve_lang(request)
     today = date.today()
     raw = _most_recent(today)
-    summary = _summary_line(raw) if raw else ""
+    summary = _summary_line(raw, lang) if raw else ""
     sentiment = _chat_sentiment(raw) if raw else None
     # Pre-resolve per-rule tooltip string in the chosen language.
     tooltips = {name: _rule_tooltip(name, lang) for name in _RULE_DESCRIPTIONS}
