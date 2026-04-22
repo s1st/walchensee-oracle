@@ -9,6 +9,9 @@ from oracle.knowledge import rules
 from oracle.knowledge.rules import Signal, Verdict
 from oracle.pillars import chat, measurements, meteo, pressure
 from oracle.pillars.chat import ChatMessage
+from oracle.pillars.measurements import WindReading
+from oracle.pillars.meteo import MeteoSnapshot
+from oracle.pillars.pressure import PressureSnapshot
 
 
 @dataclass
@@ -16,6 +19,11 @@ class Forecast:
     overall: Signal
     verdicts: list[Verdict]
     chat_messages: list[ChatMessage] = field(default_factory=list)
+    # Raw pillar inputs — kept so the calibration logger can replay / re-score
+    # past decisions with different thresholds without re-fetching.
+    pressure: PressureSnapshot | None = None
+    meteo: MeteoSnapshot | None = None
+    winds: list[WindReading] = field(default_factory=list)
 
 
 async def run_forecast(day: date) -> Forecast:
@@ -37,6 +45,9 @@ async def run_forecast(day: date) -> Forecast:
         overall=_aggregate(verdicts),
         verdicts=verdicts,
         chat_messages=messages,
+        pressure=snapshot,
+        meteo=meteo_snap,
+        winds=winds,
     )
 
 

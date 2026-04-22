@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from dataclasses import asdict
 from datetime import date, datetime
 
 import typer
@@ -13,6 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from oracle.engine import Forecast, run_forecast
+from oracle.logger import DEFAULT_RUNS_DIR, backfill_run, forecast_to_dict, write_run
 
 load_dotenv()
 
@@ -26,45 +26,47 @@ def forecast(
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON to stdout instead of tables."
     ),
+    log: bool = typer.Option(
+        True, "--log/--no-log", help="Write the run to data/runs/<day>.json for calibration."
+    ),
 ) -> None:
     target = date.fromisoformat(day) if day else date.today()
     result = asyncio.run(run_forecast(target))
 
+    if log:
+        path = write_run(result, target)
+        if not json_output:
+            console.print(f"[dim]logged to {path}[/dim]")
+
     if json_output:
-        sys.stdout.write(_to_json(result, target) + "\n")
+        sys.stdout.write(json.dumps(forecast_to_dict(result, target), ensure_ascii=False) + "\n")
         return
 
     _render_tables(result, target)
 
 
-def _to_json(result: Forecast, target: date) -> str:
-    return json.dumps(
-        {
-            "day": target.isoformat(),
-            "overall": result.overall.value,
-            "verdicts": [
-                {"rule": v.rule, "signal": v.signal.value, "reason": v.reason}
-                for v in result.verdicts
-            ],
-            "chat_messages": [
-                {
-                    "posted_at": m.posted_at.isoformat(),
-                    "author": m.author,
-                    "channel": m.channel,
-                    "text": m.text,
-                }
-                for m in result.chat_messages
-            ],
-        },
-        ensure_ascii=False,
-        default=_json_default,
+@app.command()
+def backfill(
+    day: str = typer.Option(None, help="ISO date, defaults to today"),
+) -> None:
+    """Merge the day's Urfeld wind curve into the existing run log."""
+    target = date.fromisoformat(day) if day else date.today()
+    path = asyncio.run(backfill_run(target))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    machine = data.get("ground_truth", {}).get("machine") or {}
+    console.print(f"[bold]Backfilled:[/bold] {path}")
+    if not machine:
+        console.print("[yellow]no Urfeld samples landed in that day's window[/yellow]")
+        return
+    console.print(
+        f"  peak avg : {machine.get('peak_avg_knots')} kt @ {machine.get('peak_avg_at')}"
     )
-
-
-def _json_default(obj: object) -> str:
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    raise TypeError(f"not JSON-serialisable: {type(obj).__name__}")
+    console.print(f"  peak gust: {machine.get('peak_gust_knots')} kt")
+    console.print(f"  first ignition (≥8 kt): {machine.get('first_ignition_at') or '—'}")
+    console.print(
+        f"  samples ≥8 kt: {machine.get('samples_above_8kt')}  "
+        f"≥12 kt: {machine.get('samples_above_12kt')}"
+    )
 
 
 def _render_tables(result: Forecast, target: date) -> None:

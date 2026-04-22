@@ -96,7 +96,24 @@ async def _fetch_bright_sky(client: httpx.AsyncClient) -> WindReading:
     )
 
 
-async def _fetch_urfeld(client: httpx.AsyncClient) -> WindReading:
+@dataclass
+class UrfeldSample:
+    """One row from the Addicted-Sports graph endpoint."""
+    measured_at: datetime
+    avg_knots: float
+    gust_knots: float
+
+
+async def _fetch_urfeld_entries(
+    client: httpx.AsyncClient,
+    window_start: date,
+    window_end: date,
+) -> list[dict]:
+    """Shared HTTP flow: CSRF dance + call to getWeatherData.php.
+
+    Returns the raw `measurment` entries the server delivers inside the
+    [window_start 00:00, window_end 00:00] window.
+    """
     page = await client.get(
         f"{ADDICTED_SPORTS_BASE_URL}/webcam/walchensee/urfeld/",
         headers={"User-Agent": _UA},
@@ -106,20 +123,13 @@ async def _fetch_urfeld(client: httpx.AsyncClient) -> WindReading:
     if not match:
         raise RuntimeError("csrf-token meta tag not found on Urfeld page")
     token = match.group(1)
-    # Session cookies set by the HTML response are already on `client` and
-    # will be carried automatically on the next request.
 
-    # Window must include "now" — the endpoint returns entries inside
-    # [startimg, stopimg]. Span today → tomorrow so any current reading is
-    # always captured regardless of the hour of day.
-    today = date.today()
-    tomorrow = today + timedelta(days=1)
     data_url = f"{ADDICTED_SPORTS_BASE_URL}/fileadmin/webcam/src/getWeatherData.php"
     response = await client.get(
         data_url,
         params={
-            "startimg": f"{today:%Y/%m/%d}/0000",
-            "stopimg": f"{tomorrow:%Y/%m/%d}/0000",
+            "startimg": f"{window_start:%Y/%m/%d}/0000",
+            "stopimg": f"{window_end:%Y/%m/%d}/0000",
             "graph": "true",
             "wc": "walchensee",
             "lang": "DE",
@@ -140,18 +150,53 @@ async def _fetch_urfeld(client: httpx.AsyncClient) -> WindReading:
     entries: dict = body.get("measurment") or {}
     if not entries:
         raise RuntimeError("Addicted-Sports returned empty measurement set")
+    return list(entries.values())
 
-    latest_key = max(entries, key=lambda k: int(entries[k]["utctstamp"]))
-    latest = entries[latest_key]
 
+async def _fetch_urfeld(client: httpx.AsyncClient) -> WindReading:
+    today = date.today()
+    entries = await _fetch_urfeld_entries(client, today, today + timedelta(days=1))
+    latest = max(entries, key=lambda e: int(e["utctstamp"]))
     return WindReading(
         station="Urfeld",
         role=StationRole.SHORE,
         avg_knots=float(latest["wsavg"]),
         gust_knots=float(latest["wsmax"]),
-        direction_deg=None,  # not exposed by this endpoint
+        direction_deg=None,
         measured_at=datetime.fromisoformat(latest["tsdatetime"].replace(" ", "T")),
     )
+
+
+async def fetch_urfeld_day_curve(
+    day: date,
+    client: httpx.AsyncClient | None = None,
+) -> list[UrfeldSample]:
+    """Retrospectively pull all Urfeld samples that fell inside `day` (local time).
+
+    Used by the calibration logger to capture ground-truth wind after the fact.
+    """
+    owns_client = client is None
+    client = client or httpx.AsyncClient(timeout=15.0)
+    try:
+        entries = await _fetch_urfeld_entries(client, day, day + timedelta(days=1))
+    finally:
+        if owns_client:
+            await client.aclose()
+
+    samples: list[UrfeldSample] = []
+    for entry in entries:
+        measured_at = datetime.fromisoformat(entry["tsdatetime"].replace(" ", "T"))
+        if measured_at.date() != day:
+            continue
+        samples.append(
+            UrfeldSample(
+                measured_at=measured_at,
+                avg_knots=float(entry["wsavg"]),
+                gust_knots=float(entry["wsmax"]),
+            )
+        )
+    samples.sort(key=lambda s: s.measured_at)
+    return samples
 
 
 def _required(weather: dict, key: str) -> float:

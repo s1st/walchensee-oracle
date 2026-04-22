@@ -39,9 +39,17 @@ cp .env.example .env
 ## Usage
 
 ```bash
-oracle              # forecast for today
-oracle --day 2026-05-15   # forecast for a specific day
+oracle forecast                      # today's forecast, also logged to data/runs/
+oracle forecast --day 2026-05-15     # specific day
+oracle forecast --json               # machine-readable output for agents
+oracle backfill                      # merge today's Urfeld wind curve as ground truth
+oracle backfill --day 2026-05-15     # backfill a specific past day
 ```
+
+Each forecast writes `data/runs/<YYYY-MM-DD>.json` with the raw inputs, the
+verdict, and an empty `ground_truth` block. `backfill` fills in
+`ground_truth.machine` (Urfeld peak / ignition time / duration above
+thresholds). Edit `ground_truth.human` by hand for subjective notes.
 
 ## Layout
 
