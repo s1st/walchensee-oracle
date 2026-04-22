@@ -9,16 +9,19 @@ Reads per-day records from the same store the scheduled job writes
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from oracle.logger import default_store
+from oracle.pillars.measurements import fetch_urfeld_day_curve
 
 # @handle tags embedded in message bodies also identify authors — strip those
 # so the public HTML never ships a windinfo.eu username. Match Unicode word
@@ -96,6 +99,14 @@ _RULE_DESCRIPTIONS: dict[str, dict[str, str]] = {
 # need a proper refactor of the rules module to emit bilingual reasons.
 _UI: dict[str, dict[str, str]] = {
     "de": {
+        "live_header": "Aktuell an Urfeld",
+        "live_now": "jetzt",
+        "live_last_hour": "Schnitt letzte Stunde",
+        "live_trend_up": "steigend",
+        "live_trend_down": "fallend",
+        "live_trend_flat": "stabil",
+        "live_unavailable": "Urfeld-Sensor gerade nicht erreichbar.",
+        "webcam_label": "Webcam Urfeld",
         "lead": "Geht heute Thermik am Walchensee?",
         "verdict_go": "GEHT",
         "verdict_maybe": "GRENZWERTIG",
@@ -124,6 +135,14 @@ _UI: dict[str, dict[str, str]] = {
         "footer_chat_suffix": "-Chats.",
     },
     "en": {
+        "live_header": "Live at Urfeld",
+        "live_now": "now",
+        "live_last_hour": "last-hour average",
+        "live_trend_up": "rising",
+        "live_trend_down": "dropping",
+        "live_trend_flat": "steady",
+        "live_unavailable": "Urfeld sensor not reachable right now.",
+        "webcam_label": "Urfeld webcam",
         "lead": "Will the thermal blow at Walchensee today?",
         "verdict_go": "GO",
         "verdict_maybe": "MAYBE",
@@ -154,6 +173,28 @@ _UI: dict[str, dict[str, str]] = {
 }
 
 
+_HORIZON_LABELS = {
+    "de": ["Heute", "Morgen", "Übermorgen"],
+    "en": ["Today", "Tomorrow", "Day after"],
+}
+
+
+def _horizon_days(today: date, lang: str, selected_iso: str) -> list[dict]:
+    """Return today + next 2 days with label, verdict (if logged), selection flag."""
+    labels = _HORIZON_LABELS.get(lang, _HORIZON_LABELS["en"])
+    out: list[dict] = []
+    for i, label in enumerate(labels):
+        d = today + timedelta(days=i)
+        record = _cached_read(d.isoformat())
+        out.append({
+            "iso": d.isoformat(),
+            "label": label,
+            "verdict": record.get("overall") if record else None,
+            "selected": d.isoformat() == selected_iso,
+        })
+    return out
+
+
 def _resolve_lang(request: Request) -> str:
     """Priority: ?lang= → cookie → Accept-Language header → 'de'."""
     q = request.query_params.get("lang")
@@ -182,6 +223,72 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 # Simple 60s TTL cache so a page load hits GCS at most once per minute per day.
 _CACHE_TTL_S = 60.0
 _cache: dict[str, tuple[dict | None, float]] = {}
+
+# Urfeld live wind cache — 5 min TTL to match the anemometer's ~10 min sample
+# cadence without hammering Addicted-Sports on every page load.
+_URFELD_LIVE_TTL_S = 300.0
+_urfeld_live: dict | None = None
+_urfeld_live_at: float = 0.0
+
+
+async def _fetch_urfeld_live() -> dict:
+    """Return a snapshot of the latest Urfeld samples: current / 1h avg / trend.
+
+    Result shape (keys absent on failure):
+      {available: True, latest_avg_kt, latest_gust_kt, latest_at,
+       last_hour_avg, prev_hour_avg, trend: "up"|"down"|"flat"}
+    """
+    global _urfeld_live, _urfeld_live_at
+    now = time.time()
+    if _urfeld_live is not None and now - _urfeld_live_at < _URFELD_LIVE_TTL_S:
+        return _urfeld_live
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            samples = await fetch_urfeld_day_curve(date.today(), client=client)
+    except Exception as exc:  # network, CSRF, Addicted-Sports down — degrade gracefully
+        _urfeld_live = {"available": False, "error": str(exc)}
+        _urfeld_live_at = now
+        return _urfeld_live
+
+    if not samples:
+        _urfeld_live = {"available": False, "error": "no samples"}
+        _urfeld_live_at = now
+        return _urfeld_live
+
+    # Sort newest → oldest for easy windowing.
+    samples = sorted(samples, key=lambda s: s.measured_at, reverse=True)
+    latest = samples[0]
+    last_hour = [s for s in samples if (latest.measured_at - s.measured_at).total_seconds() <= 3600]
+    prev_hour = [
+        s for s in samples
+        if 3600 < (latest.measured_at - s.measured_at).total_seconds() <= 7200
+    ]
+
+    last_hour_avg = sum(s.avg_knots for s in last_hour) / len(last_hour)
+    prev_hour_avg = (
+        sum(s.avg_knots for s in prev_hour) / len(prev_hour) if prev_hour else None
+    )
+    if prev_hour_avg is None:
+        trend = "flat"
+    elif last_hour_avg > prev_hour_avg + 1.0:
+        trend = "up"
+    elif last_hour_avg < prev_hour_avg - 1.0:
+        trend = "down"
+    else:
+        trend = "flat"
+
+    _urfeld_live = {
+        "available": True,
+        "latest_avg_kt": round(latest.avg_knots, 1),
+        "latest_gust_kt": round(latest.gust_knots, 1),
+        "latest_at": latest.measured_at.isoformat(),
+        "last_hour_avg": round(last_hour_avg, 1),
+        "prev_hour_avg": round(prev_hour_avg, 1) if prev_hour_avg is not None else None,
+        "trend": trend,
+    }
+    _urfeld_live_at = now
+    return _urfeld_live
 
 
 def _cached_read(iso_day: str) -> dict | None:
@@ -291,14 +398,34 @@ def _public_view(record: dict | None) -> dict | None:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request) -> Response:
+async def index(request: Request) -> Response:
     lang = _resolve_lang(request)
     today = date.today()
-    raw = _most_recent(today)
+
+    # Which day to show? ?day=YYYY-MM-DD (within [today, today+2]); else today.
+    selected_day = today
+    requested = request.query_params.get("day")
+    if requested:
+        try:
+            parsed = date.fromisoformat(requested)
+            if timedelta(0) <= parsed - today <= timedelta(days=2):
+                selected_day = parsed
+        except ValueError:
+            pass
+
+    # Fall back to the most-recent-available record only when today's isn't yet
+    # written (early in the morning before the scheduled job has run).
+    raw = _cached_read(selected_day.isoformat())
+    if raw is None and selected_day == today:
+        raw = _most_recent(today)
+
     summary = _summary_line(raw, lang) if raw else ""
     sentiment = _chat_sentiment(raw) if raw else None
-    # Pre-resolve per-rule tooltip string in the chosen language.
     tooltips = {name: _rule_tooltip(name, lang) for name in _RULE_DESCRIPTIONS}
+    horizon = _horizon_days(today, lang, selected_day.isoformat())
+    # Only show live wind on the "today" tab — yesterday/tomorrow views
+    # would be misleading with a live reading.
+    live = await _fetch_urfeld_live() if selected_day == today else None
 
     response = templates.TemplateResponse(
         request=request,
@@ -309,12 +436,14 @@ def index(request: Request) -> Response:
             "sentiment": sentiment,
             "history": _history(today),
             "today_iso": today.isoformat(),
+            "selected_iso": selected_day.isoformat(),
+            "horizon": horizon,
             "rule_descriptions": tooltips,
+            "live": live,
             "t": _UI[lang],
             "lang": lang,
         },
     )
-    # If the visitor picked a language via ?lang=, remember it for a year.
     q = request.query_params.get("lang")
     if q in _UI:
         response.set_cookie("lang", q, max_age=365 * 24 * 3600, samesite="lax")

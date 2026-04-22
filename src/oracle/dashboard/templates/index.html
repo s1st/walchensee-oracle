@@ -40,6 +40,67 @@
   .lang-toggle a:hover { filter: none; opacity: 1; }
   .lang-toggle a.active { filter: none; opacity: 1; }
 
+  .day-tabs {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    margin: 16px 0 24px;
+  }
+  .day-tab {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 10px 6px; text-decoration: none; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; font-size: 13px; position: relative;
+    transition: color .1s, border-color .1s;
+  }
+  .day-tab:hover { color: var(--text); border-color: var(--text); }
+  .day-tab.selected { color: var(--text); border-color: var(--text); }
+  .day-tab-label { font-weight: 600; }
+  .day-tab-date { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .day-tab::after {
+    content: ""; position: absolute; top: 8px; right: 8px;
+    width: 8px; height: 8px; border-radius: 50%; background: transparent;
+  }
+  .day-tab.dot-go::after    { background: var(--go); }
+  .day-tab.dot-maybe::after { background: var(--maybe); }
+  .day-tab.dot-no_go::after { background: var(--no-go); }
+
+  .live-panel {
+    display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px;
+    margin: 12px 0 20px;
+  }
+  @media (max-width: 520px) { .live-panel { grid-template-columns: 1fr; } }
+  .webcam { position: relative; background: var(--panel); border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .webcam img { width: 100%; display: block; aspect-ratio: 16 / 9; object-fit: cover; }
+  .webcam-credit {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 4px 8px; font-size: 10px;
+    background: linear-gradient(to top, rgba(0,0,0,.7), rgba(0,0,0,0));
+    color: rgba(255,255,255,.75);
+  }
+  .webcam-credit a { color: inherit; }
+  .live-box {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; display: flex; flex-direction: column; justify-content: center;
+  }
+  .live-box h4 {
+    margin: 0 0 8px; font-size: 11px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .1em; font-weight: 500;
+  }
+  .live-now-line {
+    font-size: 28px; font-weight: 700; line-height: 1;
+  }
+  .live-now-line .unit { font-size: 14px; color: var(--muted); font-weight: 400; margin-left: 2px; }
+  .live-gust { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .live-avg {
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+    font-size: 13px; display: flex; align-items: baseline; gap: 6px;
+  }
+  .live-avg .value { font-weight: 600; }
+  .live-trend { font-size: 12px; color: var(--muted); }
+  .live-trend.up   { color: var(--go); }
+  .live-trend.down { color: var(--no-go); }
+  .live-updated { color: var(--muted); font-size: 11px; margin-top: 8px; }
+  .live-unavailable { color: var(--muted); font-size: 13px; }
+
   .verdict-card {
     padding: 28px 24px; border-radius: 10px; margin-bottom: 20px;
     border-left: 6px solid var(--border);
@@ -160,6 +221,16 @@
 <h1>Walchi Oracle</h1>
 <p class="lead">{{ t.lead }}</p>
 
+<nav class="day-tabs">
+  {% for d in horizon %}
+    <a href="?day={{ d.iso }}{% if lang %}&lang={{ lang }}{% endif %}"
+       class="day-tab {% if d.selected %}selected{% endif %} {% if d.verdict %}dot-{{ d.verdict }}{% endif %}">
+      <span class="day-tab-label">{{ d.label }}</span>
+      <span class="day-tab-date">{{ d.iso[5:] }}</span>
+    </a>
+  {% endfor %}
+</nav>
+
 {% if current %}
   {% set v = current.overall %}
   <section class="verdict-card {{ v }}">
@@ -169,6 +240,42 @@
     <p class="verdict-summary">{{ summary }}</p>
     <div class="verdict-meta">{{ t.for_day }} {{ current.day }}.</div>
   </section>
+
+  {% if live is not none and selected_iso == today_iso %}
+  <div class="live-panel">
+    <div class="webcam">
+      <img src="https://www.addicted-sports.com/fileadmin/webcam/walchensee/wc_walchensee_01.jpg"
+           alt="{{ t.webcam_label }}" loading="lazy">
+      <div class="webcam-credit">
+        {{ t.webcam_label }} · © Panoramahotel Karwendelblick /
+        <a href="https://www.addicted-sports.com/webcam/walchensee/urfeld/" target="_blank" rel="noopener">addicted-sports.com</a>
+      </div>
+    </div>
+    <div class="live-box">
+      <h4>{{ t.live_header }}</h4>
+      {% if live.available %}
+        <div class="live-now-line">
+          {{ '%.1f'|format(live.latest_avg_kt) }}<span class="unit"> kt {{ t.live_now }}</span>
+        </div>
+        <div class="live-gust">↑ {{ '%.1f'|format(live.latest_gust_kt) }} kt</div>
+        <div class="live-avg">
+          <span class="value">⌀ {{ '%.1f'|format(live.last_hour_avg) }} kt</span>
+          <span>{{ t.live_last_hour }}</span>
+          <span class="live-trend {{ live.trend }}">
+            {% if live.trend == 'up' %}↗ {{ t.live_trend_up }}
+            {%- elif live.trend == 'down' %}↘ {{ t.live_trend_down }}
+            {%- else %}→ {{ t.live_trend_flat }}{% endif %}
+          </span>
+        </div>
+        <div class="live-updated">
+          {{ live.latest_at[11:16] }}
+        </div>
+      {% else %}
+        <div class="live-unavailable">{{ t.live_unavailable }}</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 
   {% if sentiment %}
   <div class="badges">
@@ -230,7 +337,7 @@
 
   {% if current.chat_messages %}
     <h3 style="margin-top: 20px;">{{ t.chat_header_advanced }}</h3>
-    {% for m in current.chat_messages[-5:] %}
+    {% for m in (current.chat_messages[-5:])|reverse %}
       <div class="chat-msg">
         <span class="when">{{ m.posted_at[:16]|replace('T', ' ') }}</span>
         <p class="text">{{ m.text }}</p>

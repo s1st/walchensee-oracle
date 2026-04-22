@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import typer
 from dotenv import load_dotenv
@@ -23,26 +23,45 @@ console = Console()
 @app.command()
 def forecast(
     day: str = typer.Option(None, help="ISO date, defaults to today"),
+    horizon: int = typer.Option(
+        1, "--horizon",
+        help="Number of consecutive days to forecast starting from `day` (or today). "
+             "With --horizon 3 the scheduled job writes today, tomorrow and day-after logs.",
+    ),
     json_output: bool = typer.Option(
         False, "--json", help="Emit machine-readable JSON to stdout instead of tables."
     ),
     log: bool = typer.Option(
-        True, "--log/--no-log", help="Write the run to data/runs/<day>.json for calibration."
+        True, "--log/--no-log", help="Write the run(s) to data/runs/<day>.json."
     ),
 ) -> None:
-    target = date.fromisoformat(day) if day else date.today()
-    result = asyncio.run(run_forecast(target))
+    start = date.fromisoformat(day) if day else date.today()
+    targets = [start + timedelta(days=i) for i in range(horizon)]
 
-    if log:
-        location = write_run(result, target)
-        if not json_output:
-            console.print(f"[dim]logged to {location}[/dim]")
-
-    if json_output:
-        sys.stdout.write(json.dumps(forecast_to_dict(result, target), ensure_ascii=False) + "\n")
+    if horizon == 1:
+        target = targets[0]
+        result = asyncio.run(run_forecast(target))
+        if log:
+            location = write_run(result, target)
+            if not json_output:
+                console.print(f"[dim]logged to {location}[/dim]")
+        if json_output:
+            sys.stdout.write(json.dumps(forecast_to_dict(result, target), ensure_ascii=False) + "\n")
+            return
+        _render_tables(result, target)
         return
 
-    _render_tables(result, target)
+    # Multi-day mode: terse per-day summary, each day logged independently.
+    async def run_all() -> None:
+        for target in targets:
+            result = await run_forecast(target)
+            if log:
+                location = write_run(result, target)
+                console.print(f"{target.isoformat()}: {result.overall.value:5} → {location}")
+            else:
+                console.print(f"{target.isoformat()}: {result.overall.value}")
+
+    asyncio.run(run_all())
 
 
 @app.command()
