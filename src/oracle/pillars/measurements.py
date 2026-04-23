@@ -156,7 +156,12 @@ async def _fetch_urfeld_entries(
 async def _fetch_urfeld(client: httpx.AsyncClient) -> WindReading:
     today = date.today()
     entries = await _fetch_urfeld_entries(client, today, today + timedelta(days=1))
-    latest = max(entries, key=lambda e: int(e["utctstamp"]))
+    # Addicted-Sports occasionally emits metadata-only rows (timestamps but no
+    # wsavg/wsmax). Skip them — one bad row shouldn't take out the whole pillar.
+    usable = [e for e in entries if "wsavg" in e and "wsmax" in e]
+    if not usable:
+        raise RuntimeError("Addicted-Sports returned no entries with wind values")
+    latest = max(usable, key=lambda e: int(e["utctstamp"]))
     return WindReading(
         station="Urfeld",
         role=StationRole.SHORE,
@@ -187,6 +192,10 @@ async def fetch_urfeld_day_curve(
     for entry in entries:
         measured_at = datetime.fromisoformat(entry["tsdatetime"].replace(" ", "T"))
         if measured_at.date() != day:
+            continue
+        # Metadata-only rows (missing wsavg/wsmax) show up occasionally; skip
+        # them instead of aborting the whole fetch.
+        if "wsavg" not in entry or "wsmax" not in entry:
             continue
         samples.append(
             UrfeldSample(
