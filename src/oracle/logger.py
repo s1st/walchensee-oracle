@@ -39,6 +39,7 @@ _SESSION_KT = 12.0
 class RunStore(Protocol):
     def read(self, iso_day: str) -> dict | None: ...
     def write(self, iso_day: str, data: dict) -> str: ...
+    def list_days(self) -> list[str]: ...
 
 
 @dataclass
@@ -61,6 +62,9 @@ class LocalRunStore:
         path = self.directory / f"{iso_day}.json"
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         return str(path)
+
+    def list_days(self) -> list[str]:
+        return sorted(p.stem for p in self.directory.glob("*.json"))
 
 
 @dataclass
@@ -93,6 +97,15 @@ class GCSRunStore:
             content_type="application/json",
         )
         return f"gs://{self.bucket_name}/runs/{iso_day}.json"
+
+    def list_days(self) -> list[str]:
+        # Blob names look like "runs/2026-04-22.json"; strip prefix + suffix.
+        days: list[str] = []
+        for blob in self._client.list_blobs(self._bucket, prefix="runs/"):
+            name = blob.name
+            if name.endswith(".json") and name.startswith("runs/"):
+                days.append(name[len("runs/"):-len(".json")])
+        return sorted(days)
 
 
 def default_store() -> RunStore:

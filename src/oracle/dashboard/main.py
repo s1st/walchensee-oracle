@@ -20,6 +20,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from oracle.calibration import actual_verdict as _actual_verdict
 from oracle.logger import default_store
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
 
@@ -529,21 +530,6 @@ def _most_recent(today: date) -> dict | None:
         if record is not None:
             return record
     return None
-
-
-def _actual_verdict(peak_avg_kt: float | None) -> str | None:
-    """Categorise the Urfeld-peak ground truth onto the same go/maybe/no_go scale.
-
-    ≥ 12 kt = session-worthy (go); 8–12 kt = ignited but marginal (maybe);
-    < 8 kt = didn't fire (no_go). None when no ground truth was logged.
-    """
-    if peak_avg_kt is None:
-        return None
-    if peak_avg_kt >= 12:
-        return "go"
-    if peak_avg_kt >= 8:
-        return "maybe"
-    return "no_go"
 
 
 def _history(today: date, lang: str, days: int = 30) -> list[dict]:

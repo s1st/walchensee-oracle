@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
+from oracle.calibration import compile_report, format_text_report
 from oracle.engine import Forecast, run_forecast
 from oracle.logger import backfill_run, forecast_to_dict, load_run, write_run
 
@@ -86,6 +87,25 @@ def backfill(
         f"  samples ≥8 kt: {machine.get('samples_above_8kt')}  "
         f"≥12 kt: {machine.get('samples_above_12kt')}"
     )
+
+
+@app.command()
+def calibrate(
+    since: str = typer.Option(None, help="ISO date — only consider days from this date forward."),
+    until: str = typer.Option(None, help="ISO date — only consider days up to this date."),
+    rule: str = typer.Option(None, help="Restrict per-rule table to a single rule (e.g. post_rain_moisture)."),
+) -> None:
+    """Score logged forecasts against Urfeld peak ground truth.
+
+    Reports the overall confusion matrix and per-rule false-positive vetos
+    (rules that said NO_GO on days the lake actually fired). Reads from the
+    same RunStore the forecast/backfill jobs write — local in dev, GCS in
+    prod when $RUNS_BUCKET is set.
+    """
+    since_d = date.fromisoformat(since) if since else None
+    until_d = date.fromisoformat(until) if until else None
+    report = compile_report(since=since_d, until=until_d)
+    console.print(format_text_report(report, rule_filter=rule))
 
 
 def _render_tables(result: Forecast, target: date) -> None:
