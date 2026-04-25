@@ -160,6 +160,7 @@ _RULE_DESCRIPTIONS: dict[str, dict[str, str]] = {
 _UI: dict[str, dict[str, str]] = {
     "de": {
         "strip_forecast": "Vorhersage",
+        "strip_resimulated": "Neuberechnet (aktueller Aggregator)",
         "strip_actual": "Realität (Urfeld-Peak)",
         "strip_legend_go": "Wind (≥ 12 kt)",
         "strip_legend_maybe": "marginal (8–12 kt)",
@@ -208,6 +209,7 @@ _UI: dict[str, dict[str, str]] = {
     },
     "en": {
         "strip_forecast": "Forecast",
+        "strip_resimulated": "Re-scored (current aggregator)",
         "strip_actual": "Actual (Urfeld peak)",
         "strip_legend_go": "wind (≥ 12 kt)",
         "strip_legend_maybe": "marginal (8–12 kt)",
@@ -539,13 +541,22 @@ def _history(today: date, lang: str, days: int = 30) -> list[dict]:
         d = today - timedelta(days=i)
         record = _cached_read(d.isoformat())
         peak = None
+        verdict = None
+        resimulated = None
         if record:
             machine = (record.get("ground_truth") or {}).get("machine") or {}
             peak = machine.get("peak_avg_knots")
+            verdict = record.get("overall")
+            # Re-scored verdict under the current aggregator. Falls back to the
+            # historical `overall` so days that pre-date `oracle rescore` (or
+            # records too incomplete to re-score) still show *something* in the
+            # row instead of an empty cell.
+            resimulated = record.get("overall_resimulated") or verdict
         items.append({
             "iso": d.isoformat(),
             "day": _fmt_date(d, lang, "strip"),
-            "verdict": record.get("overall") if record else None,
+            "verdict": verdict,
+            "resimulated": resimulated,
             "peak_avg_knots": peak,
             "actual": _actual_verdict(peak),
         })

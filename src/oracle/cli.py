@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from oracle.calibration import compile_report, format_text_report
+from oracle.calibration import compile_report, format_text_report, rescore_all
 from oracle.engine import Forecast, run_forecast
 from oracle.logger import backfill_run, forecast_to_dict, load_run, write_run
 
@@ -87,6 +87,36 @@ def backfill(
         f"  samples ≥8 kt: {machine.get('samples_above_8kt')}  "
         f"≥12 kt: {machine.get('samples_above_12kt')}"
     )
+
+
+@app.command()
+def rescore(
+    since: str = typer.Option(None, help="ISO date — only re-score days from this date forward."),
+    until: str = typer.Option(None, help="ISO date — only re-score days up to this date."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Don't write; just report what would change."),
+) -> None:
+    """Re-run the rule layer on each logged record under the current aggregator.
+
+    Adds `overall_resimulated` + `verdicts_resimulated` to each record without
+    touching the historical `overall` / `verdicts` (kept as evidence of what
+    the aggregator said at write time). The dashboard reads the resimulated
+    field for the 'Re-scored' strip row when present.
+    """
+    since_d = date.fromisoformat(since) if since else None
+    until_d = date.fromisoformat(until) if until else None
+    summary = rescore_all(since=since_d, until=until_d, dry_run=dry_run)
+    action = "would rewrite" if dry_run else "rewrote"
+    console.print(f"{action} {len(summary['rewritten']) or len(summary.get('flipped', []))} records")
+    if summary["skipped"]:
+        console.print(f"[yellow]skipped (incomplete inputs): {len(summary['skipped'])}[/yellow]")
+        for iso in summary["skipped"][:10]:
+            console.print(f"  {iso}")
+    if summary["flipped"]:
+        console.print(f"[bold]verdict flipped on {len(summary['flipped'])} days:[/bold]")
+        for iso, old, new in summary["flipped"]:
+            console.print(f"  {iso}: {old} → {new}")
+    else:
+        console.print("[dim]no overall verdicts changed[/dim]")
 
 
 @app.command()

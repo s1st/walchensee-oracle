@@ -361,6 +361,16 @@
 </div>
 
 <div class="strip-row">
+  <div class="strip-row-label">{{ t.strip_resimulated }}</div>
+  <div class="strip">
+    {% for d in history %}
+      <div class="cell {{ d.resimulated or 'empty' }}"
+           title="{{ d.day }} — {{ t.strip_resimulated }}: {{ d.resimulated or '—' }}"></div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="strip-row">
   <div class="strip-row-label">{{ t.strip_actual }}</div>
   <div class="strip">
     {% for d in history %}

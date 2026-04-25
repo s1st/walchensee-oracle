@@ -26,14 +26,17 @@ class Forecast:
     winds: list[WindReading] = field(default_factory=list)
 
 
-async def run_forecast(day: date) -> Forecast:
-    snapshot, meteo_snap, winds, messages = await asyncio.gather(
-        pressure.fetch_snapshot(),
-        meteo.fetch_snapshot(day),
-        measurements.fetch_latest(),
-        _fetch_chat_tolerant(),
-    )
-    verdicts = [
+def apply_rules(
+    snapshot: PressureSnapshot,
+    meteo_snap: MeteoSnapshot,
+    winds: list[WindReading],
+) -> list[Verdict]:
+    """Pure function: pillar snapshots in, twelve verdicts out.
+
+    Extracted so calibration tooling can re-run the rule layer against a
+    record's stored `inputs` block without re-fetching the upstream APIs.
+    """
+    return [
         rules.thermik(snapshot),
         rules.foehn_override(snapshot),
         rules.overnight_cooling(meteo_snap),
@@ -47,6 +50,16 @@ async def run_forecast(day: date) -> Forecast:
         rules.synoptic_override(meteo_snap),
         rules.thermal_ignition(winds),
     ]
+
+
+async def run_forecast(day: date) -> Forecast:
+    snapshot, meteo_snap, winds, messages = await asyncio.gather(
+        pressure.fetch_snapshot(),
+        meteo.fetch_snapshot(day),
+        measurements.fetch_latest(),
+        _fetch_chat_tolerant(),
+    )
+    verdicts = apply_rules(snapshot, meteo_snap, winds)
     return Forecast(
         overall=_aggregate(verdicts),
         verdicts=verdicts,

@@ -19,9 +19,15 @@ Deliberately doesn't auto-tune thresholds; surfaces evidence for a human.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
+from oracle.config import StationRole
+from oracle.engine import _aggregate, apply_rules
+from oracle.knowledge.rules import Verdict
 from oracle.logger import RunStore, default_store
+from oracle.pillars.measurements import WindReading
+from oracle.pillars.meteo import MeteoSnapshot
+from oracle.pillars.pressure import PressureReading, PressureSnapshot
 
 # Same scale the dashboard uses to colour the 'Actual (Urfeld peak)' strip.
 _ACTUAL_GO_KT = 12.0      # session-worthy
@@ -81,6 +87,141 @@ def _empty_confusion() -> dict[str, dict[str, int]]:
 def _peak_from(record: dict) -> float | None:
     machine = (record.get("ground_truth") or {}).get("machine") or {}
     return machine.get("peak_avg_knots")
+
+
+# --- record re-scoring ----------------------------------------------------
+# Re-run the rule layer against a record's stored `inputs` block under the
+# *current* aggregator. Used to surface "what would the new severity-tiered
+# aggregator have said" on historical records — without re-fetching the
+# upstream APIs, which would return today's data anyway.
+
+
+def _pressure_from_dict(p: dict) -> PressureSnapshot:
+    measured = datetime.fromisoformat(p["measured_at"])
+    return PressureSnapshot(
+        thermik_north=PressureReading("Munich", float(p["munich_hpa"]), measured),
+        thermik_south=PressureReading("Innsbruck", float(p["innsbruck_hpa"]), measured),
+        foehn_south=PressureReading("Bolzano", float(p["bolzano_hpa"]), measured),
+    )
+
+
+def _meteo_from_dict(m: dict) -> MeteoSnapshot:
+    return MeteoSnapshot(
+        day=date.fromisoformat(m["day"]),
+        overnight_cloud_cover_pct=float(m["overnight_cloud_cover_pct"]),
+        morning_solar_radiation_wm2=float(m["morning_solar_radiation_wm2"]),
+        synoptic_wind_knots=float(m["synoptic_wind_knots"]),
+        min_dew_point_spread_c=float(m["min_dew_point_spread_c"]),
+        max_boundary_layer_height_m=float(m["max_boundary_layer_height_m"]),
+        soil_moisture_m3m3=float(m["soil_moisture_m3m3"]),
+        rained_yesterday=bool(m["rained_yesterday"]),
+        yesterday_precipitation_mm=float(m["yesterday_precipitation_mm"]),
+        max_lifted_index=float(m["max_lifted_index"]),
+        min_lifted_index=float(m["min_lifted_index"]),
+        max_cape_j_kg=float(m["max_cape_j_kg"]),
+        max_daytime_low_cloud_pct=float(m["max_daytime_low_cloud_pct"]),
+        wind_850_direction_at_peak_deg=float(m["wind_850_direction_at_peak_deg"]),
+        max_wind_700_knots=float(m["max_wind_700_knots"]),
+    )
+
+
+def _wind_from_dict(w: dict) -> WindReading:
+    return WindReading(
+        station=w["station"],
+        role=StationRole(w["role"]),
+        avg_knots=float(w["avg_knots"]),
+        gust_knots=float(w["gust_knots"]),
+        direction_deg=w.get("direction_deg"),
+        measured_at=datetime.fromisoformat(w["measured_at"]),
+    )
+
+
+def rescore_record(record: dict) -> tuple[str, list[Verdict]] | None:
+    """Re-run the rule layer against a record's stored inputs.
+
+    Returns (overall, verdicts) under the current aggregator, or None if the
+    record's inputs are too incomplete to reconstruct (older log schema —
+    common for records written before later meteo fields shipped).
+    """
+    inputs = record.get("inputs") or {}
+    p = inputs.get("pressure")
+    m = inputs.get("meteo")
+    winds_raw = inputs.get("measurements") or []
+    if not p or not m:
+        return None
+    try:
+        snapshot = _pressure_from_dict(p)
+        meteo_snap = _meteo_from_dict(m)
+        winds = [_wind_from_dict(w) for w in winds_raw]
+    except (KeyError, ValueError, TypeError):
+        return None
+
+    verdicts = apply_rules(snapshot, meteo_snap, winds)
+    return _aggregate(verdicts).value, verdicts
+
+
+def rescore_all(
+    store: RunStore | None = None,
+    since: date | None = None,
+    until: date | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """Walk every logged record, re-score it, and persist the result.
+
+    Adds two fields to each successfully re-scored record without touching
+    the historical `overall` / `verdicts` (which stay as evidence of what
+    the aggregator-of-the-day actually said):
+
+      - `overall_resimulated`
+      - `verdicts_resimulated`
+
+    Returns a small report: counts + list of skipped days.
+    """
+    store = store or default_store()
+    rewritten: list[str] = []
+    unchanged: list[str] = []
+    skipped: list[str] = []
+    flipped: list[tuple[str, str, str]] = []  # (iso, old_overall, new_overall)
+
+    for iso in store.list_days():
+        if since and date.fromisoformat(iso) < since:
+            continue
+        if until and date.fromisoformat(iso) > until:
+            continue
+        record = store.read(iso)
+        if record is None:
+            continue
+        result = rescore_record(record)
+        if result is None:
+            skipped.append(iso)
+            continue
+        new_overall, new_verdicts = result
+        record["overall_resimulated"] = new_overall
+        record["verdicts_resimulated"] = [
+            {
+                "rule": v.rule,
+                "signal": v.signal.value,
+                "severity": v.severity.value,
+                "reason_en": v.reason_en,
+                "reason_de": v.reason_de,
+            }
+            for v in new_verdicts
+        ]
+        old_overall = record.get("overall")
+        if old_overall != new_overall:
+            flipped.append((iso, old_overall, new_overall))
+        if not dry_run:
+            store.write(iso, record)
+            rewritten.append(iso)
+        else:
+            unchanged.append(iso)
+
+    return {
+        "rewritten": rewritten,
+        "skipped": skipped,
+        "flipped": flipped,
+        "dry_run": dry_run,
+    }
 
 
 def compile_report(

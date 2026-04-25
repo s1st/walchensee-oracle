@@ -1,7 +1,13 @@
 """Calibration: confusion matrix + per-rule offender stats."""
 from pathlib import Path
 
-from oracle.calibration import actual_verdict, compile_report, format_text_report
+from oracle.calibration import (
+    actual_verdict,
+    compile_report,
+    format_text_report,
+    rescore_all,
+    rescore_record,
+)
 from oracle.logger import LocalRunStore
 
 
@@ -95,6 +101,104 @@ def test_format_text_report_handles_empty(tmp_path: Path):
     report = compile_report(store=store)
     text = format_text_report(report)
     assert "No days with ground truth" in text
+
+
+# --- rescore -------------------------------------------------------------
+
+
+def _full_inputs(*, day: str, thermik_delta: float = 5.0, foehn_delta: float = 0.0,
+                 li_max: float = 3.0, li_min: float = 1.0) -> dict:
+    """Synthesise an inputs block matching what logger writes."""
+    return {
+        "pressure": {
+            "munich_hpa": 1018.0 + thermik_delta,
+            "innsbruck_hpa": 1018.0,
+            "bolzano_hpa": 1018.0 + foehn_delta,
+            "thermik_delta_hpa": thermik_delta,
+            "foehn_delta_hpa": foehn_delta,
+            "measured_at": f"{day}T08:00:00",
+        },
+        "meteo": {
+            "day": day,
+            "overnight_cloud_cover_pct": 10.0,
+            "morning_solar_radiation_wm2": 800.0,
+            "synoptic_wind_knots": 5.0,
+            "min_dew_point_spread_c": 10.0,
+            "max_boundary_layer_height_m": 1500.0,
+            "soil_moisture_m3m3": 0.20,
+            "rained_yesterday": False,
+            "yesterday_precipitation_mm": 0.0,
+            "max_lifted_index": li_max,
+            "min_lifted_index": li_min,
+            "max_cape_j_kg": 0.0,
+            "max_daytime_low_cloud_pct": 20.0,
+            "wind_850_direction_at_peak_deg": 30.0,
+            "max_wind_700_knots": 10.0,
+        },
+        "measurements": [],
+    }
+
+
+def test_rescore_record_returns_overall_and_verdicts():
+    record = {"inputs": _full_inputs(day="2026-04-22")}
+    result = rescore_record(record)
+    assert result is not None
+    overall, verdicts = result
+    # All inputs are favourable → only thermal_ignition (no winds → MAYBE) keeps overall off GO.
+    assert overall in ("go", "maybe")
+    rules = {v.rule for v in verdicts}
+    assert "thermik" in rules and "foehn_override" in rules
+
+
+def test_rescore_record_skips_incomplete_inputs():
+    # Pre-severity log shape with a missing meteo field can't be reconstructed.
+    record = {"inputs": {"pressure": {"munich_hpa": 1020}, "meteo": {"day": "2026-01-01"}}}
+    assert rescore_record(record) is None
+
+
+def test_rescore_record_soft_only_now_maybe():
+    # Old aggregator would say no_go (any NO_GO wins). New aggregator says maybe.
+    record = {
+        "inputs": _full_inputs(day="2026-04-22", thermik_delta=0.5, li_max=8.0),
+    }
+    overall, _ = rescore_record(record)
+    assert overall == "maybe"
+
+
+def test_rescore_all_writes_resimulated_field(tmp_path: Path):
+    store = LocalRunStore(tmp_path)
+    store.write("2026-04-22", {
+        "day": "2026-04-22",
+        "overall": "no_go",  # what old aggregator said
+        "verdicts": [],
+        "inputs": _full_inputs(day="2026-04-22", thermik_delta=0.5, li_max=8.0),
+        "ground_truth": {"machine": None, "human": None},
+    })
+
+    summary = rescore_all(store=store)
+    assert summary["rewritten"] == ["2026-04-22"]
+    assert summary["flipped"] == [("2026-04-22", "no_go", "maybe")]
+
+    rewritten = store.read("2026-04-22")
+    assert rewritten["overall"] == "no_go"        # historical kept
+    assert rewritten["overall_resimulated"] == "maybe"
+    assert any(v["rule"] == "thermik" for v in rewritten["verdicts_resimulated"])
+    # Ground truth must survive the round-trip.
+    assert rewritten["ground_truth"] == {"machine": None, "human": None}
+
+
+def test_rescore_all_dry_run_does_not_write(tmp_path: Path):
+    store = LocalRunStore(tmp_path)
+    store.write("2026-04-22", {
+        "day": "2026-04-22", "overall": "no_go", "verdicts": [],
+        "inputs": _full_inputs(day="2026-04-22", thermik_delta=0.5),
+        "ground_truth": {"machine": None, "human": None},
+    })
+    summary = rescore_all(store=store, dry_run=True)
+    assert summary["dry_run"] is True
+    assert summary["rewritten"] == []
+    rewritten = store.read("2026-04-22")
+    assert "overall_resimulated" not in rewritten
 
 
 def test_format_text_report_shows_offenders(tmp_path: Path):
