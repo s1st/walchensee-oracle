@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from oracle.knowledge import rules
-from oracle.knowledge.rules import Signal, Verdict
+from oracle.knowledge.rules import Severity, Signal, Verdict
 from oracle.pillars import chat, measurements, meteo, pressure
 from oracle.pillars.chat import ChatMessage
 from oracle.pillars.measurements import WindReading
@@ -67,7 +67,16 @@ async def _fetch_chat_tolerant() -> list[ChatMessage]:
 
 
 def _aggregate(verdicts: list[Verdict]) -> Signal:
-    if any(v.signal is Signal.NO_GO for v in verdicts):
+    """Severity-aware aggregation.
+
+    Only HARD vetos (Föhn, ≥15 kt synoptic, opposing/decoupling upper-level
+    flow, thunderstorm-risk LI) flip the overall to NO_GO. SOFT vetos
+    (attenuating signals like overcast, weak Δ pressure, wet ground) can only
+    downgrade GO → MAYBE; on their own they never block.
+    """
+    if any(
+        v.signal is Signal.NO_GO and v.severity is Severity.HARD for v in verdicts
+    ):
         return Signal.NO_GO
     if all(v.signal is Signal.GO for v in verdicts):
         return Signal.GO

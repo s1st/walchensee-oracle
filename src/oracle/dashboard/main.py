@@ -582,13 +582,26 @@ def _summary_line(record: dict, lang: str) -> str:
         return v.get(f"reason_{lang}") or v.get("reason") or ""
 
     if overall == "no_go":
-        blocker = next((v for v in verdicts if v["signal"] == "no_go"), None)
+        # Prefer a hard blocker (true cause under the severity-aware aggregator).
+        # Fall back to any NO_GO for legacy logs written before severity shipped.
+        blocker = next(
+            (v for v in verdicts if v["signal"] == "no_go" and v.get("severity") == "hard"),
+            None,
+        ) or next((v for v in verdicts if v["signal"] == "no_go"), None)
         return _reason(blocker) if blocker else "—"
     if overall == "go":
         go_count = sum(1 for v in verdicts if v["signal"] == "go")
         if lang == "en":
             return f"{go_count} of {len(verdicts)} rules green."
         return f"{go_count} von {len(verdicts)} Regeln grün."
+    # Overall is MAYBE — a soft NO_GO is more informative than a generic MAYBE,
+    # so surface that first if any rule emitted one.
+    soft_blocker = next(
+        (v for v in verdicts if v["signal"] == "no_go" and v.get("severity") == "soft"),
+        None,
+    )
+    if soft_blocker:
+        return _reason(soft_blocker)
     maybe = next((v for v in verdicts if v["signal"] == "maybe"), None)
     if maybe:
         return _reason(maybe)

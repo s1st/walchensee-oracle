@@ -2,6 +2,7 @@ from datetime import datetime
 
 from oracle.config import StationRole
 from oracle.knowledge.rules import (
+    Severity,
     Signal,
     atmospheric_stability,
     boundary_layer_height,
@@ -186,3 +187,74 @@ def test_thermal_ignition_detects_ignited_station():
         WindReading("Urfeld", StationRole.SHORE, 12.0, 18.0, 90.0, datetime.now()),
     ]
     assert thermal_ignition(winds).signal is Signal.GO
+
+
+# --- Severity tagging on NO_GO verdicts ----------------------------------
+# Hard vetos are the rules where a NO_GO physically destroys the thermal or
+# makes the lake unsafe. Soft vetos only attenuate; the new aggregator only
+# blocks on hard ones, so the right severity here is what makes the system
+# stop over-vetoing on placeholder thresholds.
+
+
+def test_thermik_no_go_is_soft():
+    assert thermik(_snapshot(1.0)).severity is Severity.SOFT
+
+
+def test_foehn_override_is_hard():
+    assert foehn_override(_snapshot(3.0, foehn_delta=5.0)).severity is Severity.HARD
+
+
+def test_overnight_cooling_no_go_is_soft():
+    assert overnight_cooling(_meteo(cloud=60)).severity is Severity.SOFT
+
+
+def test_solar_radiation_no_go_is_soft():
+    assert solar_radiation(_meteo(solar=400)).severity is Severity.SOFT
+
+
+def test_dew_point_spread_no_go_is_soft():
+    assert dew_point_spread(_meteo(dew_spread=3.0)).severity is Severity.SOFT
+
+
+def test_boundary_layer_no_go_is_soft():
+    assert boundary_layer_height(_meteo(blh=400.0)).severity is Severity.SOFT
+
+
+def test_post_rain_no_go_is_soft():
+    assert post_rain_moisture(_meteo(rained_yesterday=True, yesterday_mm=5.0)).severity is Severity.SOFT
+    assert post_rain_moisture(_meteo(soil=0.40)).severity is Severity.SOFT
+
+
+def test_atmospheric_stability_capped_is_soft():
+    # LI ≥ +6 means atmosphere is too stable / capped — advisory.
+    assert atmospheric_stability(_meteo(max_li=7.0, min_li=5.0)).severity is Severity.SOFT
+
+
+def test_atmospheric_stability_storm_is_hard():
+    # LI ≤ −2 means thunderstorm risk — unsafe regardless of thermal viability.
+    assert atmospheric_stability(_meteo(max_li=0.0, min_li=-3.0)).severity is Severity.HARD
+
+
+def test_daytime_clouds_no_go_is_soft():
+    assert daytime_clouds(_meteo(daytime_low_cloud=80)).severity is Severity.SOFT
+
+
+def test_upper_level_wind_opposing_is_hard():
+    assert upper_level_wind(_meteo(wind_850_dir=180)).severity is Severity.HARD
+
+
+def test_upper_level_wind_crossflow_is_hard():
+    assert upper_level_wind(_meteo(wind_850_dir=30, wind_700=30)).severity is Severity.HARD
+
+
+def test_synoptic_override_is_hard():
+    assert synoptic_override(_meteo(synoptic=20)).severity is Severity.HARD
+
+
+def test_go_verdicts_have_no_severity():
+    # Every GO/MAYBE Verdict should default to Severity.NONE so it can't be
+    # accidentally counted as a veto.
+    assert thermik(_snapshot(5.0)).severity is Severity.NONE
+    assert foehn_override(_snapshot(3.0, foehn_delta=0.5)).severity is Severity.NONE
+    assert dew_point_spread(_meteo(dew_spread=6.0)).severity is Severity.NONE  # MAYBE band
+    assert boundary_layer_height(_meteo(blh=800.0)).severity is Severity.NONE  # MAYBE band
