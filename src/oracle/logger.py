@@ -138,8 +138,8 @@ def forecast_to_dict(result: Forecast, target_day: date) -> dict:
             for v in result.verdicts
         ],
         "inputs": {
-            "pressure": result.pressure.to_dict() if result.pressure else None,
-            "meteo": result.meteo.to_dict() if result.meteo else None,
+            "pressure": result.pressure.to_dict(),
+            "meteo": result.meteo.to_dict(),
             "measurements": [w.to_dict() for w in result.winds],
         },
     }

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 
 import httpx
@@ -21,9 +21,9 @@ class Forecast:
     verdicts: list[Verdict]
     # Raw pillar inputs — kept so the calibration logger can replay / re-score
     # past decisions with different thresholds without re-fetching.
-    pressure: PressureSnapshot | None = None
-    meteo: MeteoSnapshot | None = None
-    winds: list[WindReading] = field(default_factory=list)
+    pressure: PressureSnapshot
+    meteo: MeteoSnapshot
+    winds: list[WindReading]
 
 
 def apply_rules(
