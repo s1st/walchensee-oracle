@@ -55,14 +55,6 @@ SACHENBACH = Station("Sachenbach", 47.5950, 11.3600, StationRole.SHORE)
 # lights up at index 0 first and reaches the last entry ~2 hours later.
 SHORE_PROPAGATION: tuple[Station, ...] = (URFELD, GALERIE, SACHENBACH)
 
-ALL_LOCAL_STATIONS: tuple[Station, ...] = (
-    KRUEN,
-    HERZOGSTAND,
-    URFELD,
-    GALERIE,
-    SACHENBACH,
-)
-
 # --- Heuristic thresholds -------------------------------------------------
 # TODO(calibrate): all values below are informed guesses from research; replace
 # once we have a log of (inputs, actual-conditions) pairs from real sessions.

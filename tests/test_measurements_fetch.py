@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from oracle.config import ADDICTED_SPORTS_BASE_URL, BRIGHT_SKY_CURRENT_URL, StationRole
-from oracle.pillars.measurements import WindReading, fetch_latest
+from oracle.pillars.measurements import fetch_latest
 
 
 _BRIGHT_SKY_PAYLOAD = {

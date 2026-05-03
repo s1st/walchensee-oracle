@@ -220,9 +220,9 @@ def test_export_csv_writes_features_and_ground_truth(tmp_path: Path):
             "machine": {
                 "peak_avg_knots": 14.0,
                 "peak_gust_knots": 19.0,
-                "first_ignition_minute": 720,
-                "minutes_above_8kt": 180,
-                "minutes_above_12kt": 60,
+                "first_ignition_at": "2026-04-22T12:00:00",
+                "samples_above_8kt": 18,
+                "samples_above_12kt": 6,
             },
             "human": None,
         },
@@ -245,6 +245,9 @@ def test_export_csv_writes_features_and_ground_truth(tmp_path: Path):
     assert row["day"] == "2026-04-22"
     assert row["thermik_delta_hpa"] == "5.0"
     assert row["peak_avg_knots"] == "14.0"
+    assert row["first_ignition_minute"] == "720"  # 12:00 → 720 minutes since midnight
+    assert row["samples_above_8kt"] == "18"
+    assert row["samples_above_12kt"] == "6"
     assert row["actual_verdict"] == "go"
     assert row["forecast_overall"] == "go"
 

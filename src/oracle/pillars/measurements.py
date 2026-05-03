@@ -42,6 +42,27 @@ class WindReading:
     direction_deg: float | None
     measured_at: datetime
 
+    def to_dict(self) -> dict:
+        return {
+            "station": self.station,
+            "role": self.role.value,
+            "avg_knots": round(self.avg_knots, 2),
+            "gust_knots": round(self.gust_knots, 2),
+            "direction_deg": self.direction_deg,
+            "measured_at": self.measured_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, w: dict) -> "WindReading":
+        return cls(
+            station=w["station"],
+            role=StationRole(w["role"]),
+            avg_knots=float(w["avg_knots"]),
+            gust_knots=float(w["gust_knots"]),
+            direction_deg=w.get("direction_deg"),
+            measured_at=datetime.fromisoformat(w["measured_at"]),
+        )
+
 
 async def fetch_latest(client: httpx.AsyncClient | None = None) -> list[WindReading]:
     """Call Bright Sky and Addicted-Sports in parallel. One failure is tolerated."""

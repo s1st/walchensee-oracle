@@ -44,6 +44,25 @@ class PressureSnapshot:
     def foehn_delta_hpa(self) -> float:
         return self.foehn_south.hpa - self.thermik_south.hpa
 
+    def to_dict(self) -> dict:
+        return {
+            "munich_hpa": self.thermik_north.hpa,
+            "innsbruck_hpa": self.thermik_south.hpa,
+            "bolzano_hpa": self.foehn_south.hpa,
+            "thermik_delta_hpa": round(self.thermik_delta_hpa, 2),
+            "foehn_delta_hpa": round(self.foehn_delta_hpa, 2),
+            "measured_at": self.thermik_north.measured_at.isoformat(),
+        }
+
+    @classmethod
+    def from_dict(cls, p: dict) -> "PressureSnapshot":
+        measured = datetime.fromisoformat(p["measured_at"])
+        return cls(
+            thermik_north=PressureReading("Munich", float(p["munich_hpa"]), measured),
+            thermik_south=PressureReading("Innsbruck", float(p["innsbruck_hpa"]), measured),
+            foehn_south=PressureReading("Bolzano", float(p["bolzano_hpa"]), measured),
+        )
+
 
 _STATIONS: tuple[Station, ...] = (MUNICH, INNSBRUCK_N, BOLZANO)
 

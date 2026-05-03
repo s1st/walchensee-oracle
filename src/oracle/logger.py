@@ -51,10 +51,10 @@ class LocalRunStore:
 
     def read(self, iso_day: str) -> dict | None:
         path = self.directory / f"{iso_day}.json"
-        if not path.exists():
-            return None
         try:
             return json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
         except json.JSONDecodeError:
             return None
 
@@ -82,11 +82,13 @@ class GCSRunStore:
         return self._bucket.blob(f"runs/{iso_day}.json")
 
     def read(self, iso_day: str) -> dict | None:
+        from google.cloud.exceptions import NotFound
+
         blob = self._blob(iso_day)
-        if not blob.exists():
-            return None
         try:
             return json.loads(blob.download_as_text())
+        except NotFound:
+            return None
         except json.JSONDecodeError:
             return None
 
@@ -136,9 +138,9 @@ def forecast_to_dict(result: Forecast, target_day: date) -> dict:
             for v in result.verdicts
         ],
         "inputs": {
-            "pressure": _pressure_dict(result),
-            "meteo": _meteo_dict(result),
-            "measurements": _measurements_list(result),
+            "pressure": result.pressure.to_dict() if result.pressure else None,
+            "meteo": result.meteo.to_dict() if result.meteo else None,
+            "measurements": [w.to_dict() for w in result.winds],
         },
     }
 
@@ -229,52 +231,3 @@ def _machine_ground_truth(samples: list[UrfeldSample]) -> dict:
     }
 
 
-def _pressure_dict(result: Forecast) -> dict | None:
-    if result.pressure is None:
-        return None
-    p = result.pressure
-    return {
-        "munich_hpa": p.thermik_north.hpa,
-        "innsbruck_hpa": p.thermik_south.hpa,
-        "bolzano_hpa": p.foehn_south.hpa,
-        "thermik_delta_hpa": round(p.thermik_delta_hpa, 2),
-        "foehn_delta_hpa": round(p.foehn_delta_hpa, 2),
-        "measured_at": p.thermik_north.measured_at.isoformat(),
-    }
-
-
-def _meteo_dict(result: Forecast) -> dict | None:
-    if result.meteo is None:
-        return None
-    m = result.meteo
-    return {
-        "day": m.day.isoformat(),
-        "overnight_cloud_cover_pct": m.overnight_cloud_cover_pct,
-        "morning_solar_radiation_wm2": m.morning_solar_radiation_wm2,
-        "synoptic_wind_knots": m.synoptic_wind_knots,
-        "min_dew_point_spread_c": m.min_dew_point_spread_c,
-        "max_boundary_layer_height_m": m.max_boundary_layer_height_m,
-        "soil_moisture_m3m3": m.soil_moisture_m3m3,
-        "rained_yesterday": m.rained_yesterday,
-        "yesterday_precipitation_mm": m.yesterday_precipitation_mm,
-        "max_lifted_index": m.max_lifted_index,
-        "min_lifted_index": m.min_lifted_index,
-        "max_cape_j_kg": m.max_cape_j_kg,
-        "max_daytime_low_cloud_pct": m.max_daytime_low_cloud_pct,
-        "wind_850_direction_at_peak_deg": m.wind_850_direction_at_peak_deg,
-        "max_wind_700_knots": m.max_wind_700_knots,
-    }
-
-
-def _measurements_list(result: Forecast) -> list[dict]:
-    return [
-        {
-            "station": r.station,
-            "role": r.role.value,
-            "avg_knots": round(r.avg_knots, 2),
-            "gust_knots": round(r.gust_knots, 2),
-            "direction_deg": r.direction_deg,
-            "measured_at": r.measured_at.isoformat(),
-        }
-        for r in result.winds
-    ]

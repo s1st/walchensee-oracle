@@ -5,6 +5,8 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import date
 
+import httpx
+
 from oracle.knowledge import rules
 from oracle.knowledge.rules import Severity, Signal, Verdict
 from oracle.pillars import measurements, meteo, pressure
@@ -51,14 +53,15 @@ def apply_rules(
 
 
 async def run_forecast(day: date) -> Forecast:
-    snapshot, meteo_snap, winds = await asyncio.gather(
-        pressure.fetch_snapshot(),
-        meteo.fetch_snapshot(day),
-        measurements.fetch_latest(),
-    )
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        snapshot, meteo_snap, winds = await asyncio.gather(
+            pressure.fetch_snapshot(client=client),
+            meteo.fetch_snapshot(day, client=client),
+            measurements.fetch_latest(client=client),
+        )
     verdicts = apply_rules(snapshot, meteo_snap, winds)
     return Forecast(
-        overall=_aggregate(verdicts),
+        overall=aggregate(verdicts),
         verdicts=verdicts,
         pressure=snapshot,
         meteo=meteo_snap,
@@ -66,7 +69,7 @@ async def run_forecast(day: date) -> Forecast:
     )
 
 
-def _aggregate(verdicts: list[Verdict]) -> Signal:
+def aggregate(verdicts: list[Verdict]) -> Signal:
     """Consensus aggregation, severity-aware.
 
     Only HARD vetos (Föhn, ≥15 kt synoptic, opposing/decoupling upper-level

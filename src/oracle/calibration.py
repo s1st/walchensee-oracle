@@ -23,13 +23,12 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
-from oracle.config import StationRole
-from oracle.engine import _aggregate, apply_rules
+from oracle.engine import aggregate, apply_rules
 from oracle.knowledge.rules import Verdict
 from oracle.logger import RunStore, default_store
 from oracle.pillars.measurements import WindReading
 from oracle.pillars.meteo import MeteoSnapshot
-from oracle.pillars.pressure import PressureReading, PressureSnapshot
+from oracle.pillars.pressure import PressureSnapshot
 
 # Same scale the dashboard uses to colour the 'Actual (Urfeld peak)' strip.
 _ACTUAL_GO_KT = 12.0      # session-worthy
@@ -91,51 +90,22 @@ def _peak_from(record: dict) -> float | None:
     return machine.get("peak_avg_knots")
 
 
+def _ignition_minute_of_day(iso_ts: str | None) -> int | None:
+    """ISO timestamp → minutes since local midnight. Robust to naive/aware."""
+    if not iso_ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(iso_ts)
+    except ValueError:
+        return None
+    return dt.hour * 60 + dt.minute
+
+
 # --- record re-scoring ----------------------------------------------------
 # Re-run the rule layer against a record's stored `inputs` block under the
 # *current* aggregator. Used to surface "what would the new severity-tiered
 # aggregator have said" on historical records — without re-fetching the
 # upstream APIs, which would return today's data anyway.
-
-
-def _pressure_from_dict(p: dict) -> PressureSnapshot:
-    measured = datetime.fromisoformat(p["measured_at"])
-    return PressureSnapshot(
-        thermik_north=PressureReading("Munich", float(p["munich_hpa"]), measured),
-        thermik_south=PressureReading("Innsbruck", float(p["innsbruck_hpa"]), measured),
-        foehn_south=PressureReading("Bolzano", float(p["bolzano_hpa"]), measured),
-    )
-
-
-def _meteo_from_dict(m: dict) -> MeteoSnapshot:
-    return MeteoSnapshot(
-        day=date.fromisoformat(m["day"]),
-        overnight_cloud_cover_pct=float(m["overnight_cloud_cover_pct"]),
-        morning_solar_radiation_wm2=float(m["morning_solar_radiation_wm2"]),
-        synoptic_wind_knots=float(m["synoptic_wind_knots"]),
-        min_dew_point_spread_c=float(m["min_dew_point_spread_c"]),
-        max_boundary_layer_height_m=float(m["max_boundary_layer_height_m"]),
-        soil_moisture_m3m3=float(m["soil_moisture_m3m3"]),
-        rained_yesterday=bool(m["rained_yesterday"]),
-        yesterday_precipitation_mm=float(m["yesterday_precipitation_mm"]),
-        max_lifted_index=float(m["max_lifted_index"]),
-        min_lifted_index=float(m["min_lifted_index"]),
-        max_cape_j_kg=float(m["max_cape_j_kg"]),
-        max_daytime_low_cloud_pct=float(m["max_daytime_low_cloud_pct"]),
-        wind_850_direction_at_peak_deg=float(m["wind_850_direction_at_peak_deg"]),
-        max_wind_700_knots=float(m["max_wind_700_knots"]),
-    )
-
-
-def _wind_from_dict(w: dict) -> WindReading:
-    return WindReading(
-        station=w["station"],
-        role=StationRole(w["role"]),
-        avg_knots=float(w["avg_knots"]),
-        gust_knots=float(w["gust_knots"]),
-        direction_deg=w.get("direction_deg"),
-        measured_at=datetime.fromisoformat(w["measured_at"]),
-    )
 
 
 def rescore_record(record: dict) -> tuple[str, list[Verdict]] | None:
@@ -152,14 +122,14 @@ def rescore_record(record: dict) -> tuple[str, list[Verdict]] | None:
     if not p or not m:
         return None
     try:
-        snapshot = _pressure_from_dict(p)
-        meteo_snap = _meteo_from_dict(m)
-        winds = [_wind_from_dict(w) for w in winds_raw]
+        snapshot = PressureSnapshot.from_dict(p)
+        meteo_snap = MeteoSnapshot.from_dict(m)
+        winds = [WindReading.from_dict(w) for w in winds_raw]
     except (KeyError, ValueError, TypeError):
         return None
 
     verdicts = apply_rules(snapshot, meteo_snap, winds)
-    return _aggregate(verdicts).value, verdicts
+    return aggregate(verdicts).value, verdicts
 
 
 def rescore_all(
@@ -349,7 +319,7 @@ _CSV_COLUMNS = [
     "max_wind_700_knots",
     # ground truth (Urfeld peak)
     "peak_avg_knots", "peak_gust_knots",
-    "ignition_minute", "minutes_above_8kt", "minutes_above_12kt",
+    "first_ignition_minute", "samples_above_8kt", "samples_above_12kt",
     "actual_verdict",
     # what the rule layer said (for benchmarking ML against the heuristic)
     "forecast_overall", "forecast_overall_resimulated",
@@ -390,9 +360,9 @@ def _row_for(record: dict) -> dict | None:
         "max_wind_700_knots": m.get("max_wind_700_knots"),
         "peak_avg_knots": peak,
         "peak_gust_knots": machine.get("peak_gust_knots"),
-        "ignition_minute": machine.get("first_ignition_minute"),
-        "minutes_above_8kt": machine.get("minutes_above_8kt"),
-        "minutes_above_12kt": machine.get("minutes_above_12kt"),
+        "first_ignition_minute": _ignition_minute_of_day(machine.get("first_ignition_at")),
+        "samples_above_8kt": machine.get("samples_above_8kt"),
+        "samples_above_12kt": machine.get("samples_above_12kt"),
         "actual_verdict": actual_verdict(peak),
         "forecast_overall": record.get("overall"),
         "forecast_overall_resimulated": record.get("overall_resimulated"),

@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from oracle.calibration import compile_report, export_csv, format_text_report, rescore_all
 from oracle.engine import Forecast, run_forecast
 from oracle.logger import backfill_run, forecast_to_dict, load_run, write_run
 
@@ -102,11 +101,15 @@ def rescore(
     the aggregator said at write time). The dashboard reads the resimulated
     field for the 'Re-scored' strip row when present.
     """
+    from oracle.calibration import rescore_all
+
     since_d = date.fromisoformat(since) if since else None
     until_d = date.fromisoformat(until) if until else None
     summary = rescore_all(since=since_d, until=until_d, dry_run=dry_run)
-    action = "would rewrite" if dry_run else "rewrote"
-    console.print(f"{action} {len(summary['rewritten']) or len(summary.get('flipped', []))} records")
+    if dry_run:
+        console.print(f"would rewrite {len(summary['unchanged'])} records")
+    else:
+        console.print(f"rewrote {len(summary['rewritten'])} records")
     if summary["skipped"]:
         console.print(f"[yellow]skipped (incomplete inputs): {len(summary['skipped'])}[/yellow]")
         for iso in summary["skipped"][:10]:
@@ -133,6 +136,8 @@ def calibrate(
     same RunStore the forecast/backfill jobs write — local in dev, GCS in
     prod when $RUNS_BUCKET is set.
     """
+    from oracle.calibration import compile_report, export_csv, format_text_report
+
     since_d = date.fromisoformat(since) if since else None
     until_d = date.fromisoformat(until) if until else None
     report = compile_report(since=since_d, until=until_d)

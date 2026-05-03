@@ -9,7 +9,6 @@ Reads per-day records from the same store the scheduled job writes
 """
 from __future__ import annotations
 
-import asyncio
 import time
 from datetime import date, datetime, timedelta
 from datetime import time as dtime
@@ -260,18 +259,19 @@ def _resolve_lang(request: Request) -> str:
     return "de"
 
 
-def _rule_tooltip(rule_name: str, lang: str) -> str:
-    entry = _RULE_DESCRIPTIONS.get(rule_name)
-    if not entry:
-        return ""
-    return entry.get(lang) or entry.get("de") or ""
+def _per_lang(source: dict[str, dict[str, str]], fallback: str) -> dict[str, dict[str, str]]:
+    """Pivot {rule_name: {lang: text}} → {lang: {rule_name: text}} once at import."""
+    return {
+        lang: {
+            name: entry.get(lang) or entry.get("de") or (fallback if fallback != "rule" else name)
+            for name, entry in source.items()
+        }
+        for lang in _UI
+    }
 
 
-def _rule_label(rule_name: str, lang: str) -> str:
-    entry = _RULE_LABELS.get(rule_name)
-    if not entry:
-        return rule_name
-    return entry.get(lang) or entry.get("de") or rule_name
+_TOOLTIPS_BY_LANG = _per_lang(_RULE_DESCRIPTIONS, fallback="")
+_LABELS_BY_LANG = _per_lang(_RULE_LABELS, fallback="rule")
 
 app = FastAPI(title="Walchi Oracle")
 
@@ -279,7 +279,10 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 # Simple 60s TTL cache so a page load hits GCS at most once per minute per day.
+# Bounded: working set is ~32 entries (30-day strip + 3 horizon days), cap a bit
+# higher so a few historical clicks don't immediately evict the strip.
 _CACHE_TTL_S = 60.0
+_CACHE_MAX_ENTRIES = 64
 _cache: dict[str, tuple[dict | None, float]] = {}
 
 # Urfeld live wind cache — 5 min TTL to match the anemometer's ~10 min sample
@@ -478,12 +481,17 @@ def _svg_escape(text: str) -> str:
 
 
 def _cached_read(iso_day: str) -> dict | None:
+    now = time.time()
     value, expires_at = _cache.get(iso_day, (None, 0.0))
-    if time.time() < expires_at and iso_day in _cache:
+    if now < expires_at:
         return value
-    store = default_store()
-    fresh = store.read(iso_day)
-    _cache[iso_day] = (fresh, time.time() + _CACHE_TTL_S)
+    fresh = default_store().read(iso_day)
+    _cache[iso_day] = (fresh, now + _CACHE_TTL_S)
+    if len(_cache) > _CACHE_MAX_ENTRIES:
+        # Evict the entry that expires soonest — usually a stale one that's
+        # about to be re-fetched anyway. Keeps the dict O(N) bounded.
+        oldest = min(_cache, key=lambda k: _cache[k][1])
+        _cache.pop(oldest, None)
     return fresh
 
 
@@ -689,8 +697,8 @@ async def index(request: Request) -> Response:
         display_verdicts = []
 
     summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
-    tooltips = {name: _rule_tooltip(name, lang) for name in _RULE_DESCRIPTIONS}
-    rule_labels = {name: _rule_label(name, lang) for name in _RULE_LABELS}
+    tooltips = _TOOLTIPS_BY_LANG[lang]
+    rule_labels = _LABELS_BY_LANG[lang]
     horizon = _horizon_days(today, lang, selected_day.isoformat())
     # Live wind + webcam shown by default. When the user clicks a past day in
     # the strip, swap the chart for that day's stored Urfeld curve — the live

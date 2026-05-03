@@ -45,6 +45,45 @@ class MeteoSnapshot:
     wind_850_direction_at_peak_deg: float  # direction at the morning 850 hPa speed peak
     max_wind_700_knots: float           # 09:00–13:00; 700 hPa crossflow aloft
 
+    def to_dict(self) -> dict:
+        return {
+            "day": self.day.isoformat(),
+            "overnight_cloud_cover_pct": self.overnight_cloud_cover_pct,
+            "morning_solar_radiation_wm2": self.morning_solar_radiation_wm2,
+            "synoptic_wind_knots": self.synoptic_wind_knots,
+            "min_dew_point_spread_c": self.min_dew_point_spread_c,
+            "max_boundary_layer_height_m": self.max_boundary_layer_height_m,
+            "soil_moisture_m3m3": self.soil_moisture_m3m3,
+            "rained_yesterday": self.rained_yesterday,
+            "yesterday_precipitation_mm": self.yesterday_precipitation_mm,
+            "max_lifted_index": self.max_lifted_index,
+            "min_lifted_index": self.min_lifted_index,
+            "max_cape_j_kg": self.max_cape_j_kg,
+            "max_daytime_low_cloud_pct": self.max_daytime_low_cloud_pct,
+            "wind_850_direction_at_peak_deg": self.wind_850_direction_at_peak_deg,
+            "max_wind_700_knots": self.max_wind_700_knots,
+        }
+
+    @classmethod
+    def from_dict(cls, m: dict) -> "MeteoSnapshot":
+        return cls(
+            day=date.fromisoformat(m["day"]),
+            overnight_cloud_cover_pct=float(m["overnight_cloud_cover_pct"]),
+            morning_solar_radiation_wm2=float(m["morning_solar_radiation_wm2"]),
+            synoptic_wind_knots=float(m["synoptic_wind_knots"]),
+            min_dew_point_spread_c=float(m["min_dew_point_spread_c"]),
+            max_boundary_layer_height_m=float(m["max_boundary_layer_height_m"]),
+            soil_moisture_m3m3=float(m["soil_moisture_m3m3"]),
+            rained_yesterday=bool(m["rained_yesterday"]),
+            yesterday_precipitation_mm=float(m["yesterday_precipitation_mm"]),
+            max_lifted_index=float(m["max_lifted_index"]),
+            min_lifted_index=float(m["min_lifted_index"]),
+            max_cape_j_kg=float(m["max_cape_j_kg"]),
+            max_daytime_low_cloud_pct=float(m["max_daytime_low_cloud_pct"]),
+            wind_850_direction_at_peak_deg=float(m["wind_850_direction_at_peak_deg"]),
+            max_wind_700_knots=float(m["max_wind_700_knots"]),
+        )
+
 
 _OVERNIGHT = (time(22, 0), time(6, 0))
 _MORNING = (time(9, 0), time(13, 0))
