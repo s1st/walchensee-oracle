@@ -416,5 +416,44 @@
   <a href="https://windinfo.eu/wind-wetter-chat/" target="_blank" rel="noopener">windinfo.eu</a>{{ t.footer_chat_suffix }}
 </footer>
 
+<script>
+  // Strip-cell navigation without losing scroll position or the Advanced
+  // checkbox state. Fetches the new page, swaps the hero card + strip rows
+  // + advanced panel contents, then updates the URL via pushState.
+  (function() {
+    document.addEventListener('click', async function(e) {
+      const a = e.target.closest('a.cell');
+      if (!a) return;
+      const href = a.getAttribute('href');
+      if (!href) return;
+      e.preventDefault();
+      try {
+        const r = await fetch(href, {credentials: 'same-origin'});
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+        // Hero verdict card: replace whole element so colour + summary update.
+        const heroOld = document.querySelector('.verdict-card');
+        const heroNew = doc.querySelector('.verdict-card');
+        if (heroOld && heroNew) heroOld.replaceWith(heroNew);
+        // Strip rows: replace inner so the .selected class moves.
+        const oldRows = document.querySelectorAll('.strip-row .strip');
+        const newRows = doc.querySelectorAll('.strip-row .strip');
+        oldRows.forEach((row, i) => {
+          if (newRows[i]) row.innerHTML = newRows[i].innerHTML;
+        });
+        // Advanced panel: swap inner only — leave the checkbox state alone.
+        const panelOld = document.querySelector('.advanced-panel');
+        const panelNew = doc.querySelector('.advanced-panel');
+        if (panelOld && panelNew) panelOld.innerHTML = panelNew.innerHTML;
+        history.pushState(null, '', href);
+      } catch (err) {
+        // Fall back to full navigation on any error.
+        window.location.href = href;
+      }
+    });
+    // Back/forward should reload the right page. Cheapest: full reload.
+    window.addEventListener('popstate', function() { window.location.reload(); });
+  })();
+</script>
 </body>
 </html>
