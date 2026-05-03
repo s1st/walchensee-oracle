@@ -114,12 +114,15 @@ only.
 
 ### Thermik (Alpenpumpe): Munich minus Innsbruck
 
-The large-scale thermal pump from the Bavarian plains toward the Alps. A
-positive delta (Munich higher than Innsbruck) indicates air flowing southward
-toward the mountains — favourable for the thermal.
+The large-scale thermal pump from the Bavarian plains toward the Alps. The
+Munich − Innsbruck pressure delta is a *background* condition for Walchensee,
+not a trigger — the actual driver is the local slope-vs-lake T-gradient. The
+synoptic delta only matters when it actively *opposes* the local thermal.
 
-- **Threshold:** >= 2.5 hPa (informed guess; Garda uses ~3 hPa but
-  Walchensee's thermal cell is smaller and needs less driving force).
+- **Threshold:** >= -1.0 hPa (data-fitted from n=10 days of Urfeld ground
+  truth: all 7 logged GO days, peak ≥12 kt, had Δ ∈ [-0.8, +2.6]). The
+  earlier Garda-analogue placeholder of +2.5 hPa vetoed 9 of 10 real
+  session days and was the dominant cause of false NO_GOs in production.
 - **Stations:** Munich (48.14 N, 11.58 E) vs. Innsbruck (47.27 N, 11.40 E).
 - **Backend:** Open-Meteo MSL-reduced pressure so elevation differences don't
   swamp the signal.
@@ -193,16 +196,17 @@ extracted for the forecast verdict.
 
 ## Threshold calibration status
 
-All thresholds are informed guesses based on Garda analogues and local kiter
-heuristics. None have been validated against logged Walchensee observations.
-An observation logging system is needed to record (inputs, actual conditions)
-pairs and enable data-driven calibration.
+Most thresholds are still informed guesses from Garda analogues and local
+kiter heuristics. The first data-driven retune landed once the calibration
+log had n≥10 days of Urfeld ground truth — see `oracle calibrate` for the
+ongoing per-rule false-positive-veto tracking.
 
 | Threshold | Current value | Confidence | Notes |
 |---|---|---|---|
-| Thermik delta | >= 2.5 hPa | Low | Garda uses ~3; scaled down for smaller cell |
+| Thermik delta | >= -1.0 hPa | Medium | Fitted from n=10 days; was +2.5, vetoed 9/10 session days |
 | Föhn trigger delta | >= 4.0 hPa | Medium | Well-established Föhn indicator |
 | Synoptic override | >= 15 kt | Medium | Standard ~3 Bft threshold |
 | Ignition wind | >= 8 kt | Low | Needs shore-station validation |
-| Overnight cloud cover | <= 30% | Low | Guess; needs seasonal adjustment |
+| Overnight cloud cover | <= 30% | Low | Calibration shows 3/3 FP-vetoes; next candidate to retune |
 | Morning solar radiation | >= 600 W/m² | Low | Must vary with season |
+| Atmospheric stability (LI) | placeholder | Low | Calibration shows 5/5 FP-vetoes; next candidate to retune |

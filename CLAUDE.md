@@ -66,7 +66,7 @@ Preserving `ground_truth` across re-runs is important: `write_run` reads the exi
 
 ### Thresholds
 
-All threshold constants live in `src/oracle/config.py` and every one is marked `TODO(calibrate)`. Values are placeholders from research analogues (Garda + local kiter heuristics), not fitted to Walchensee data. Changing a threshold changes the forecast distribution; favour wiring a new rule/input over retuning existing numbers until the calibration log has enough sessions.
+All threshold constants live in `src/oracle/config.py`. Most are still placeholders from research analogues (Garda + local kiter heuristics); a few have been data-fitted once the calibration log crossed n≥10 days of Urfeld ground truth — `MIN_THERMIK_DELTA_HPA` is the first (was +2.5, now -1.0). Use `oracle calibrate` to identify which rules are over-vetoing real session days before tuning the rest. Single-day evidence is not enough; demand the offender list from a sample of ≥10 ground-truthed days, then change one threshold per commit so the rescore-strip in the dashboard isolates the effect.
 
 ### Dashboard
 
