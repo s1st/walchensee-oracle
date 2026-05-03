@@ -391,7 +391,7 @@
       {% for rule in display_verdicts %}
       <tr>
         <td>
-          {{ rule.rule }}{% if rule_descriptions.get(rule.rule) %}<span
+          {{ rule_labels.get(rule.rule, rule.rule) }}{% if rule_descriptions.get(rule.rule) %}<span
               class="help"
               tabindex="0"
               data-tooltip="{{ rule_descriptions[rule.rule] }}"

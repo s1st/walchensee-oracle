@@ -25,6 +25,28 @@ from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
 
 # Rule descriptions — one short sentence each, keyed by rule and language.
 # Shown as `?` hover tooltips in the Advanced panel.
+_RULE_LABELS: dict[str, dict[str, str]] = {
+    "thermik": {
+        "de": "Druckgradient (München − Innsbruck)",
+        "en": "Pressure gradient (Munich − Innsbruck)",
+    },
+    "foehn_override": {
+        "de": "Föhn (Bozen − Innsbruck)",
+        "en": "Föhn (Bolzano − Innsbruck)",
+    },
+    "overnight_cooling": {"de": "Nächtliche Abkühlung", "en": "Overnight cooling"},
+    "solar_radiation": {"de": "Sonneneinstrahlung", "en": "Solar radiation"},
+    "dew_point_spread": {"de": "Taupunkt-Abstand", "en": "Dew-point spread"},
+    "boundary_layer_height": {"de": "Grenzschicht-Höhe", "en": "Boundary-layer height"},
+    "post_rain_moisture": {"de": "Bodenfeuchte / Regen", "en": "Ground moisture / rain"},
+    "atmospheric_stability": {"de": "Atmosphärische Stabilität", "en": "Atmospheric stability"},
+    "daytime_clouds": {"de": "Tagesbewölkung", "en": "Daytime cloud cover"},
+    "upper_level_wind": {"de": "Höhenwind (850 / 700 hPa)", "en": "Upper-level wind (850 / 700 hPa)"},
+    "synoptic_override": {"de": "Synoptik-Wind", "en": "Synoptic-flow override"},
+    "thermal_ignition": {"de": "Thermik-Zündung (Live)", "en": "Thermal ignition (live)"},
+}
+
+
 _RULE_DESCRIPTIONS: dict[str, dict[str, str]] = {
     "thermik": {
         "de": "Luftdruck-Differenz München − Innsbruck. Positiver Delta ≥ 2.5 hPa treibt die Nord-Süd-Thermik an.",
@@ -238,6 +260,13 @@ def _rule_tooltip(rule_name: str, lang: str) -> str:
     if not entry:
         return ""
     return entry.get(lang) or entry.get("de") or ""
+
+
+def _rule_label(rule_name: str, lang: str) -> str:
+    entry = _RULE_LABELS.get(rule_name)
+    if not entry:
+        return rule_name
+    return entry.get(lang) or entry.get("de") or rule_name
 
 app = FastAPI(title="Walchi Oracle")
 
@@ -571,6 +600,7 @@ async def index(request: Request) -> Response:
 
     summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
     tooltips = {name: _rule_tooltip(name, lang) for name in _RULE_DESCRIPTIONS}
+    rule_labels = {name: _rule_label(name, lang) for name in _RULE_LABELS}
     horizon = _horizon_days(today, lang, selected_day.isoformat())
     # Live wind + webcam always shown — it's "current state at the lake",
     # independent of which forecast day is selected.
@@ -591,6 +621,7 @@ async def index(request: Request) -> Response:
             "selected_iso": selected_day.isoformat(),
             "horizon": horizon,
             "rule_descriptions": tooltips,
+            "rule_labels": rule_labels,
             "live": live,
             "t": _UI[lang],
             "lang": lang,
