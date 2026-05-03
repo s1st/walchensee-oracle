@@ -23,6 +23,11 @@ class Signal(str, Enum):
     NO_GO = "no_go"
 
 
+# Canonical iteration order (best → worst). Used wherever a confusion matrix
+# or row layout needs the same ordering as the dashboard's strip rows.
+SIGNAL_ORDER: tuple["Signal", ...] = (Signal.GO, Signal.MAYBE, Signal.NO_GO)
+
+
 class Severity(str, Enum):
     """Veto strength for a NO_GO verdict.
 

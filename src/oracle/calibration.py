@@ -24,7 +24,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from oracle.engine import aggregate, apply_rules
-from oracle.knowledge.rules import Verdict
+from oracle.knowledge.rules import SIGNAL_ORDER, Signal, Verdict
 from oracle.logger import RunStore, default_store
 from oracle.pillars.measurements import WindReading
 from oracle.pillars.meteo import MeteoSnapshot
@@ -39,14 +39,15 @@ def actual_verdict(peak_avg_kt: float | None) -> str | None:
     """Categorise an Urfeld-peak ground-truth value onto the go/maybe/no_go scale.
 
     Single source of truth — the dashboard imports this too so both views agree.
+    Returns the Signal `.value` string so the result is template- and JSON-safe.
     """
     if peak_avg_kt is None:
         return None
     if peak_avg_kt >= _ACTUAL_GO_KT:
-        return "go"
+        return Signal.GO.value
     if peak_avg_kt >= _ACTUAL_MAYBE_KT:
-        return "maybe"
-    return "no_go"
+        return Signal.MAYBE.value
+    return Signal.NO_GO.value
 
 
 @dataclass
@@ -70,7 +71,7 @@ class Report:
         """Diagonal sum / total. Approximate — same-bucket only."""
         if self.sample_size == 0:
             return 0.0
-        hits = sum(self.confusion.get(k, {}).get(k, 0) for k in ("go", "maybe", "no_go"))
+        hits = sum(self.confusion.get(s.value, {}).get(s.value, 0) for s in SIGNAL_ORDER)
         return hits / self.sample_size
 
     def worst_offenders(self, n: int = 5) -> list[RuleStats]:
@@ -82,7 +83,7 @@ class Report:
 
 
 def _empty_confusion() -> dict[str, dict[str, int]]:
-    return {f: {a: 0 for a in ("go", "maybe", "no_go")} for f in ("go", "maybe", "no_go")}
+    return {f.value: {a.value: 0 for a in SIGNAL_ORDER} for f in SIGNAL_ORDER}
 
 
 def _peak_from(record: dict) -> float | None:
@@ -228,13 +229,13 @@ def compile_report(
 
         for v in record.get("verdicts", []):
             stats = rule_stats.setdefault(v["rule"], RuleStats(rule=v["rule"]))
-            if v["signal"] == "no_go":
+            if v["signal"] == Signal.NO_GO:
                 stats.vetos += 1
-                if actual in ("go", "maybe"):
+                if actual in (Signal.GO, Signal.MAYBE):
                     stats.false_positive_vetos += 1
-            elif v["signal"] == "go":
+            elif v["signal"] == Signal.GO:
                 stats.greens += 1
-                if actual == "no_go":
+                if actual == Signal.NO_GO:
                     stats.false_negative_greens += 1
 
     return Report(
@@ -264,12 +265,12 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
     lines.append(f"Overall accuracy (same-bucket): {report.overall_accuracy:.0%}")
     lines.append("")
     lines.append("Confusion matrix (rows=forecast, cols=actual):")
-    lines.append(f"  {'':>10s}  {'go':>5s}  {'maybe':>5s}  {'no_go':>5s}")
-    for f in ("go", "maybe", "no_go"):
-        row = report.confusion[f]
-        lines.append(
-            f"  {f:>10s}  {row['go']:>5d}  {row['maybe']:>5d}  {row['no_go']:>5d}"
-        )
+    headers = "  ".join(f"{s.value:>5s}" for s in SIGNAL_ORDER)
+    lines.append(f"  {'':>10s}  {headers}")
+    for f in SIGNAL_ORDER:
+        row = report.confusion[f.value]
+        cells = "  ".join(f"{row[s.value]:>5d}" for s in SIGNAL_ORDER)
+        lines.append(f"  {f.value:>10s}  {cells}")
     lines.append("")
 
     rule_items = sorted(

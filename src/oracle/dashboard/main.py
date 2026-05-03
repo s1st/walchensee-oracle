@@ -23,6 +23,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from oracle.calibration import actual_verdict as _actual_verdict
+from oracle.knowledge.rules import Severity, Signal
 from oracle.logger import default_store
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
 
@@ -618,28 +619,30 @@ def _summary_line(overall: str | None, verdicts: list[dict], lang: str) -> str:
         # for records written before bilingual reasons shipped.
         return v.get(f"reason_{lang}") or v.get("reason") or ""
 
-    if overall == "no_go":
+    if overall == Signal.NO_GO:
         # Prefer a hard blocker (true cause under the severity-aware aggregator).
         # Fall back to any NO_GO for legacy logs written before severity shipped.
         blocker = next(
-            (v for v in verdicts if v["signal"] == "no_go" and v.get("severity") == "hard"),
+            (v for v in verdicts
+             if v["signal"] == Signal.NO_GO and v.get("severity") == Severity.HARD),
             None,
-        ) or next((v for v in verdicts if v["signal"] == "no_go"), None)
+        ) or next((v for v in verdicts if v["signal"] == Signal.NO_GO), None)
         return _reason(blocker) if blocker else "—"
-    if overall == "go":
-        go_count = sum(1 for v in verdicts if v["signal"] == "go")
+    if overall == Signal.GO:
+        go_count = sum(1 for v in verdicts if v["signal"] == Signal.GO)
         if lang == "en":
             return f"{go_count} of {len(verdicts)} rules green."
         return f"{go_count} von {len(verdicts)} Regeln grün."
     # Overall is MAYBE — a soft NO_GO is more informative than a generic MAYBE,
     # so surface that first if any rule emitted one.
     soft_blocker = next(
-        (v for v in verdicts if v["signal"] == "no_go" and v.get("severity") == "soft"),
+        (v for v in verdicts
+         if v["signal"] == Signal.NO_GO and v.get("severity") == Severity.SOFT),
         None,
     )
     if soft_blocker:
         return _reason(soft_blocker)
-    maybe = next((v for v in verdicts if v["signal"] == "maybe"), None)
+    maybe = next((v for v in verdicts if v["signal"] == Signal.MAYBE), None)
     if maybe:
         return _reason(maybe)
     return "Mixed signals." if lang == "en" else "Gemischte Signale."
