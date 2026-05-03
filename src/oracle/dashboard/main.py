@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from datetime import time as dtime
 from pathlib import Path
@@ -24,79 +26,103 @@ from oracle.calibration import actual_verdict as _actual_verdict
 from oracle.logger import default_store
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
 
-# Rule descriptions — one short sentence each, keyed by rule and language.
-# Shown as `?` hover tooltips in the Advanced panel.
-_RULE_LABELS: dict[str, dict[str, str]] = {
-    "thermik": {
-        "de": "Druckgradient (München − Innsbruck)",
-        "en": "Pressure gradient (Munich − Innsbruck)",
-    },
-    "foehn_override": {
-        "de": "Föhn (Bozen − Innsbruck)",
-        "en": "Föhn (Bolzano − Innsbruck)",
-    },
-    "overnight_cooling": {"de": "Nächtliche Abkühlung", "en": "Overnight cooling"},
-    "solar_radiation": {"de": "Sonneneinstrahlung", "en": "Solar radiation"},
-    "dew_point_spread": {"de": "Taupunkt-Abstand", "en": "Dew-point spread"},
-    "boundary_layer_height": {"de": "Grenzschicht-Höhe", "en": "Boundary-layer height"},
-    "post_rain_moisture": {"de": "Bodenfeuchte / Regen", "en": "Ground moisture / rain"},
-    "atmospheric_stability": {"de": "Atmosphärische Stabilität", "en": "Atmospheric stability"},
-    "daytime_clouds": {"de": "Tagesbewölkung", "en": "Daytime cloud cover"},
-    "upper_level_wind": {"de": "Höhenwind (850 / 700 hPa)", "en": "Upper-level wind (850 / 700 hPa)"},
-    "synoptic_override": {"de": "Synoptik-Wind", "en": "Synoptic-flow override"},
-    "thermal_ignition": {"de": "Thermik-Zündung (Live)", "en": "Thermal ignition (live)"},
-}
+# Per-rule UI strings. `label` is the short header in the Advanced panel;
+# `description` is the `?` hover tooltip. One entry per rule keeps the two
+# from drifting when rules are added or renamed.
+@dataclass(frozen=True)
+class RuleI18n:
+    label: dict[str, str]
+    description: dict[str, str]
 
 
-_RULE_DESCRIPTIONS: dict[str, dict[str, str]] = {
-    "thermik": {
-        "de": "Luftdruck-Differenz München − Innsbruck. Positiver Delta ≥ 2.5 hPa treibt die Nord-Süd-Thermik an.",
-        "en": "Munich − Innsbruck pressure delta. ≥ 2.5 hPa drives the north-to-south thermal pump.",
-    },
-    "foehn_override": {
-        "de": "Luftdruck-Differenz Bozen − Innsbruck. Positiver Delta ≥ 4 hPa signalisiert Föhn — zerstört die Thermik.",
-        "en": "Bolzano − Innsbruck pressure delta. ≥ 4 hPa signals Föhn — kills the local thermal.",
-    },
-    "overnight_cooling": {
-        "de": "Mittlere Bewölkung 22:00 Vortag bis 06:00. Über 30 % schwächt die nächtliche Abkühlung und damit den Tagesgang.",
-        "en": "Mean cloud cover 22:00 previous day to 06:00. Above 30 % weakens radiative cooling and the diurnal delta.",
-    },
-    "solar_radiation": {
-        "de": "Peak-Sonneneinstrahlung zwischen 09:00 und 13:00. Unter 600 W/m² reicht die Hangheizung nicht für eine saubere Thermik.",
-        "en": "Peak shortwave radiation 09:00–13:00. Below 600 W/m² the slopes don't heat enough for a clean thermal.",
-    },
-    "dew_point_spread": {
-        "de": "Kleinster (T − Td)-Abstand 09:00–13:00. Unter 5 °C geht Sonnenenergie in Verdunstung statt Lufterwärmung.",
-        "en": "Smallest (T − Td) gap 09:00–13:00. Below 5 °C solar energy goes into evaporation, not sensible heating.",
-    },
-    "boundary_layer_height": {
-        "de": "Grenzschicht-Höhe 09:00–13:00. Unter 600 m bleibt die Thermik gedeckelt; ab 1000 m tiefe Durchmischung.",
-        "en": "Boundary-layer height 09:00–13:00. Below 600 m the thermal is capped; above 1000 m = deep mixing.",
-    },
-    "post_rain_moisture": {
-        "de": "Nasser Boden (Regen gestern ≥ 2 mm oder Bodenfeuchte > 0.35 m³/m³) leitet Sonnenenergie in Verdunstung statt in Hangheizung.",
-        "en": "Wet ground (≥ 2 mm rain yesterday or soil moisture > 0.35 m³/m³) diverts solar energy to evaporation.",
-    },
-    "atmospheric_stability": {
-        "de": "Lifted Index 09:00–13:00. LI ≥ +6 = Atmosphäre zu stabil (Thermik gedeckelt); LI ≤ −2 = Gewittergefahr.",
-        "en": "Lifted index 09:00–13:00. LI ≥ +6 = atmosphere too stable (capped); LI ≤ −2 = thunderstorm risk.",
-    },
-    "daytime_clouds": {
-        "de": "Max. tiefe Bewölkung 09:00–13:00. Über 60 % beschattet Herzogstand/Jochberg-Hänge und stoppt die Hangheizung.",
-        "en": "Max low-cloud cover 09:00–13:00. Above 60 % shades the Herzogstand/Jochberg slopes and stops slope heating.",
-    },
-    "upper_level_wind": {
-        "de": "850 hPa Windrichtung am Morgen-Peak + 700 hPa Querströmung. SSE-Flow 150–210° widerspricht der N-Thermik; > 25 kt in 700 hPa entkoppelt das Tal.",
-        "en": "850 hPa direction at the morning peak + 700 hPa crossflow. SSE 150–210° opposes the N-thermal; > 25 kt at 700 hPa decouples the valley.",
-    },
-    "synoptic_override": {
-        "de": "Wind in 850 hPa (~1500 m) 09:00–13:00. Über 15 kt zerstört oder deformiert die lokale Thermikzelle.",
-        "en": "Wind at 850 hPa (~1500 m) 09:00–13:00. Above 15 kt destroys or deforms the local thermal cell.",
-    },
-    "thermal_ignition": {
-        "de": "Aktuelle Messwerte Urfeld-Anemometer + DWD-Station. Ab 8 kt Mittelwind gilt die Thermik als gezündet.",
-        "en": "Live readings from the Urfeld buoy + nearest DWD station. ≥ 8 kt mean wind = thermal ignited.",
-    },
+_RULE_I18N: dict[str, RuleI18n] = {
+    "thermik": RuleI18n(
+        label={
+            "de": "Druckgradient (München − Innsbruck)",
+            "en": "Pressure gradient (Munich − Innsbruck)",
+        },
+        description={
+            "de": "Luftdruck-Differenz München − Innsbruck. Positiver Delta ≥ 2.5 hPa treibt die Nord-Süd-Thermik an.",
+            "en": "Munich − Innsbruck pressure delta. ≥ 2.5 hPa drives the north-to-south thermal pump.",
+        },
+    ),
+    "foehn_override": RuleI18n(
+        label={"de": "Föhn (Bozen − Innsbruck)", "en": "Föhn (Bolzano − Innsbruck)"},
+        description={
+            "de": "Luftdruck-Differenz Bozen − Innsbruck. Positiver Delta ≥ 4 hPa signalisiert Föhn — zerstört die Thermik.",
+            "en": "Bolzano − Innsbruck pressure delta. ≥ 4 hPa signals Föhn — kills the local thermal.",
+        },
+    ),
+    "overnight_cooling": RuleI18n(
+        label={"de": "Nächtliche Abkühlung", "en": "Overnight cooling"},
+        description={
+            "de": "Mittlere Bewölkung 22:00 Vortag bis 06:00. Über 30 % schwächt die nächtliche Abkühlung und damit den Tagesgang.",
+            "en": "Mean cloud cover 22:00 previous day to 06:00. Above 30 % weakens radiative cooling and the diurnal delta.",
+        },
+    ),
+    "solar_radiation": RuleI18n(
+        label={"de": "Sonneneinstrahlung", "en": "Solar radiation"},
+        description={
+            "de": "Peak-Sonneneinstrahlung zwischen 09:00 und 13:00. Unter 600 W/m² reicht die Hangheizung nicht für eine saubere Thermik.",
+            "en": "Peak shortwave radiation 09:00–13:00. Below 600 W/m² the slopes don't heat enough for a clean thermal.",
+        },
+    ),
+    "dew_point_spread": RuleI18n(
+        label={"de": "Taupunkt-Abstand", "en": "Dew-point spread"},
+        description={
+            "de": "Kleinster (T − Td)-Abstand 09:00–13:00. Unter 5 °C geht Sonnenenergie in Verdunstung statt Lufterwärmung.",
+            "en": "Smallest (T − Td) gap 09:00–13:00. Below 5 °C solar energy goes into evaporation, not sensible heating.",
+        },
+    ),
+    "boundary_layer_height": RuleI18n(
+        label={"de": "Grenzschicht-Höhe", "en": "Boundary-layer height"},
+        description={
+            "de": "Grenzschicht-Höhe 09:00–13:00. Unter 600 m bleibt die Thermik gedeckelt; ab 1000 m tiefe Durchmischung.",
+            "en": "Boundary-layer height 09:00–13:00. Below 600 m the thermal is capped; above 1000 m = deep mixing.",
+        },
+    ),
+    "post_rain_moisture": RuleI18n(
+        label={"de": "Bodenfeuchte / Regen", "en": "Ground moisture / rain"},
+        description={
+            "de": "Nasser Boden (Regen gestern ≥ 2 mm oder Bodenfeuchte > 0.35 m³/m³) leitet Sonnenenergie in Verdunstung statt in Hangheizung.",
+            "en": "Wet ground (≥ 2 mm rain yesterday or soil moisture > 0.35 m³/m³) diverts solar energy to evaporation.",
+        },
+    ),
+    "atmospheric_stability": RuleI18n(
+        label={"de": "Atmosphärische Stabilität", "en": "Atmospheric stability"},
+        description={
+            "de": "Lifted Index 09:00–13:00. LI ≥ +6 = Atmosphäre zu stabil (Thermik gedeckelt); LI ≤ −2 = Gewittergefahr.",
+            "en": "Lifted index 09:00–13:00. LI ≥ +6 = atmosphere too stable (capped); LI ≤ −2 = thunderstorm risk.",
+        },
+    ),
+    "daytime_clouds": RuleI18n(
+        label={"de": "Tagesbewölkung", "en": "Daytime cloud cover"},
+        description={
+            "de": "Max. tiefe Bewölkung 09:00–13:00. Über 60 % beschattet Herzogstand/Jochberg-Hänge und stoppt die Hangheizung.",
+            "en": "Max low-cloud cover 09:00–13:00. Above 60 % shades the Herzogstand/Jochberg slopes and stops slope heating.",
+        },
+    ),
+    "upper_level_wind": RuleI18n(
+        label={"de": "Höhenwind (850 / 700 hPa)", "en": "Upper-level wind (850 / 700 hPa)"},
+        description={
+            "de": "850 hPa Windrichtung am Morgen-Peak + 700 hPa Querströmung. SSE-Flow 150–210° widerspricht der N-Thermik; > 25 kt in 700 hPa entkoppelt das Tal.",
+            "en": "850 hPa direction at the morning peak + 700 hPa crossflow. SSE 150–210° opposes the N-thermal; > 25 kt at 700 hPa decouples the valley.",
+        },
+    ),
+    "synoptic_override": RuleI18n(
+        label={"de": "Synoptik-Wind", "en": "Synoptic-flow override"},
+        description={
+            "de": "Wind in 850 hPa (~1500 m) 09:00–13:00. Über 15 kt zerstört oder deformiert die lokale Thermikzelle.",
+            "en": "Wind at 850 hPa (~1500 m) 09:00–13:00. Above 15 kt destroys or deforms the local thermal cell.",
+        },
+    ),
+    "thermal_ignition": RuleI18n(
+        label={"de": "Thermik-Zündung (Live)", "en": "Thermal ignition (live)"},
+        description={
+            "de": "Aktuelle Messwerte Urfeld-Anemometer + DWD-Station. Ab 8 kt Mittelwind gilt die Thermik als gezündet.",
+            "en": "Live readings from the Urfeld buoy + nearest DWD station. ≥ 8 kt mean wind = thermal ignited.",
+        },
+    ),
 }
 
 
@@ -260,19 +286,27 @@ def _resolve_lang(request: Request) -> str:
     return "de"
 
 
-def _per_lang(source: dict[str, dict[str, str]], fallback: str) -> dict[str, dict[str, str]]:
-    """Pivot {rule_name: {lang: text}} → {lang: {rule_name: text}} once at import."""
+def _per_lang(
+    pick: Callable[[RuleI18n], dict[str, str]], fallback: str,
+) -> dict[str, dict[str, str]]:
+    """Pivot _RULE_I18N into {lang: {rule_name: text}} once at import.
+
+    `pick` selects either the label or description map per rule. `fallback`
+    is the empty-string sentinel for missing tooltips, or the literal "rule"
+    to mean "fall back to the rule name itself" (for labels).
+    """
     return {
         lang: {
-            name: entry.get(lang) or entry.get("de") or (fallback if fallback != "rule" else name)
-            for name, entry in source.items()
+            name: pick(entry).get(lang) or pick(entry).get("de")
+                  or (name if fallback == "rule" else fallback)
+            for name, entry in _RULE_I18N.items()
         }
         for lang in _UI
     }
 
 
-_TOOLTIPS_BY_LANG = _per_lang(_RULE_DESCRIPTIONS, fallback="")
-_LABELS_BY_LANG = _per_lang(_RULE_LABELS, fallback="rule")
+_TOOLTIPS_BY_LANG = _per_lang(lambda e: e.description, fallback="")
+_LABELS_BY_LANG = _per_lang(lambda e: e.label, fallback="rule")
 
 app = FastAPI(title="Walchi Oracle")
 
