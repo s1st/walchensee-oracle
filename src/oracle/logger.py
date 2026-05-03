@@ -140,15 +140,6 @@ def forecast_to_dict(result: Forecast, target_day: date) -> dict:
             "meteo": _meteo_dict(result),
             "measurements": _measurements_list(result),
         },
-        "chat_messages": [
-            {
-                "posted_at": m.posted_at.isoformat(),
-                "author": m.author,
-                "channel": m.channel,
-                "text": m.text,
-            }
-            for m in result.chat_messages
-        ],
     }
 
 

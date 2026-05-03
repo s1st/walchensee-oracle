@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import typer
 from dotenv import load_dotenv
@@ -147,19 +147,6 @@ def _render_tables(result: Forecast, target: date) -> None:
         verdict_table.add_row(v.rule, v.signal.value, v.reason)
     console.print(verdict_table)
     console.print(f"[bold]Overall:[/bold] {result.overall.value}")
-
-    if result.chat_messages:
-        chat_table = Table(title="windinfo.eu — recent Walchensee mentions")
-        chat_table.add_column("When")
-        chat_table.add_column("Who")
-        chat_table.add_column("Message")
-        for m in result.chat_messages:
-            chat_table.add_row(
-                m.posted_at.strftime("%Y-%m-%d %H:%M"),
-                m.author,
-                m.text if len(m.text) <= 140 else m.text[:137] + "…",
-            )
-        console.print(chat_table)
 
 
 if __name__ == "__main__":

@@ -139,19 +139,6 @@
   .verdict-summary { margin: 10px 0 0; font-size: 15px; }
   .verdict-meta { color: var(--muted); font-size: 12px; margin-top: 14px; }
 
-  .badges { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
-  .badge {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 10px; border-radius: 999px;
-    background: var(--panel); font-size: 12px; color: var(--muted);
-    border: 1px solid var(--border);
-  }
-  .badge .arrow { font-weight: 700; font-size: 14px; }
-  .badge.positive .arrow { color: var(--go); }
-  .badge.negative .arrow { color: var(--no-go); }
-  .badge.mixed    .arrow { color: var(--maybe); }
-  .badge.quiet    .arrow { color: var(--muted); }
-
   h3 { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .1em; margin: 24px 0 8px; }
 
   .strip-row { margin-bottom: 10px; }
@@ -237,13 +224,6 @@
   }
   .help:hover::after, .help:focus::after { opacity: 1; visibility: visible; }
 
-  .chat-msg { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-  .chat-msg:last-child { border-bottom: none; }
-  .chat-msg .when { color: var(--muted); font-size: 11px; }
-  .chat-msg .text { margin: 2px 0 0; }
-  .chat-footer { color: var(--muted); font-size: 11px; margin: 12px 0 0; }
-  .chat-footer a { color: var(--muted); }
-
   footer { color: var(--muted); font-size: 11px; margin-top: 32px; line-height: 1.6; }
   footer a { color: var(--muted); }
 </style>
@@ -328,19 +308,6 @@
     <div class="verdict-meta">{{ t.for_day }} {{ selected_date_label }}.</div>
   </section>
 
-  {% if sentiment %}
-  <div class="badges">
-    <span class="badge {{ sentiment.code }}" title="{{ t.chat_footer }} windinfo.eu">
-      <span class="arrow">{{ sentiment.arrow }}</span>
-      {{ t.community_prefix }}:
-      {% if sentiment.code == 'positive' %}{{ t.sentiment_positive }}
-      {%- elif sentiment.code == 'negative' %}{{ t.sentiment_negative }}
-      {%- elif sentiment.code == 'mixed' %}{{ t.sentiment_mixed }}
-      {%- else %}{{ t.sentiment_quiet }}{% endif %}
-      {% if sentiment.count %}<span style="opacity: .7; margin-left: 4px;">({{ sentiment.count }})</span>{% endif %}
-    </span>
-  </div>
-  {% endif %}
 {% else %}
   <section class="verdict-card">
     <h2 class="verdict-word">{{ t.no_data_headline }}</h2>
@@ -416,18 +383,6 @@
     </tbody>
   </table>
 
-  {% if current.chat_messages %}
-    <h3 style="margin-top: 20px;">{{ t.chat_header_advanced }}</h3>
-    {% for m in (current.chat_messages[-5:])|reverse %}
-      <div class="chat-msg">
-        <span class="when">{{ m.posted_at[:16]|replace('T', ' ') }}</span>
-        <p class="text">{{ m.text }}</p>
-      </div>
-    {% endfor %}
-    <p class="chat-footer">{{ t.chat_footer }}
-      <a href="https://windinfo.eu/wind-wetter-chat/" target="_blank" rel="noopener">{{ t.windinfo_label }}</a>.
-    </p>
-  {% endif %}
 </div>
 {% endif %}
 

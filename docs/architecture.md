@@ -11,7 +11,6 @@ data store. Both pieces live in the same GCP project (`walchi-oracle-prod`).
                                                      │   Open-Meteo API    │ pressure, meteo
                                                      │   Bright Sky API    │ DWD synoptic wind
                                                      │   Addicted-Sports   │ Urfeld buoy (scrape)
-                                                     │   windinfo.eu chat  │ auth'd poll
                                                      └──────────┬──────────┘
                                                                 │
   Cloud Scheduler         Cloud Run Jobs           ┌────────────▼────────────┐
@@ -20,8 +19,8 @@ data store. Both pieces live in the same GCP project (`walchi-oracle-prod`).
       (--horizon=3)        writes today + 2       │   ├─ pillars/pressure   │
                            days forward to GCS    │   ├─ pillars/meteo      │
                                                   │   ├─ pillars/measurements│
-    21:00 CET  ───────►  oracle-backfill  ───────►│   ├─ pillars/chat       │
-      (backfill today)     merges Urfeld peak     │   └─ knowledge/rules    │
+    21:00 CET  ───────►  oracle-backfill  ───────►│   └─ knowledge/rules    │
+      (backfill today)     merges Urfeld peak     │                         │
                            ground truth to GCS    └────────────┬────────────┘
                                                                │
                                                     ┌──────────▼───────────┐
@@ -54,7 +53,6 @@ Each pillar fetches one data source and returns a typed snapshot.
 | `pressure` | Open-Meteo (MSL pressure for Munich / Innsbruck / Bolzano) | no | no — critical |
 | `meteo` | Open-Meteo (hourly cloud, radiation, wind-aloft, BLH, CAPE, LI, soil moisture …) | no | no — critical |
 | `measurements` | Bright Sky (DWD) + Addicted-Sports scrape (Urfeld) | no | yes — one source dropping is ok |
-| `chat` | windinfo.eu (Wise Chat Pro plugin, WordPress auth) | yes | yes — forecast still produced without chat |
 
 ### Rules (`src/oracle/knowledge/rules.py`)
 
@@ -71,24 +69,22 @@ FastAPI app reading the same `RunStore`. In-memory 60 s cache per-day file and a
 - a three-day tab picker (today + two forecast days)
 - live webcam + current/last-hour/trend panel
 - the selected day's verdict card with a bilingual one-line summary
-- community-sentiment badge, derived per-day via keyword matching on chat messages whose text references that day (`heute` / `morgen` / `übermorgen` / weekday names)
 - 30-day forecast-vs-actual strip with the same go/maybe/no_go colour scale on both rows
-- advanced panel (checkbox-toggled) with the full rule table and anonymised chat excerpts
+- advanced panel (checkbox-toggled) with the full rule table
 
-Anonymisation: the public HTML strips `author` and redacts `@handle` mentions from chat text before rendering. Raw logs in GCS keep full fields for private calibration analysis.
+The footer carries a friendly link to the windinfo.eu Wind-Wetter-Chat (login required at windinfo.eu) for users who want community context — but the project itself does **not** scrape, store, or republish that chat. A previous chat-pillar that did so was removed for DSGVO + § 87b UrhG (Datenbankschutz) reasons; do not reintroduce.
 
 ## GCP layout
 
 All resources in project `walchi-oracle-prod`:
 
 - **Artifact Registry** `europe-west3-docker.pkg.dev/walchi-oracle-prod/walchi/` — stores two images: `oracle-job:latest` and `dashboard:latest`, built via Cloud Build from `cloudbuild.yaml` with a `_DOCKERFILE` substitution.
-- **Cloud Run Jobs** (region `europe-west3`): `oracle-forecast` (`forecast --horizon=3`) and `oracle-backfill` (`backfill`). Both bind to service account `walchi-oracle-job@…` with least-privilege IAM (`secretmanager.secretAccessor` on windinfo secrets, `storage.objectAdmin` on the runs bucket).
+- **Cloud Run Jobs** (region `europe-west3`): `oracle-forecast` (`forecast --horizon=3`) and `oracle-backfill` (`backfill`). Both bind to service account `walchi-oracle-job@…` with least-privilege IAM (`storage.objectAdmin` on the runs bucket).
 - **Cloud Run Service** (region `europe-west1`, required for custom-domain mappings): `walchi-oracle-dash`. Scales to zero, ingress `all`, service account `walchi-oracle-dash@…` with read-only `storage.objectViewer`.
 - **Cloud Scheduler** (region `europe-west3`): two HTTP jobs, 08:00 and 21:00 Europe/Berlin, invoking the Cloud Run Jobs via the Run Admin API. Uses a dedicated `walchi-scheduler@…` service account with `run.invoker` per-job.
 - **Cloud Storage** `gs://walchi-oracle-prod-runs/runs/YYYY-MM-DD.json`.
-- **Secret Manager** `windinfo-user`, `windinfo-pass`.
 - **Custom domain** `walchensee.simon-stieber.de` → CNAME to `ghs.googlehosted.com` (DNS at Cloudflare), Cloud Run domain mapping attached to the dashboard service.
 
 ## Local development
 
-The same package runs locally without GCP. `RUNS_BUCKET` unset → `LocalRunStore` writes `data/runs/`. `.env` (gitignored) holds the windinfo credentials; `oracle forecast` and `oracle backfill` commands work identically to the cloud jobs. The dashboard can be run with `uvicorn oracle.dashboard.main:app` for local testing.
+The same package runs locally without GCP. `RUNS_BUCKET` unset → `LocalRunStore` writes `data/runs/`. `oracle forecast` and `oracle backfill` commands work identically to the cloud jobs. The dashboard can be run with `uvicorn oracle.dashboard.main:app` for local testing.

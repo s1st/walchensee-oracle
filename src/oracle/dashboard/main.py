@@ -10,9 +10,8 @@ Reads per-day records from the same store the scheduled job writes
 from __future__ import annotations
 
 import asyncio
-import re
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
@@ -23,82 +22,6 @@ from fastapi.templating import Jinja2Templates
 from oracle.calibration import actual_verdict as _actual_verdict
 from oracle.logger import default_store
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
-
-# @handle tags embedded in message bodies also identify authors — strip those
-# so the public HTML never ships a windinfo.eu username. Match Unicode word
-# chars so German-style names with umlauts stay intact in the final text.
-_HANDLE_RE = re.compile(r"@[\w\-]+", re.UNICODE)
-
-# Simple keyword lists for community-sentiment derivation. Hand-curated from
-# reading a week of Walchensee chat — not a general German-sentiment model.
-_POS_KW = (
-    "läuft", "geht", "bläst", "weht", "thermik", "legt los", "kabbelwasser",
-    "nordwind", "brise", "session", "gut", "solide", "top", "passt",
-)
-_NEG_KW = (
-    "tot", "flau", "flaute", "nix los", "nichts", "nicht gelohnt",
-    "kein wind", "lohnt nicht", "abgeraten", "plan b", "pennt", "pennen",
-    "kommt nicht", "bleibt aus", "absagen",
-)
-
-# German weekday names → isoweekday index (Monday=0 … Sunday=6).
-_DE_WEEKDAYS = {
-    "montag": 0, "dienstag": 1, "mittwoch": 2, "donnerstag": 3,
-    "freitag": 4, "samstag": 5, "sonntag": 6,
-}
-_MORGEN_RE = re.compile(r"\bmorgen\b", re.IGNORECASE)
-_UEBERMORGEN_RE = re.compile(r"\büber[- ]?morgen\b", re.IGNORECASE)
-_HEUTE_RE = re.compile(r"\bheute\b", re.IGNORECASE)
-
-
-def _infer_day_reference(message: dict) -> date | None:
-    """If the message body clearly references one day, return that date.
-
-    Resolution order: übermorgen → morgen → heute → next-upcoming weekday
-    by name (from the posting date). Returns None when the message has no
-    unambiguous day reference.
-    """
-    try:
-        posted = datetime.fromisoformat(message["posted_at"]).date()
-    except (KeyError, ValueError):
-        return None
-    text = message.get("text") or ""
-
-    if _UEBERMORGEN_RE.search(text):
-        return posted + timedelta(days=2)
-    if _MORGEN_RE.search(text) and not _UEBERMORGEN_RE.search(text):
-        return posted + timedelta(days=1)
-    if _HEUTE_RE.search(text):
-        return posted
-
-    low = text.lower()
-    for name, idx in _DE_WEEKDAYS.items():
-        if re.search(rf"\b{name}\b", low):
-            days_ahead = (idx - posted.weekday()) % 7
-            if days_ahead == 0:
-                days_ahead = 7  # next-occurrence semantics, never the posting day itself
-            return posted + timedelta(days=days_ahead)
-
-    return None
-
-
-def _messages_for_day(
-    messages: list[dict], target_day: date, today: date
-) -> list[dict]:
-    """Filter chat messages down to those talking about `target_day`.
-
-    Messages without a clear day reference fall into "today" as the default —
-    they're most likely general current-conditions chatter.
-    """
-    out: list[dict] = []
-    for m in messages:
-        ref = _infer_day_reference(m)
-        if ref is None:
-            if target_day == today:
-                out.append(m)
-        elif ref == target_day:
-            out.append(m)
-    return out
 
 # Rule descriptions — one short sentence each, keyed by rule and language.
 # Shown as `?` hover tooltips in the Advanced panel.
@@ -185,27 +108,19 @@ _UI: dict[str, dict[str, str]] = {
         "verdict_maybe": "GRENZWERTIG",
         "verdict_no_go": "NIX",
         "for_day": "Für",
-        "community_prefix": "Community",
-        "sentiment_positive": "positiv",
-        "sentiment_negative": "skeptisch",
-        "sentiment_mixed": "gemischt",
-        "sentiment_quiet": "ruhig",
         "last_30_days": "Letzte 30 Tage",
         "no_data": "Keine Daten — warte auf den nächsten morgendlichen Forecast (08:00 MEZ).",
         "no_data_headline": "—",
-        "advanced_label": "Advanced — alle 12 Regeln & Chat-Auszüge",
+        "advanced_label": "Advanced — alle 12 Regeln",
         "col_rule": "Regel",
         "col_signal": "Signal",
         "col_reason": "Begründung",
-        "chat_header_advanced": "Chat-Auszüge (anonymisiert)",
-        "chat_footer": "Anonymisiert. Quelle:",
-        "windinfo_label": "windinfo.eu Community-Chat",
         "footer_outline": "Schwellwerte noch Schätzungen auf Basis von Lake-Garda-Analoga — Kalibrierung läuft.",
         "footer_urfeld": "Urfeld-Wind: © Panoramahotel Karwendelblick, via",
         "footer_dwd": "DWD-Synoptik via",
         "footer_openmeteo": "Druck & Meteorologie via",
-        "footer_chat": "Community-Signal aus anonymisierten Auszügen des",
-        "footer_chat_suffix": "-Chats.",
+        "footer_chat": "Lokaler Wind-Chat (Login bei",
+        "footer_chat_suffix": " erforderlich).",
     },
     "en": {
         "strip_forecast": "Forecast",
@@ -234,27 +149,19 @@ _UI: dict[str, dict[str, str]] = {
         "verdict_maybe": "MAYBE",
         "verdict_no_go": "NO GO",
         "for_day": "For",
-        "community_prefix": "Community",
-        "sentiment_positive": "positive",
-        "sentiment_negative": "skeptical",
-        "sentiment_mixed": "mixed",
-        "sentiment_quiet": "quiet",
         "last_30_days": "Last 30 days",
         "no_data": "No data yet — next scheduled forecast runs at 08:00 CET.",
         "no_data_headline": "—",
-        "advanced_label": "Advanced — all 12 rules & chat excerpts",
+        "advanced_label": "Advanced — all 12 rules",
         "col_rule": "Rule",
         "col_signal": "Signal",
         "col_reason": "Reason",
-        "chat_header_advanced": "Chat excerpts (anonymised)",
-        "chat_footer": "Anonymised. Source:",
-        "windinfo_label": "windinfo.eu community chat",
         "footer_outline": "Thresholds still guesses from Lake Garda analogues — calibration in progress.",
         "footer_urfeld": "Urfeld wind: © Panoramahotel Karwendelblick, via",
         "footer_dwd": "DWD synoptic via",
         "footer_openmeteo": "Pressure & meteorology via",
-        "footer_chat": "Community signal from anonymised excerpts of the",
-        "footer_chat_suffix": ".",
+        "footer_chat": "Local windsurf community chat (login at",
+        "footer_chat_suffix": " required).",
     },
 }
 
@@ -605,44 +512,13 @@ def _summary_line(record: dict, lang: str) -> str:
     return "Mixed signals." if lang == "en" else "Gemischte Signale."
 
 
-def _chat_sentiment(messages: list[dict]) -> dict:
-    """Derive a go/no_go/quiet/mixed signal from a list of chat messages."""
-    pos = neg = 0
-    for m in messages:
-        text = (m.get("text") or "").lower()
-        if any(kw in text for kw in _POS_KW):
-            pos += 1
-        if any(kw in text for kw in _NEG_KW):
-            neg += 1
-
-    if pos == 0 and neg == 0:
-        return {"code": "quiet", "label": "ruhig", "arrow": "·", "count": len(messages)}
-    if pos >= neg * 1.5 and pos > 0:
-        return {"code": "positive", "label": "positiv", "arrow": "↑", "count": len(messages)}
-    if neg >= pos * 1.5 and neg > 0:
-        return {"code": "negative", "label": "skeptisch", "arrow": "↓", "count": len(messages)}
-    return {"code": "mixed", "label": "gemischt", "arrow": "↕", "count": len(messages)}
-
-
-def _public_view(record: dict | None, messages: list[dict] | None = None) -> dict | None:
-    """Strip personal data (chat authors, channel names) before rendering.
-
-    Raw logs in GCS keep the full fields for calibration — only this
-    projection is what ends up in HTML served at the public custom domain.
-    `messages` overrides the record's chat_messages (used when filtering by
-    day-reference); if not passed, falls back to the record's full list.
-    """
+def _public_view(record: dict | None) -> dict | None:
+    """Pass-through for now; kept as the single seam where any future
+    record-level redaction would live before HTML rendering."""
     if record is None:
         return None
     projection = dict(record)
-    source = messages if messages is not None else record.get("chat_messages", [])
-    projection["chat_messages"] = [
-        {
-            "posted_at": m.get("posted_at"),
-            "text": _HANDLE_RE.sub("@…", m.get("text") or ""),
-        }
-        for m in source
-    ]
+    projection.pop("chat_messages", None)  # legacy field on older logs
     return projection
 
 
@@ -669,11 +545,6 @@ async def index(request: Request) -> Response:
         raw = _most_recent(today)
 
     summary = _summary_line(raw, lang) if raw else ""
-    # Filter chat messages by day-reference heuristic so the badge + Advanced
-    # panel both reflect what the community said ABOUT the selected day.
-    all_messages = (raw or {}).get("chat_messages", []) or []
-    day_messages = _messages_for_day(all_messages, selected_day, today)
-    sentiment = _chat_sentiment(day_messages) if raw else None
     tooltips = {name: _rule_tooltip(name, lang) for name in _RULE_DESCRIPTIONS}
     horizon = _horizon_days(today, lang, selected_day.isoformat())
     # Live wind + webcam always shown — it's "current state at the lake",
@@ -684,9 +555,8 @@ async def index(request: Request) -> Response:
         request=request,
         name="index.html",
         context={
-            "current": _public_view(raw, messages=day_messages),
+            "current": _public_view(raw),
             "summary": summary,
-            "sentiment": sentiment,
             "history": _history(today, lang),
             "selected_date_label": _fmt_date(selected_day, lang, "full"),
             "today_iso": today.isoformat(),

@@ -90,7 +90,6 @@ MAX_UPPER_CROSSFLOW_KNOTS = 25.0    # 700 hPa above this decouples valley-wind s
 IGNITION_WINDOW_LOCAL: tuple[time, time] = (time(10, 30), time(15, 0))
 
 # --- External endpoints ---------------------------------------------------
-WINDINFO_CHAT_URL = "https://windinfo.eu/"  # TODO(scraper): refine when wired
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 BRIGHT_SKY_CURRENT_URL = "https://api.brightsky.dev/current_weather"
 ADDICTED_SPORTS_BASE_URL = "https://www.addicted-sports.com"
