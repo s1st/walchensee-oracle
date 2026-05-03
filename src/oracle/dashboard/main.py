@@ -389,9 +389,7 @@ async def _fetch_urfeld_live() -> dict:
         "last_hour_avg": round(last_hour_avg, 1),
         "prev_hour_avg": round(prev_hour_avg, 1) if prev_hour_avg is not None else None,
         "trend": trend,
-        "chart_svg": {
-            lang: _wind_chart_svg(chart_samples, lang=lang) for lang in _UI
-        },
+        "chart_svg": _wind_chart_svgs(chart_samples),
     }
     _urfeld_live_at = now
     return _urfeld_live
@@ -409,19 +407,19 @@ _CHART_ARIA = {
 }
 
 
-def _wind_chart_svg(
+def _wind_chart_svgs(
     samples: list[UrfeldSample],
     width: int = 720,
     height: int = 120,
-    lang: str = "en",
     fixed_xlim: tuple[float, float] | None = None,
     fixed_ymax: float | None = None,
-) -> str:
-    """Render the wind curve as inline SVG (no JS / chart lib).
+) -> dict[str, str]:
+    """Render the wind curve as inline SVG (no JS / chart lib), once per UI language.
 
-    Expects `samples` ordered oldest → newest. Returns "" when there's nothing
-    meaningful to draw (< 2 samples). Each sample also gets a transparent
-    hover disc with a native `<title>` tooltip.
+    Geometry — axes, polylines, hover-disc positions — is identical across
+    languages, so we compute it once and only vary the aria-label and the
+    per-sample `<title>` tooltips. Returns `{lang: ""}` when fewer than two
+    samples make a meaningful curve.
 
     Pass `fixed_xlim`=(start_ts, end_ts) and/or `fixed_ymax` (knots) to pin the
     axes to a fixed range — used by the historical chart so day-to-day clicks
@@ -429,7 +427,7 @@ def _wind_chart_svg(
     sample window so calm days still show the reference lines legibly.
     """
     if len(samples) < 2:
-        return ""
+        return {lang: "" for lang in _UI}
 
     if fixed_ymax is not None:
         y_max = fixed_ymax
@@ -469,26 +467,9 @@ def _wind_chart_svg(
     else:
         start_label = samples[0].measured_at.strftime("%H:%M")
         end_label = samples[-1].measured_at.strftime("%H:%M")
-    tip_fmt = _CHART_TOOLTIP_FMT.get(lang, _CHART_TOOLTIP_FMT["en"])
-    aria = _CHART_ARIA.get(lang, _CHART_ARIA["en"])
 
-    # Hover discs over each sample. Transparent fill + a <title> child = native
-    # browser tooltip on hover, no JS. Small visible dot on the avg line too so
-    # there's an obvious hit target.
-    hover_layer = []
-    for s, (px, py) in zip(samples, avg_pts):
-        label = tip_fmt.format(
-            t=s.measured_at.strftime("%H:%M"), avg=s.avg_knots, gust=s.gust_knots,
-        )
-        hover_layer.append(
-            f'<circle cx="{px:.1f}" cy="{py:.1f}" r="2" fill="#c9d1d9" />'
-            f'<circle cx="{px:.1f}" cy="{py:.1f}" r="10" fill="transparent" '
-            f'pointer-events="all"><title>{_svg_escape(label)}</title></circle>'
-        )
-
-    return (
-        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
-        f'class="wind-chart" role="img" aria-label="{_svg_escape(aria)}">'
+    # Language-independent body: polygons, polylines, axis labels.
+    body = (
         f'<polygon points="{pts_str(gust_poly)}" fill="#8b949e" fill-opacity="0.18" />'
         f'<line x1="{pad_l}" y1="{y8:.1f}" x2="{width - pad_r}" y2="{y8:.1f}" '
         f'stroke="#d29922" stroke-opacity="0.55" stroke-dasharray="3 4" stroke-width="1" />'
@@ -503,9 +484,34 @@ def _wind_chart_svg(
         f'<text x="{pad_l}" y="{height - 3}" fill="#8b949e" font-size="10">{start_label}</text>'
         f'<text x="{width - pad_r}" y="{height - 3}" fill="#8b949e" font-size="10" '
         f'text-anchor="end">{end_label}</text>'
-        f'{"".join(hover_layer)}'
-        f'</svg>'
     )
+
+    # Hover discs over each sample. Transparent fill + <title> child = native
+    # browser tooltip, no JS. Small visible dot on the avg line for hit target.
+    # Tooltip text is the only language-dependent part of each circle pair.
+    def hover_layer(lang: str) -> str:
+        tip_fmt = _CHART_TOOLTIP_FMT.get(lang, _CHART_TOOLTIP_FMT["en"])
+        parts: list[str] = []
+        for s, (px, py) in zip(samples, avg_pts):
+            label = tip_fmt.format(
+                t=s.measured_at.strftime("%H:%M"), avg=s.avg_knots, gust=s.gust_knots,
+            )
+            parts.append(
+                f'<circle cx="{px:.1f}" cy="{py:.1f}" r="2" fill="#c9d1d9" />'
+                f'<circle cx="{px:.1f}" cy="{py:.1f}" r="10" fill="transparent" '
+                f'pointer-events="all"><title>{_svg_escape(label)}</title></circle>'
+            )
+        return "".join(parts)
+
+    return {
+        lang: (
+            f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
+            f'class="wind-chart" role="img" '
+            f'aria-label="{_svg_escape(_CHART_ARIA.get(lang, _CHART_ARIA["en"]))}">'
+            f'{body}{hover_layer(lang)}</svg>'
+        )
+        for lang in _UI
+    }
 
 
 def _svg_escape(text: str) -> str:
@@ -700,10 +706,7 @@ def _historical_chart_payload(record: dict | None) -> dict:
     )
     return {
         "has_data": True,
-        "chart_svg": {
-            lang: _wind_chart_svg(samples, lang=lang, fixed_xlim=xlim, fixed_ymax=25.0)
-            for lang in _UI
-        },
+        "chart_svg": _wind_chart_svgs(samples, fixed_xlim=xlim, fixed_ymax=25.0),
     }
 
 
