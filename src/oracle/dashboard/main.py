@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import time
 from datetime import date, datetime, timedelta
+from datetime import time as dtime
 from pathlib import Path
 
 import httpx
@@ -375,26 +376,39 @@ def _wind_chart_svg(
     width: int = 720,
     height: int = 120,
     lang: str = "en",
+    fixed_xlim: tuple[float, float] | None = None,
+    fixed_ymax: float | None = None,
 ) -> str:
-    """Render the last-N-hours wind curve as inline SVG (no JS / chart lib).
+    """Render the wind curve as inline SVG (no JS / chart lib).
 
     Expects `samples` ordered oldest → newest. Returns "" when there's nothing
-    meaningful to draw (< 2 samples). Y-axis scales so calm days still show
-    the 8 / 12 kt reference lines legibly. Each sample also gets a transparent
+    meaningful to draw (< 2 samples). Each sample also gets a transparent
     hover disc with a native `<title>` tooltip.
+
+    Pass `fixed_xlim`=(start_ts, end_ts) and/or `fixed_ymax` (knots) to pin the
+    axes to a fixed range — used by the historical chart so day-to-day clicks
+    are visually comparable. Without them, the live chart auto-fits to its
+    sample window so calm days still show the reference lines legibly.
     """
     if len(samples) < 2:
         return ""
 
-    gust_peak = max(s.gust_knots for s in samples)
-    y_max = max(15.0, gust_peak * 1.1)
+    if fixed_ymax is not None:
+        y_max = fixed_ymax
+    else:
+        gust_peak = max(s.gust_knots for s in samples)
+        y_max = max(15.0, gust_peak * 1.1)
 
     pad_l, pad_r, pad_t, pad_b = 24, 8, 6, 16
     inner_w = width - pad_l - pad_r
     inner_h = height - pad_t - pad_b
 
-    t0 = samples[0].measured_at.timestamp()
-    t_span = max(samples[-1].measured_at.timestamp() - t0, 1.0)
+    if fixed_xlim is not None:
+        t0, t1 = fixed_xlim
+        t_span = max(t1 - t0, 1.0)
+    else:
+        t0 = samples[0].measured_at.timestamp()
+        t_span = max(samples[-1].measured_at.timestamp() - t0, 1.0)
 
     def x(ts: float) -> float:
         return pad_l + (ts - t0) / t_span * inner_w
@@ -411,8 +425,12 @@ def _wind_chart_svg(
         return " ".join(f"{px:.1f},{py:.1f}" for px, py in pts)
 
     y8, y12 = y(8), y(12)
-    start_label = samples[0].measured_at.strftime("%H:%M")
-    end_label = samples[-1].measured_at.strftime("%H:%M")
+    if fixed_xlim is not None:
+        start_label = datetime.fromtimestamp(fixed_xlim[0]).strftime("%H:%M")
+        end_label = datetime.fromtimestamp(fixed_xlim[1]).strftime("%H:%M")
+    else:
+        start_label = samples[0].measured_at.strftime("%H:%M")
+        end_label = samples[-1].measured_at.strftime("%H:%M")
     tip_fmt = _CHART_TOOLTIP_FMT.get(lang, _CHART_TOOLTIP_FMT["en"])
     aria = _CHART_ARIA.get(lang, _CHART_ARIA["en"])
 
@@ -572,18 +590,51 @@ def _samples_from_record(record: dict | None) -> list[UrfeldSample]:
     return sorted(out, key=lambda s: s.measured_at)
 
 
-def _historical_chart_payload(record: dict | None) -> dict | None:
+def _no_data_chart_svg(lang: str, width: int = 720, height: int = 120) -> str:
+    """Empty-state placeholder with the same dimensions as the wind chart, so
+    layout doesn't shift when clicking through Urfeld-outage days."""
+    label = _UI.get(lang, _UI["en"]).get("strip_legend_empty", "no data")
+    return (
+        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
+        f'class="wind-chart" role="img" aria-label="{_svg_escape(label)}">'
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="transparent" '
+        f'stroke="#30363d" stroke-dasharray="4 4" stroke-width="1" />'
+        f'<text x="{width/2:.0f}" y="{height/2 + 4:.0f}" fill="#8b949e" '
+        f'font-size="13" text-anchor="middle">— {_svg_escape(label)} —</text>'
+        f'</svg>'
+    )
+
+
+def _historical_chart_payload(record: dict | None) -> dict:
     """Build the historical wind-chart payload from a record's stored samples.
 
-    Returned dict mirrors the live-chart shape (per-language SVG map) so the
-    template can render either through the same block. Returns None when there
-    aren't enough samples to draw — caller falls back to no chart.
+    Always returns a payload (never None) so the template renders a chart slot
+    for every past day — outage days get a "keine Daten" placeholder rather
+    than a missing block. Layout stays stable when clicking through the strip.
+
+    Axes are pinned to 06:00–21:00 × 0–25 kt across all data-bearing days so
+    clicks are visually comparable: same X-position = same time of day, same
+    Y-height = same wind strength. The Urfeld buoy only records during
+    daylight (~07:00–20:00), so 06:00–21:00 frames the thermal window without
+    empty padding.
     """
     samples = _samples_from_record(record)
     if len(samples) < 2:
-        return None
+        return {
+            "has_data": False,
+            "chart_svg": {lang: _no_data_chart_svg(lang) for lang in _UI},
+        }
+    day = samples[0].measured_at.date()
+    xlim = (
+        datetime.combine(day, dtime(6, 0)).timestamp(),
+        datetime.combine(day, dtime(21, 0)).timestamp(),
+    )
     return {
-        "chart_svg": {lang: _wind_chart_svg(samples, lang=lang) for lang in _UI},
+        "has_data": True,
+        "chart_svg": {
+            lang: _wind_chart_svg(samples, lang=lang, fixed_xlim=xlim, fixed_ymax=25.0)
+            for lang in _UI
+        },
     }
 
 
@@ -645,7 +696,8 @@ async def index(request: Request) -> Response:
     # the strip, swap the chart for that day's stored Urfeld curve — the live
     # readout would be misleading next to a date that isn't today.
     live = await _fetch_urfeld_live()
-    historical = _historical_chart_payload(raw) if selected_day != today else None
+    is_today = selected_day == today
+    historical = None if is_today else _historical_chart_payload(raw)
 
     response = templates.TemplateResponse(
         request=request,
@@ -665,6 +717,7 @@ async def index(request: Request) -> Response:
             "rule_labels": rule_labels,
             "live": live,
             "historical": historical,
+            "is_today": is_today,
             "t": _UI[lang],
             "lang": lang,
         },

@@ -255,7 +255,7 @@
       <a href="https://www.addicted-sports.com/webcam/walchensee/urfeld/" target="_blank" rel="noopener">addicted-sports.com</a>
     </div>
   </div>
-  {% if historical is none %}
+  {% if is_today %}
   <div class="live-box">
     <h4>{{ t.live_header }}</h4>
     {% if live.available %}
@@ -289,14 +289,16 @@
 {% if historical and historical.chart_svg[lang] %}
 <div class="wind-chart-row" aria-label="{{ t.chart_aria_historical }}">
   {{ historical.chart_svg[lang]|safe }}
+  {% if historical.has_data %}
   <div class="wind-chart-legend">
     <span><i class="avg"></i>{{ t.chart_legend_avg }}</span>
     <span><i class="gust"></i>{{ t.chart_legend_gust }}</span>
     <span><i class="ref8"></i>{{ t.chart_legend_ignition }}</span>
     <span><i class="ref12"></i>{{ t.chart_legend_session }}</span>
   </div>
+  {% endif %}
 </div>
-{% elif historical is none and live.available and live.chart_svg and live.chart_svg[lang] %}
+{% elif is_today and live.available and live.chart_svg and live.chart_svg[lang] %}
 <div class="wind-chart-row" aria-label="{{ t.chart_aria }}">
   {{ live.chart_svg[lang]|safe }}
   <div class="wind-chart-legend">
@@ -379,8 +381,16 @@
   <div class="strip-row-label">{{ t.strip_actual }}</div>
   <div class="strip">
     {% for d in history %}
-      <div class="cell {{ d.actual or 'empty' }}"
-           title="{{ d.day }} — {{ t.strip_actual }}: {% if d.peak_avg_knots %}{{ '%.1f'|format(d.peak_avg_knots) }} kt peak{% else %}—{% endif %}"></div>
+      {% set sel = (d.iso == selected_iso) %}
+      {% if d.actual %}
+        <a class="cell {{ d.actual }}{% if sel %} selected{% endif %}"
+           href="?day={{ d.iso }}&view={{ view }}"
+           title="{{ d.day }} — {{ t.strip_actual }}: {% if d.peak_avg_knots %}{{ '%.1f'|format(d.peak_avg_knots) }} kt peak{% else %}—{% endif %}"></a>
+      {% else %}
+        <a class="cell empty{% if sel %} selected{% endif %}"
+           href="?day={{ d.iso }}&view={{ view }}"
+           title="{{ d.day }} — {{ t.strip_actual }}: —"></a>
+      {% endif %}
     {% endfor %}
   </div>
 </div>

@@ -73,14 +73,23 @@ def test_historical_chart_payload_returns_per_lang_svg():
         {"t": "2026-04-22T12:00:00", "avg_kt": 14.0, "gust_kt": 19.0},
     ])
     payload = _historical_chart_payload(record)
-    assert payload is not None
+    assert payload["has_data"] is True
     assert set(payload["chart_svg"].keys()) == {"de", "en"}
     assert payload["chart_svg"]["de"].startswith("<svg")
 
 
-def test_historical_chart_payload_returns_none_when_too_few_samples():
-    record = _make_record(samples=[
+def test_historical_chart_payload_returns_placeholder_when_no_samples():
+    """Outage days (no Urfeld backfill) still get a chart slot — keeps layout
+    stable when clicking through the strip."""
+    payload = _historical_chart_payload(_make_record(samples=[]))
+    assert payload["has_data"] is False
+    assert payload["chart_svg"]["de"].startswith("<svg")
+    assert "keine Daten" in payload["chart_svg"]["de"]
+    assert "no data" in payload["chart_svg"]["en"]
+
+    # Single-sample days also count as no-data (can't draw a curve from one point).
+    one_sample = _make_record(samples=[
         {"t": "2026-04-22T08:00:00", "avg_kt": 5.0, "gust_kt": 8.0},
     ])
-    assert _historical_chart_payload(record) is None
-    assert _historical_chart_payload(None) is None
+    assert _historical_chart_payload(one_sample)["has_data"] is False
+    assert _historical_chart_payload(None)["has_data"] is False
