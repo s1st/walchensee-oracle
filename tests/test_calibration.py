@@ -1,9 +1,12 @@
 """Calibration: confusion matrix + per-rule offender stats."""
 from pathlib import Path
 
+import csv
+
 from oracle.calibration import (
     actual_verdict,
     compile_report,
+    export_csv,
     format_text_report,
     rescore_all,
     rescore_record,
@@ -203,6 +206,47 @@ def test_rescore_all_dry_run_does_not_write(tmp_path: Path):
     assert summary["rewritten"] == []
     rewritten = store.read("2026-04-22")
     assert "overall_resimulated" not in rewritten
+
+
+def test_export_csv_writes_features_and_ground_truth(tmp_path: Path):
+    store = LocalRunStore(tmp_path / "runs")
+    # Day 1: full inputs + ground truth → emitted.
+    store.write("2026-04-22", {
+        "day": "2026-04-22",
+        "overall": "go",
+        "verdicts": [],
+        "inputs": _full_inputs(day="2026-04-22"),
+        "ground_truth": {
+            "machine": {
+                "peak_avg_knots": 14.0,
+                "peak_gust_knots": 19.0,
+                "first_ignition_minute": 720,
+                "minutes_above_8kt": 180,
+                "minutes_above_12kt": 60,
+            },
+            "human": None,
+        },
+    })
+    # Day 2: missing ground truth → skipped.
+    store.write("2026-04-23", {
+        "day": "2026-04-23", "overall": "no_go", "verdicts": [],
+        "inputs": _full_inputs(day="2026-04-23"),
+        "ground_truth": {"machine": None, "human": None},
+    })
+
+    csv_path = tmp_path / "out.csv"
+    n = export_csv(csv_path, store=store)
+    assert n == 1
+
+    with csv_path.open() as f:
+        rows = list(csv.DictReader(f))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["day"] == "2026-04-22"
+    assert row["thermik_delta_hpa"] == "5.0"
+    assert row["peak_avg_knots"] == "14.0"
+    assert row["actual_verdict"] == "go"
+    assert row["forecast_overall"] == "go"
 
 
 def test_format_text_report_shows_offenders(tmp_path: Path):

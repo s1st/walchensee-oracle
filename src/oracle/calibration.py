@@ -18,8 +18,10 @@ Deliberately doesn't auto-tune thresholds; surfaces evidence for a human.
 """
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from pathlib import Path
 
 from oracle.config import StationRole
 from oracle.engine import _aggregate, apply_rules
@@ -324,3 +326,104 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
         "FN-green = rule said GO but day didn't fire."
     )
     return "\n".join(lines)
+
+
+# --- ML-friendly CSV export ----------------------------------------------
+# Flat one-row-per-day projection of every record that has both reconstructable
+# inputs and Urfeld ground truth. Intended for offline notebooks: load with
+# pandas, fit a shallow tree against `actual_peak_avg_knots` (regression) or
+# `actual_verdict` (classification), inspect feature importance.
+
+_CSV_COLUMNS = [
+    "day",
+    # pressure
+    "munich_hpa", "innsbruck_hpa", "bolzano_hpa",
+    "thermik_delta_hpa", "foehn_delta_hpa",
+    # meteo
+    "overnight_cloud_cover_pct", "morning_solar_radiation_wm2",
+    "synoptic_wind_knots", "min_dew_point_spread_c",
+    "max_boundary_layer_height_m", "soil_moisture_m3m3",
+    "rained_yesterday", "yesterday_precipitation_mm",
+    "max_lifted_index", "min_lifted_index", "max_cape_j_kg",
+    "max_daytime_low_cloud_pct", "wind_850_direction_at_peak_deg",
+    "max_wind_700_knots",
+    # ground truth (Urfeld peak)
+    "peak_avg_knots", "peak_gust_knots",
+    "ignition_minute", "minutes_above_8kt", "minutes_above_12kt",
+    "actual_verdict",
+    # what the rule layer said (for benchmarking ML against the heuristic)
+    "forecast_overall", "forecast_overall_resimulated",
+]
+
+
+def _row_for(record: dict) -> dict | None:
+    """Project one record into a flat CSV row, or None if not usable."""
+    inputs = record.get("inputs") or {}
+    p = inputs.get("pressure") or {}
+    m = inputs.get("meteo") or {}
+    if not p or not m:
+        return None
+    machine = (record.get("ground_truth") or {}).get("machine") or {}
+    peak = machine.get("peak_avg_knots")
+    if peak is None:
+        return None
+    return {
+        "day": record.get("day"),
+        "munich_hpa": p.get("munich_hpa"),
+        "innsbruck_hpa": p.get("innsbruck_hpa"),
+        "bolzano_hpa": p.get("bolzano_hpa"),
+        "thermik_delta_hpa": p.get("thermik_delta_hpa"),
+        "foehn_delta_hpa": p.get("foehn_delta_hpa"),
+        "overnight_cloud_cover_pct": m.get("overnight_cloud_cover_pct"),
+        "morning_solar_radiation_wm2": m.get("morning_solar_radiation_wm2"),
+        "synoptic_wind_knots": m.get("synoptic_wind_knots"),
+        "min_dew_point_spread_c": m.get("min_dew_point_spread_c"),
+        "max_boundary_layer_height_m": m.get("max_boundary_layer_height_m"),
+        "soil_moisture_m3m3": m.get("soil_moisture_m3m3"),
+        "rained_yesterday": m.get("rained_yesterday"),
+        "yesterday_precipitation_mm": m.get("yesterday_precipitation_mm"),
+        "max_lifted_index": m.get("max_lifted_index"),
+        "min_lifted_index": m.get("min_lifted_index"),
+        "max_cape_j_kg": m.get("max_cape_j_kg"),
+        "max_daytime_low_cloud_pct": m.get("max_daytime_low_cloud_pct"),
+        "wind_850_direction_at_peak_deg": m.get("wind_850_direction_at_peak_deg"),
+        "max_wind_700_knots": m.get("max_wind_700_knots"),
+        "peak_avg_knots": peak,
+        "peak_gust_knots": machine.get("peak_gust_knots"),
+        "ignition_minute": machine.get("first_ignition_minute"),
+        "minutes_above_8kt": machine.get("minutes_above_8kt"),
+        "minutes_above_12kt": machine.get("minutes_above_12kt"),
+        "actual_verdict": actual_verdict(peak),
+        "forecast_overall": record.get("overall"),
+        "forecast_overall_resimulated": record.get("overall_resimulated"),
+    }
+
+
+def export_csv(
+    path: Path | str,
+    store: RunStore | None = None,
+    since: date | None = None,
+    until: date | None = None,
+) -> int:
+    """Write every ground-truthed record to `path` as a flat CSV. Returns row count."""
+    store = store or default_store()
+    rows: list[dict] = []
+    for iso in store.list_days():
+        if since and date.fromisoformat(iso) < since:
+            continue
+        if until and date.fromisoformat(iso) > until:
+            continue
+        record = store.read(iso)
+        if record is None:
+            continue
+        row = _row_for(record)
+        if row is not None:
+            rows.append(row)
+
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=_CSV_COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+    return len(rows)

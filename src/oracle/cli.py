@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from oracle.calibration import compile_report, format_text_report, rescore_all
+from oracle.calibration import compile_report, export_csv, format_text_report, rescore_all
 from oracle.engine import Forecast, run_forecast
 from oracle.logger import backfill_run, forecast_to_dict, load_run, write_run
 
@@ -124,6 +124,7 @@ def calibrate(
     since: str = typer.Option(None, help="ISO date — only consider days from this date forward."),
     until: str = typer.Option(None, help="ISO date — only consider days up to this date."),
     rule: str = typer.Option(None, help="Restrict per-rule table to a single rule (e.g. post_rain_moisture)."),
+    csv: str = typer.Option(None, help="Path to write a flat one-row-per-day CSV (features + ground truth) for offline ML."),
 ) -> None:
     """Score logged forecasts against Urfeld peak ground truth.
 
@@ -136,6 +137,9 @@ def calibrate(
     until_d = date.fromisoformat(until) if until else None
     report = compile_report(since=since_d, until=until_d)
     console.print(format_text_report(report, rule_filter=rule))
+    if csv:
+        n = export_csv(csv, since=since_d, until=until_d)
+        console.print(f"\n[dim]Wrote {n} rows to {csv}[/dim]")
 
 
 def _render_tables(result: Forecast, target: date) -> None:
