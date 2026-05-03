@@ -9,6 +9,7 @@ Reads per-day records from the same store the scheduled job writes
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import date, datetime, timedelta
 from datetime import time as dtime
@@ -487,12 +488,38 @@ def _cached_read(iso_day: str) -> dict | None:
         return value
     fresh = default_store().read(iso_day)
     _cache[iso_day] = (fresh, now + _CACHE_TTL_S)
-    if len(_cache) > _CACHE_MAX_ENTRIES:
+    _evict_if_full()
+    return fresh
+
+
+def _evict_if_full() -> None:
+    while len(_cache) > _CACHE_MAX_ENTRIES:
         # Evict the entry that expires soonest — usually a stale one that's
         # about to be re-fetched anyway. Keeps the dict O(N) bounded.
         oldest = min(_cache, key=lambda k: _cache[k][1])
         _cache.pop(oldest, None)
-    return fresh
+
+
+async def _prefetch_days(iso_days: list[str]) -> None:
+    """Populate `_cache` for `iso_days` concurrently. No-op for fresh hits.
+
+    The dashboard renders horizon (3 days) + a 30-day history strip on every
+    request — 33 sync `store.read` calls in series is a 33-RTT GCS storm on a
+    cold cache. Fanning the misses out via `asyncio.to_thread` collapses that
+    to one wall-clock RTT (modulo thread-pool size, default ≥ 5).
+    """
+    now = time.time()
+    misses = list({d for d in iso_days if _cache.get(d, (None, 0.0))[1] <= now})
+    if not misses:
+        return
+    store = default_store()
+    fresh_values = await asyncio.gather(
+        *(asyncio.to_thread(store.read, d) for d in misses)
+    )
+    expires_at = now + _CACHE_TTL_S
+    for d, fresh in zip(misses, fresh_values):
+        _cache[d] = (fresh, expires_at)
+    _evict_if_full()
 
 
 def _most_recent(today: date) -> dict | None:
@@ -680,6 +707,16 @@ async def index(request: Request) -> Response:
     if view not in ("original", "resimulated"):
         view = "resimulated"
 
+    # Warm the cache for every day this request will read (selected + horizon
+    # + 30-day strip + 7-day fallback for `_most_recent`) in one parallel
+    # fan-out, alongside the live-Urfeld fetch. After this gather, every
+    # subsequent `_cached_read` is a hit.
+    horizon_isos = [(today + timedelta(days=i)).isoformat() for i in range(3)]
+    history_isos = [(today - timedelta(days=i)).isoformat() for i in range(30)]
+    fallback_isos = [(today - timedelta(days=i)).isoformat() for i in range(8)]
+    all_isos = horizon_isos + history_isos + fallback_isos + [selected_day.isoformat()]
+    _, live = await asyncio.gather(_prefetch_days(all_isos), _fetch_urfeld_live())
+
     # Fall back to the most-recent-available record only when today's isn't yet
     # written (early in the morning before the scheduled job has run).
     raw = _cached_read(selected_day.isoformat())
@@ -700,10 +737,6 @@ async def index(request: Request) -> Response:
     tooltips = _TOOLTIPS_BY_LANG[lang]
     rule_labels = _LABELS_BY_LANG[lang]
     horizon = _horizon_days(today, lang, selected_day.isoformat())
-    # Live wind + webcam shown by default. When the user clicks a past day in
-    # the strip, swap the chart for that day's stored Urfeld curve — the live
-    # readout would be misleading next to a date that isn't today.
-    live = await _fetch_urfeld_live()
     is_today = selected_day == today
     historical = None if is_today else _historical_chart_payload(raw)
 
