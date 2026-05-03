@@ -67,7 +67,11 @@ ALL_LOCAL_STATIONS: tuple[Station, ...] = (
 # TODO(calibrate): all values below are informed guesses from research; replace
 # once we have a log of (inputs, actual-conditions) pairs from real sessions.
 
-MIN_THERMIK_DELTA_HPA = 2.5   # Munich − Innsbruck (cross-Alps "Thermik" driver); Garda uses ~3
+MIN_THERMIK_DELTA_HPA = -1.0  # Munich − Innsbruck. Below this the synoptic flow actively
+                              # opposes the N-thermal. Set from n=10 calibration: 7/7 logged
+                              # GO days (peak ≥12 kt) had Δ ∈ [-0.8, +2.6]; the cross-Alps
+                              # delta is a *background* condition for Walchi, not a trigger —
+                              # local slope-vs-lake T-gradient is the real driver.
 FOEHN_TRIGGER_DELTA_HPA = 4.0    # Bolzano − Innsbruck positive ≥ this => Föhn risk
 SYNOPTIC_OVERRIDE_KNOTS = 15.0   # ≥ 3 Bft base wind deforms the thermal cell
 IGNITION_WIND_KNOTS = 8.0        # shore reading that signals ignition

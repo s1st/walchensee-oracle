@@ -299,7 +299,10 @@
 </nav>
 
 {% if current %}
-  {% set v = current.overall %}
+  {# Hero verdict reflects the *current* aggregator (rescored). The historical
+     `overall` is preserved on the record as evidence and shown in the strip
+     row below so we can see how calibration improves over time. #}
+  {% set v = current.overall_resimulated or current.overall %}
   <section class="verdict-card {{ v }}">
     <h2 class="verdict-word {{ v }}">
       {% if v == 'go' %}{{ t.verdict_go }}{% elif v == 'maybe' %}{{ t.verdict_maybe }}{% else %}{{ t.verdict_no_go }}{% endif %}
@@ -367,7 +370,7 @@
   <table>
     <thead><tr><th>{{ t.col_rule }}</th><th>{{ t.col_signal }}</th><th>{{ t.col_reason }}</th></tr></thead>
     <tbody>
-      {% for rule in current.verdicts %}
+      {% for rule in (current.verdicts_resimulated or current.verdicts) %}
       <tr>
         <td>
           {{ rule.rule }}{% if rule_descriptions.get(rule.rule) %}<span

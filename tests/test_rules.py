@@ -37,7 +37,7 @@ def test_thermik_go():
 
 
 def test_thermik_no_go():
-    assert thermik(_snapshot(1.0)).signal is Signal.NO_GO
+    assert thermik(_snapshot(-2.0)).signal is Signal.NO_GO
 
 
 def test_foehn_override_flags_southerly_pressure():
@@ -197,7 +197,7 @@ def test_thermal_ignition_detects_ignited_station():
 
 
 def test_thermik_no_go_is_soft():
-    assert thermik(_snapshot(1.0)).severity is Severity.SOFT
+    assert thermik(_snapshot(-2.0)).severity is Severity.SOFT
 
 
 def test_foehn_override_is_hard():

@@ -476,9 +476,14 @@ def healthz() -> dict:
 
 
 def _summary_line(record: dict, lang: str) -> str:
-    """One-liner reason shown under the verdict headline."""
-    overall = record.get("overall")
-    verdicts = record.get("verdicts", [])
+    """One-liner reason shown under the verdict headline.
+
+    Uses the *rescored* verdicts when present so the explanation matches the
+    hero card's signal (which is also rescored). Falls back to the historical
+    fields for records written before `oracle rescore` was first run.
+    """
+    overall = record.get("overall_resimulated") or record.get("overall")
+    verdicts = record.get("verdicts_resimulated") or record.get("verdicts", [])
 
     def _reason(v: dict) -> str:
         # Prefer the language-specific reason; fall back to legacy 'reason'

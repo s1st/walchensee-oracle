@@ -55,13 +55,13 @@ def thermik(snapshot: PressureSnapshot) -> Verdict:
     if delta >= config.MIN_THERMIK_DELTA_HPA:
         return Verdict(
             "thermik", Signal.GO,
-            reason_en=f"Δ={delta:.1f} hPa ≥ threshold",
-            reason_de=f"Δ={delta:.1f} hPa ≥ Schwellwert",
+            reason_en=f"Δ={delta:.1f} hPa — synoptic flow not opposing N-thermal",
+            reason_de=f"Δ={delta:.1f} hPa — Höhenströmung arbeitet nicht gegen N-Thermik",
         )
     return Verdict(
         "thermik", Signal.NO_GO,
-        reason_en=f"Δ={delta:.1f} hPa below threshold",
-        reason_de=f"Δ={delta:.1f} hPa unter Schwellwert",
+        reason_en=f"Δ={delta:.1f} hPa — pressure gradient pushing against the thermal",
+        reason_de=f"Δ={delta:.1f} hPa — Druckgradient drückt gegen die Thermik",
         severity=Severity.SOFT,
     )
 
