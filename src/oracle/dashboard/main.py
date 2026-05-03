@@ -112,6 +112,8 @@ _UI: dict[str, dict[str, str]] = {
         "no_data": "Keine Daten — warte auf den nächsten morgendlichen Forecast (08:00 MEZ).",
         "no_data_headline": "—",
         "advanced_label": "Advanced — alle 12 Regeln",
+        "view_label_original": "wie damals geschrieben",
+        "view_label_resimulated": "neu berechnet",
         "col_rule": "Regel",
         "col_signal": "Signal",
         "col_reason": "Begründung",
@@ -153,6 +155,8 @@ _UI: dict[str, dict[str, str]] = {
         "no_data": "No data yet — next scheduled forecast runs at 08:00 CET.",
         "no_data_headline": "—",
         "advanced_label": "Advanced — all 12 rules",
+        "view_label_original": "as written at the time",
+        "view_label_resimulated": "re-scored",
         "col_rule": "Rule",
         "col_signal": "Signal",
         "col_reason": "Reason",
@@ -475,15 +479,13 @@ def healthz() -> dict:
     return {"ok": True}
 
 
-def _summary_line(record: dict, lang: str) -> str:
+def _summary_line(overall: str | None, verdicts: list[dict], lang: str) -> str:
     """One-liner reason shown under the verdict headline.
 
-    Uses the *rescored* verdicts when present so the explanation matches the
-    hero card's signal (which is also rescored). Falls back to the historical
-    fields for records written before `oracle rescore` was first run.
+    Caller picks which verdict layer (original write-time vs. rescored) to
+    explain — both come from the same record but represent different
+    aggregator runs over the same inputs.
     """
-    overall = record.get("overall_resimulated") or record.get("overall")
-    verdicts = record.get("verdicts_resimulated") or record.get("verdicts", [])
 
     def _reason(v: dict) -> str:
         # Prefer the language-specific reason; fall back to legacy 'reason'
@@ -532,16 +534,24 @@ async def index(request: Request) -> Response:
     lang = _resolve_lang(request)
     today = date.today()
 
-    # Which day to show? ?day=YYYY-MM-DD (within [today, today+2]); else today.
+    # Which day? ?day=YYYY-MM-DD; allow [today-30, today+2] so strip cells can
+    # be clicked to inspect any logged historical day in the calibration window.
     selected_day = today
     requested = request.query_params.get("day")
     if requested:
         try:
             parsed = date.fromisoformat(requested)
-            if timedelta(0) <= parsed - today <= timedelta(days=2):
+            if timedelta(days=-30) <= parsed - today <= timedelta(days=2):
                 selected_day = parsed
         except ValueError:
             pass
+
+    # Which verdict layer? ?view=original|resimulated. Default is the rescored
+    # one (current aggregator's call). `original` shows what was actually
+    # written on the day, useful for seeing how calibration has shifted.
+    view = request.query_params.get("view")
+    if view not in ("original", "resimulated"):
+        view = "resimulated"
 
     # Fall back to the most-recent-available record only when today's isn't yet
     # written (early in the morning before the scheduled job has run).
@@ -549,7 +559,17 @@ async def index(request: Request) -> Response:
     if raw is None and selected_day == today:
         raw = _most_recent(today)
 
-    summary = _summary_line(raw, lang) if raw else ""
+    if raw and view == "original":
+        display_overall = raw.get("overall")
+        display_verdicts = raw.get("verdicts", [])
+    elif raw:
+        display_overall = raw.get("overall_resimulated") or raw.get("overall")
+        display_verdicts = raw.get("verdicts_resimulated") or raw.get("verdicts", [])
+    else:
+        display_overall = None
+        display_verdicts = []
+
+    summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
     tooltips = {name: _rule_tooltip(name, lang) for name in _RULE_DESCRIPTIONS}
     horizon = _horizon_days(today, lang, selected_day.isoformat())
     # Live wind + webcam always shown — it's "current state at the lake",
@@ -561,6 +581,9 @@ async def index(request: Request) -> Response:
         name="index.html",
         context={
             "current": _public_view(raw),
+            "display_overall": display_overall,
+            "display_verdicts": display_verdicts,
+            "view": view,
             "summary": summary,
             "history": _history(today, lang),
             "selected_date_label": _fmt_date(selected_day, lang, "full"),

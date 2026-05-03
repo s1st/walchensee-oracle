@@ -146,12 +146,16 @@
   .strip { display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; }
   .cell {
     aspect-ratio: 1; border-radius: 3px; background: var(--panel);
-    border: 1px solid transparent;
+    border: 1px solid transparent; display: block;
   }
+  a.cell { cursor: pointer; transition: transform .08s ease, box-shadow .08s ease; }
+  a.cell:hover { transform: scale(1.15); box-shadow: 0 0 0 1px var(--text); }
+  a.cell.selected { box-shadow: 0 0 0 2px var(--text); transform: scale(1.05); }
   .cell.go    { background: var(--go); }
   .cell.maybe { background: var(--maybe); }
   .cell.no_go { background: var(--no-go); }
   .cell.empty { background: var(--panel); opacity: .35; }
+  .view-tag { font-style: italic; opacity: .8; }
   .strip-labels { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
   .strip-legend {
     display: flex; flex-wrap: wrap; gap: 10px 16px;
@@ -299,16 +303,18 @@
 </nav>
 
 {% if current %}
-  {# Hero verdict reflects the *current* aggregator (rescored). The historical
-     `overall` is preserved on the record as evidence and shown in the strip
-     row below so we can see how calibration improves over time. #}
-  {% set v = current.overall_resimulated or current.overall %}
+  {# Hero reflects the chosen view (default: rescored). Click a strip cell
+     below to inspect a different day or the historical write-time verdict. #}
+  {% set v = display_overall %}
   <section class="verdict-card {{ v }}">
     <h2 class="verdict-word {{ v }}">
       {% if v == 'go' %}{{ t.verdict_go }}{% elif v == 'maybe' %}{{ t.verdict_maybe }}{% else %}{{ t.verdict_no_go }}{% endif %}
     </h2>
     <p class="verdict-summary">{{ summary }}</p>
-    <div class="verdict-meta">{{ t.for_day }} {{ selected_date_label }}.</div>
+    <div class="verdict-meta">
+      {{ t.for_day }} {{ selected_date_label }} —
+      <span class="view-tag">{% if view == 'original' %}{{ t.view_label_original }}{% else %}{{ t.view_label_resimulated }}{% endif %}</span>.
+    </div>
   </section>
 
 {% else %}
@@ -324,8 +330,14 @@
   <div class="strip-row-label">{{ t.strip_forecast }}</div>
   <div class="strip">
     {% for d in history %}
-      <div class="cell {{ d.verdict or 'empty' }}"
-           title="{{ d.day }} — {{ t.strip_forecast }}: {{ d.verdict or '—' }}"></div>
+      {% set sel = (d.iso == selected_iso and view == 'original') %}
+      {% if d.verdict %}
+        <a class="cell {{ d.verdict }}{% if sel %} selected{% endif %}"
+           href="?day={{ d.iso }}&view=original"
+           title="{{ d.day }} — {{ t.strip_forecast }}: {{ d.verdict }}"></a>
+      {% else %}
+        <div class="cell empty" title="{{ d.day }} — {{ t.strip_forecast }}: —"></div>
+      {% endif %}
     {% endfor %}
   </div>
 </div>
@@ -334,8 +346,14 @@
   <div class="strip-row-label">{{ t.strip_resimulated }}</div>
   <div class="strip">
     {% for d in history %}
-      <div class="cell {{ d.resimulated or 'empty' }}"
-           title="{{ d.day }} — {{ t.strip_resimulated }}: {{ d.resimulated or '—' }}"></div>
+      {% set sel = (d.iso == selected_iso and view == 'resimulated') %}
+      {% if d.resimulated %}
+        <a class="cell {{ d.resimulated }}{% if sel %} selected{% endif %}"
+           href="?day={{ d.iso }}&view=resimulated"
+           title="{{ d.day }} — {{ t.strip_resimulated }}: {{ d.resimulated }}"></a>
+      {% else %}
+        <div class="cell empty" title="{{ d.day }} — {{ t.strip_resimulated }}: —"></div>
+      {% endif %}
     {% endfor %}
   </div>
 </div>
@@ -370,7 +388,7 @@
   <table>
     <thead><tr><th>{{ t.col_rule }}</th><th>{{ t.col_signal }}</th><th>{{ t.col_reason }}</th></tr></thead>
     <tbody>
-      {% for rule in (current.verdicts_resimulated or current.verdicts) %}
+      {% for rule in display_verdicts %}
       <tr>
         <td>
           {{ rule.rule }}{% if rule_descriptions.get(rule.rule) %}<span
