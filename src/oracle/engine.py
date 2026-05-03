@@ -67,17 +67,24 @@ async def run_forecast(day: date) -> Forecast:
 
 
 def _aggregate(verdicts: list[Verdict]) -> Signal:
-    """Severity-aware aggregation.
+    """Consensus aggregation, severity-aware.
 
     Only HARD vetos (Föhn, ≥15 kt synoptic, opposing/decoupling upper-level
-    flow, thunderstorm-risk LI) flip the overall to NO_GO. SOFT vetos
-    (attenuating signals like overcast, weak Δ pressure, wet ground) can only
-    downgrade GO → MAYBE; on their own they never block.
+    flow, thunderstorm-risk LI) flip the overall to NO_GO. A *single* SOFT
+    veto on its own does not downgrade — placeholder thresholds firing one
+    rule shouldn't override the consensus of nine others. Two or more SOFT
+    vetos do downgrade to MAYBE: that's where the negative signals start
+    converging into something real. MAYBE emissions from individual rules are
+    advisory only and don't trigger a downgrade by themselves.
     """
     if any(
         v.signal is Signal.NO_GO and v.severity is Severity.HARD for v in verdicts
     ):
         return Signal.NO_GO
-    if all(v.signal is Signal.GO for v in verdicts):
-        return Signal.GO
-    return Signal.MAYBE
+    soft_no_gos = sum(
+        1 for v in verdicts
+        if v.signal is Signal.NO_GO and v.severity is Severity.SOFT
+    )
+    if soft_no_gos >= 2:
+        return Signal.MAYBE
+    return Signal.GO

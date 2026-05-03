@@ -107,7 +107,8 @@ def test_format_text_report_handles_empty(tmp_path: Path):
 
 
 def _full_inputs(*, day: str, thermik_delta: float = 5.0, foehn_delta: float = 0.0,
-                 li_max: float = 3.0, li_min: float = 1.0) -> dict:
+                 li_max: float = 3.0, li_min: float = 1.0,
+                 overnight_cloud_pct: float = 10.0) -> dict:
     """Synthesise an inputs block matching what logger writes."""
     return {
         "pressure": {
@@ -120,7 +121,7 @@ def _full_inputs(*, day: str, thermik_delta: float = 5.0, foehn_delta: float = 0
         },
         "meteo": {
             "day": day,
-            "overnight_cloud_cover_pct": 10.0,
+            "overnight_cloud_cover_pct": overnight_cloud_pct,
             "morning_solar_radiation_wm2": 800.0,
             "synoptic_wind_knots": 5.0,
             "min_dew_point_spread_c": 10.0,
@@ -156,10 +157,13 @@ def test_rescore_record_skips_incomplete_inputs():
     assert rescore_record(record) is None
 
 
-def test_rescore_record_soft_only_now_maybe():
-    # Old aggregator would say no_go (any NO_GO wins). New aggregator says maybe.
+def test_rescore_record_two_soft_vetos_yields_maybe():
+    # Two soft vetos (LI too stable + overnight cloud > threshold) downgrade to
+    # maybe under the consensus aggregator. A single soft veto on its own would
+    # still produce GO — the aggregator only downgrades when negative signals
+    # converge.
     record = {
-        "inputs": _full_inputs(day="2026-04-22", thermik_delta=0.5, li_max=8.0),
+        "inputs": _full_inputs(day="2026-04-22", li_max=8.0, overnight_cloud_pct=80.0),
     }
     overall, _ = rescore_record(record)
     assert overall == "maybe"
@@ -171,7 +175,7 @@ def test_rescore_all_writes_resimulated_field(tmp_path: Path):
         "day": "2026-04-22",
         "overall": "no_go",  # what old aggregator said
         "verdicts": [],
-        "inputs": _full_inputs(day="2026-04-22", thermik_delta=0.5, li_max=8.0),
+        "inputs": _full_inputs(day="2026-04-22", li_max=8.0, overnight_cloud_pct=80.0),
         "ground_truth": {"machine": None, "human": None},
     })
 
