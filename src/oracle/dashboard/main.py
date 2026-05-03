@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -119,6 +119,8 @@ _UI: dict[str, dict[str, str]] = {
         "live_trend_down": "fallend",
         "live_trend_flat": "stabil",
         "live_unavailable": "Urfeld-Sensor gerade nicht erreichbar.",
+        "historical_chart_header": "Verlauf an Urfeld",
+        "chart_aria_historical": "Urfeld-Wind, ganzer Tag",
         "chart_aria": "Urfeld-Wind, letzte 6 Stunden",
         "chart_legend_avg": "Mittelwind",
         "chart_legend_gust": "Böe",
@@ -162,6 +164,8 @@ _UI: dict[str, dict[str, str]] = {
         "live_trend_down": "dropping",
         "live_trend_flat": "steady",
         "live_unavailable": "Urfeld sensor not reachable right now.",
+        "historical_chart_header": "Wind curve at Urfeld",
+        "chart_aria_historical": "Urfeld wind, full day",
         "chart_aria": "Urfeld wind, last 6 hours",
         "chart_legend_avg": "avg wind",
         "chart_legend_gust": "gust",
@@ -548,6 +552,41 @@ def _summary_line(overall: str | None, verdicts: list[dict], lang: str) -> str:
     return "Mixed signals." if lang == "en" else "Gemischte Signale."
 
 
+def _samples_from_record(record: dict | None) -> list[UrfeldSample]:
+    """Reconstruct the Urfeld day curve from a logged record's backfilled
+    ground truth. Returns [] when samples are missing or malformed."""
+    if not record:
+        return []
+    machine = (record.get("ground_truth") or {}).get("machine") or {}
+    raw_samples = machine.get("samples") or []
+    out: list[UrfeldSample] = []
+    for s in raw_samples:
+        try:
+            out.append(UrfeldSample(
+                measured_at=datetime.fromisoformat(s["t"]),
+                avg_knots=float(s["avg_kt"]),
+                gust_knots=float(s["gust_kt"]),
+            ))
+        except (KeyError, ValueError, TypeError):
+            continue
+    return sorted(out, key=lambda s: s.measured_at)
+
+
+def _historical_chart_payload(record: dict | None) -> dict | None:
+    """Build the historical wind-chart payload from a record's stored samples.
+
+    Returned dict mirrors the live-chart shape (per-language SVG map) so the
+    template can render either through the same block. Returns None when there
+    aren't enough samples to draw — caller falls back to no chart.
+    """
+    samples = _samples_from_record(record)
+    if len(samples) < 2:
+        return None
+    return {
+        "chart_svg": {lang: _wind_chart_svg(samples, lang=lang) for lang in _UI},
+    }
+
+
 def _public_view(record: dict | None) -> dict | None:
     """Pass-through for now; kept as the single seam where any future
     record-level redaction would live before HTML rendering."""
@@ -602,9 +641,11 @@ async def index(request: Request) -> Response:
     tooltips = {name: _rule_tooltip(name, lang) for name in _RULE_DESCRIPTIONS}
     rule_labels = {name: _rule_label(name, lang) for name in _RULE_LABELS}
     horizon = _horizon_days(today, lang, selected_day.isoformat())
-    # Live wind + webcam always shown — it's "current state at the lake",
-    # independent of which forecast day is selected.
+    # Live wind + webcam shown by default. When the user clicks a past day in
+    # the strip, swap the chart for that day's stored Urfeld curve — the live
+    # readout would be misleading next to a date that isn't today.
     live = await _fetch_urfeld_live()
+    historical = _historical_chart_payload(raw) if selected_day != today else None
 
     response = templates.TemplateResponse(
         request=request,
@@ -623,6 +664,7 @@ async def index(request: Request) -> Response:
             "rule_descriptions": tooltips,
             "rule_labels": rule_labels,
             "live": live,
+            "historical": historical,
             "t": _UI[lang],
             "lang": lang,
         },

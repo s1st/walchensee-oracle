@@ -255,6 +255,7 @@
       <a href="https://www.addicted-sports.com/webcam/walchensee/urfeld/" target="_blank" rel="noopener">addicted-sports.com</a>
     </div>
   </div>
+  {% if historical is none %}
   <div class="live-box">
     <h4>{{ t.live_header }}</h4>
     {% if live.available %}
@@ -278,8 +279,24 @@
       <div class="live-unavailable">{{ t.live_unavailable }}</div>
     {% endif %}
   </div>
+  {% else %}
+  <div class="live-box">
+    <h4>{{ t.historical_chart_header }}</h4>
+    <div class="live-updated">{{ selected_date_label }}</div>
+  </div>
+  {% endif %}
 </div>
-{% if live.available and live.chart_svg and live.chart_svg[lang] %}
+{% if historical and historical.chart_svg[lang] %}
+<div class="wind-chart-row" aria-label="{{ t.chart_aria_historical }}">
+  {{ historical.chart_svg[lang]|safe }}
+  <div class="wind-chart-legend">
+    <span><i class="avg"></i>{{ t.chart_legend_avg }}</span>
+    <span><i class="gust"></i>{{ t.chart_legend_gust }}</span>
+    <span><i class="ref8"></i>{{ t.chart_legend_ignition }}</span>
+    <span><i class="ref12"></i>{{ t.chart_legend_session }}</span>
+  </div>
+</div>
+{% elif historical is none and live.available and live.chart_svg and live.chart_svg[lang] %}
 <div class="wind-chart-row" aria-label="{{ t.chart_aria }}">
   {{ live.chart_svg[lang]|safe }}
   <div class="wind-chart-legend">
@@ -445,6 +462,23 @@
         const panelOld = document.querySelector('.advanced-panel');
         const panelNew = doc.querySelector('.advanced-panel');
         if (panelOld && panelNew) panelOld.innerHTML = panelNew.innerHTML;
+        // Live/historical panel + wind chart: replace whole nodes so the
+        // chart itself swaps to the selected day's curve (and back to live
+        // when the user re-selects today).
+        const livePanelOld = document.querySelector('.live-panel');
+        const livePanelNew = doc.querySelector('.live-panel');
+        if (livePanelOld && livePanelNew) livePanelOld.replaceWith(livePanelNew);
+        else if (livePanelOld && !livePanelNew) livePanelOld.remove();
+        const chartOld = document.querySelector('.wind-chart-row');
+        const chartNew = doc.querySelector('.wind-chart-row');
+        if (chartOld && chartNew) chartOld.replaceWith(chartNew);
+        else if (chartOld && !chartNew) chartOld.remove();
+        else if (!chartOld && chartNew && livePanelNew) {
+          // First time switching from no-chart day to a day with a chart:
+          // insert it right after the live-panel.
+          const anchor = document.querySelector('.live-panel');
+          if (anchor) anchor.insertAdjacentElement('afterend', chartNew);
+        }
         history.pushState(null, '', href);
       } catch (err) {
         // Fall back to full navigation on any error.
