@@ -127,9 +127,10 @@ def calibrate(
     since: str = typer.Option(None, help="ISO date — only consider days from this date forward."),
     until: str = typer.Option(None, help="ISO date — only consider days up to this date."),
     rule: str = typer.Option(None, help="Restrict per-rule table to a single rule (e.g. post_rain_moisture)."),
+    label: str = typer.Option("peak", help="Ground-truth scale: 'peak' (max avg knots) or 'duration' (sustained samples)."),
     csv: str = typer.Option(None, help="Path to write a flat one-row-per-day CSV (features + ground truth) for offline ML."),
 ) -> None:
-    """Score logged forecasts against Urfeld peak ground truth.
+    """Score logged forecasts against Urfeld ground truth.
 
     Reports the overall confusion matrix and per-rule false-positive vetos
     (rules that said NO_GO on days the lake actually fired). Reads from the
@@ -138,9 +139,11 @@ def calibrate(
     """
     from oracle.calibration import compile_report, export_csv, format_text_report
 
+    if label not in ("peak", "duration"):
+        raise typer.BadParameter("--label must be 'peak' or 'duration'")
     since_d = date.fromisoformat(since) if since else None
     until_d = date.fromisoformat(until) if until else None
-    report = compile_report(since=since_d, until=until_d)
+    report = compile_report(since=since_d, until=until_d, label=label)
     console.print(format_text_report(report, rule_filter=rule))
     if csv:
         n = export_csv(csv, since=since_d, until=until_d)

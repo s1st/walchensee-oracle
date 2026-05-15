@@ -34,6 +34,12 @@ from oracle.pillars.pressure import PressureSnapshot
 _ACTUAL_GO_KT = 12.0      # session-worthy
 _ACTUAL_MAYBE_KT = 8.0    # ignited but marginal
 
+# Duration label — Urfeld samples are ~10 min apart, so 6 samples ≈ 1 hour.
+# A "GO" day needs an hour of session-strength wind; "MAYBE" needs an hour of
+# ignition-strength wind. Anything shorter is rated NO_GO regardless of peak.
+_DURATION_GO_SAMPLES_12KT = 6
+_DURATION_MAYBE_SAMPLES_8KT = 6
+
 
 def actual_verdict(peak_avg_kt: float | None) -> str | None:
     """Categorise an Urfeld-peak ground-truth value onto the go/maybe/no_go scale.
@@ -46,6 +52,25 @@ def actual_verdict(peak_avg_kt: float | None) -> str | None:
     if peak_avg_kt >= _ACTUAL_GO_KT:
         return Signal.GO.value
     if peak_avg_kt >= _ACTUAL_MAYBE_KT:
+        return Signal.MAYBE.value
+    return Signal.NO_GO.value
+
+
+def actual_verdict_duration(machine: dict | None) -> str | None:
+    """Duration-aware label: needs sustained wind, not just a transient peak.
+
+    A 20-minute gust to 14 kt that dies again would label GO under the peak rule;
+    here it lands in NO_GO because `samples_above_12kt < 6`.
+    """
+    if not machine:
+        return None
+    above_12 = machine.get("samples_above_12kt")
+    above_8 = machine.get("samples_above_8kt")
+    if above_12 is None or above_8 is None:
+        return None
+    if above_12 >= _DURATION_GO_SAMPLES_12KT:
+        return Signal.GO.value
+    if above_8 >= _DURATION_MAYBE_SAMPLES_8KT:
         return Signal.MAYBE.value
     return Signal.NO_GO.value
 
@@ -65,6 +90,7 @@ class Report:
     days_with_ground_truth: list[str]
     confusion: dict[str, dict[str, int]]    # forecast → actual → count
     rule_stats: dict[str, RuleStats] = field(default_factory=dict)
+    label_mode: str = "peak"
 
     @property
     def overall_accuracy(self) -> float:
@@ -89,6 +115,17 @@ def _empty_confusion() -> dict[str, dict[str, int]]:
 def _peak_from(record: dict) -> float | None:
     machine = (record.get("ground_truth") or {}).get("machine") or {}
     return machine.get("peak_avg_knots")
+
+
+def _machine_from(record: dict) -> dict | None:
+    return (record.get("ground_truth") or {}).get("machine") or None
+
+
+def _label_record(record: dict, mode: str) -> str | None:
+    """Dispatch the configured labeller against one record's machine block."""
+    if mode == "duration":
+        return actual_verdict_duration(_machine_from(record))
+    return actual_verdict(_peak_from(record))
 
 
 def _ignition_minute_of_day(iso_ts: str | None) -> int | None:
@@ -201,8 +238,15 @@ def compile_report(
     store: RunStore | None = None,
     since: date | None = None,
     until: date | None = None,
+    label: str = "peak",
 ) -> Report:
-    """Walk every logged record and aggregate forecast-vs-actual metrics."""
+    """Walk every logged record and aggregate forecast-vs-actual metrics.
+
+    `label` picks the ground-truth scale:
+      - "peak" (default): bucket by `peak_avg_knots` (≥12 GO, ≥8 MAYBE).
+      - "duration": bucket by sustained samples (≥6 above 12 kt GO,
+        ≥6 above 8 kt MAYBE) — requires roughly an hour of session/ignition wind.
+    """
     store = store or default_store()
     confusion = _empty_confusion()
     rule_stats: dict[str, RuleStats] = {}
@@ -216,8 +260,7 @@ def compile_report(
         record = store.read(iso)
         if record is None:
             continue
-        peak = _peak_from(record)
-        actual = actual_verdict(peak)
+        actual = _label_record(record, label)
         if actual is None:
             continue
         forecast = record.get("overall")
@@ -243,6 +286,7 @@ def compile_report(
         days_with_ground_truth=sample_days,
         confusion=confusion,
         rule_stats=rule_stats,
+        label_mode=label,
     )
 
 
@@ -254,8 +298,16 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
             "Urfeld peak data into the day's forecast log first."
         )
 
+    label_desc = {
+        "peak": "peak avg ≥12 kt → GO, ≥8 kt → MAYBE",
+        "duration": "≥6 samples (~1h) above 12 kt → GO, above 8 kt → MAYBE",
+    }.get(report.label_mode, report.label_mode)
+
     lines: list[str] = []
-    lines.append(f"Calibration sample: {report.sample_size} days with ground truth.")
+    lines.append(
+        f"Calibration sample: {report.sample_size} days with ground truth "
+        f"(label = {report.label_mode}: {label_desc})."
+    )
     if report.sample_size < 14:
         lines.append(
             "  ⚠  small sample — interpret with caution. Wait for "
@@ -293,8 +345,8 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
         )
     lines.append("")
     lines.append(
-        "FP-veto = rule said NO_GO but Urfeld peak ≥ 8 kt (rule killed a real session). "
-        "FN-green = rule said GO but day didn't fire."
+        "FP-veto = rule said NO_GO but actual label was GO/MAYBE (rule killed a real session). "
+        "FN-green = rule said GO but actual label was NO_GO."
     )
     return "\n".join(lines)
 
