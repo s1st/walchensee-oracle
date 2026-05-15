@@ -1,12 +1,12 @@
 """Calibrate the rule thresholds against logged ground truth.
 
 Reads every record from a `RunStore` that has both forecast verdicts and a
-populated `ground_truth.machine.peak_avg_knots` (the Urfeld buoy peak that
-the 21:00 backfill job writes — the green/yellow/red bars in the dashboard's
-'Actual (Urfeld peak)' row).
+populated `ground_truth.machine` block (Urfeld backfill written by the 21:00
+job) — the green/yellow/red bars in the dashboard's 'Realität (Session ≥ 1 h)'
+row.
 
-For each day it categorises the actual outcome on the same scale the
-dashboard already uses (`actual_verdict`), then computes:
+For each day it categorises the actual outcome onto the go/maybe/no_go scale,
+then computes:
 
 - Overall confusion matrix (forecast × actual).
 - Per-rule false-positive vetos: rule said NO_GO but the day actually fired
@@ -30,7 +30,8 @@ from oracle.pillars.measurements import WindReading
 from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureSnapshot
 
-# Same scale the dashboard uses to colour the 'Actual (Urfeld peak)' strip.
+# Peak-of-day scale. Used by the calibrate CLI's "peak" label mode; the
+# dashboard's strip uses the duration-aware variant below since 2026-05.
 _ACTUAL_GO_KT = 12.0      # session-worthy
 _ACTUAL_MAYBE_KT = 8.0    # ignited but marginal
 
@@ -44,7 +45,8 @@ _DURATION_MAYBE_SAMPLES_8KT = 6
 def actual_verdict(peak_avg_kt: float | None) -> str | None:
     """Categorise an Urfeld-peak ground-truth value onto the go/maybe/no_go scale.
 
-    Single source of truth — the dashboard imports this too so both views agree.
+    Peak-only label — feeds the `--label peak` mode of `oracle calibrate`.
+    The dashboard uses `actual_verdict_duration` instead.
     Returns the Signal `.value` string so the result is template- and JSON-safe.
     """
     if peak_avg_kt is None:

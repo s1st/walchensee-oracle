@@ -22,7 +22,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from oracle.calibration import actual_verdict as _actual_verdict
+from oracle.calibration import actual_verdict_duration as _actual_verdict_duration
 from oracle.knowledge.rules import Severity, Signal
 from oracle.logger import default_store
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
@@ -134,10 +134,10 @@ _UI: dict[str, dict[str, str]] = {
     "de": {
         "strip_forecast": "Vorhersage",
         "strip_resimulated": "Neuberechnet (aktueller Aggregator)",
-        "strip_actual": "Realität (Urfeld-Peak)",
-        "strip_legend_go": "Wind (≥ 12 kt)",
-        "strip_legend_maybe": "marginal (8–12 kt)",
-        "strip_legend_no_go": "kein Wind (< 8 kt)",
+        "strip_actual": "Realität (Session ≥ 1 h)",
+        "strip_legend_go": "Session (≥ 1 h ≥ 12 kt)",
+        "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
+        "strip_legend_no_go": "kein Wind",
         "strip_legend_empty": "keine Daten",
         "live_header": "Aktuell an Urfeld",
         "live_now": "jetzt",
@@ -179,10 +179,10 @@ _UI: dict[str, dict[str, str]] = {
     "en": {
         "strip_forecast": "Forecast",
         "strip_resimulated": "Re-scored (current aggregator)",
-        "strip_actual": "Actual (Urfeld peak)",
-        "strip_legend_go": "wind (≥ 12 kt)",
-        "strip_legend_maybe": "marginal (8–12 kt)",
-        "strip_legend_no_go": "no wind (< 8 kt)",
+        "strip_actual": "Actual (session ≥ 1 h)",
+        "strip_legend_go": "session (≥ 1 h ≥ 12 kt)",
+        "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
+        "strip_legend_no_go": "no wind",
         "strip_legend_empty": "no data",
         "live_header": "Live at Urfeld",
         "live_now": "now",
@@ -596,7 +596,7 @@ def _history(today: date, lang: str, days: int = 30) -> list[dict]:
             "verdict": verdict,
             "resimulated": resimulated,
             "peak_avg_knots": peak,
-            "actual": _actual_verdict(peak),
+            "actual": _actual_verdict_duration(machine),
         })
     return items
 
