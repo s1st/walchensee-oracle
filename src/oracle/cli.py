@@ -128,6 +128,7 @@ def calibrate(
     until: str = typer.Option(None, help="ISO date — only consider days up to this date."),
     rule: str = typer.Option(None, help="Restrict per-rule table to a single rule (e.g. post_rain_moisture)."),
     label: str = typer.Option("peak", help="Ground-truth scale: 'peak' (max avg knots) or 'duration' (sustained samples)."),
+    resimulated: bool = typer.Option(False, "--resimulated/--historical", help="Score the current rule layer (`verdicts_resimulated`) instead of the historical verdicts. Requires `oracle rescore` to have populated those fields."),
     csv: str = typer.Option(None, help="Path to write a flat one-row-per-day CSV (features + ground truth) for offline ML."),
 ) -> None:
     """Score logged forecasts against Urfeld ground truth.
@@ -143,7 +144,7 @@ def calibrate(
         raise typer.BadParameter("--label must be 'peak' or 'duration'")
     since_d = date.fromisoformat(since) if since else None
     until_d = date.fromisoformat(until) if until else None
-    report = compile_report(since=since_d, until=until_d, label=label)
+    report = compile_report(since=since_d, until=until_d, label=label, resimulated=resimulated)
     console.print(format_text_report(report, rule_filter=rule))
     if csv:
         n = export_csv(csv, since=since_d, until=until_d)

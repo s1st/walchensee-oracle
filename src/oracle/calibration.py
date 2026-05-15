@@ -91,6 +91,7 @@ class Report:
     confusion: dict[str, dict[str, int]]    # forecast → actual → count
     rule_stats: dict[str, RuleStats] = field(default_factory=dict)
     label_mode: str = "peak"
+    resimulated: bool = False
 
     @property
     def overall_accuracy(self) -> float:
@@ -239,6 +240,7 @@ def compile_report(
     since: date | None = None,
     until: date | None = None,
     label: str = "peak",
+    resimulated: bool = False,
 ) -> Report:
     """Walk every logged record and aggregate forecast-vs-actual metrics.
 
@@ -246,7 +248,17 @@ def compile_report(
       - "peak" (default): bucket by `peak_avg_knots` (≥12 GO, ≥8 MAYBE).
       - "duration": bucket by sustained samples (≥6 above 12 kt GO,
         ≥6 above 8 kt MAYBE) — requires roughly an hour of session/ignition wind.
+
+    `resimulated`: when True, read `overall_resimulated` / `verdicts_resimulated`
+    instead of the historical `overall` / `verdicts`. Use this to evaluate the
+    *current* rule layer against the same ground truth — the historical fields
+    reflect whatever thresholds were in force when each record was written, so
+    they go stale immediately after any threshold tune. Records lacking the
+    resimulated fields are skipped (run `oracle rescore` to populate them).
     """
+    overall_key = "overall_resimulated" if resimulated else "overall"
+    verdicts_key = "verdicts_resimulated" if resimulated else "verdicts"
+
     store = store or default_store()
     confusion = _empty_confusion()
     rule_stats: dict[str, RuleStats] = {}
@@ -263,14 +275,15 @@ def compile_report(
         actual = _label_record(record, label)
         if actual is None:
             continue
-        forecast = record.get("overall")
+        forecast = record.get(overall_key)
         if forecast not in confusion:
-            # Unknown overall — skip rather than crash on legacy data.
+            # Unknown overall — skip rather than crash on legacy data, or on
+            # records that haven't been rescored yet when --resimulated is set.
             continue
         confusion[forecast][actual] += 1
         sample_days.append(iso)
 
-        for v in record.get("verdicts", []):
+        for v in record.get(verdicts_key, []):
             stats = rule_stats.setdefault(v["rule"], RuleStats(rule=v["rule"]))
             if v["signal"] == Signal.NO_GO:
                 stats.vetos += 1
@@ -287,6 +300,7 @@ def compile_report(
         confusion=confusion,
         rule_stats=rule_stats,
         label_mode=label,
+        resimulated=resimulated,
     )
 
 
@@ -303,10 +317,11 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
         "duration": "≥6 samples (~1h) above 12 kt → GO, above 8 kt → MAYBE",
     }.get(report.label_mode, report.label_mode)
 
+    view = "resimulated (current rule layer)" if report.resimulated else "historical (verdicts as written)"
     lines: list[str] = []
     lines.append(
         f"Calibration sample: {report.sample_size} days with ground truth "
-        f"(label = {report.label_mode}: {label_desc})."
+        f"(label = {report.label_mode}: {label_desc}; view = {view})."
     )
     if report.sample_size < 14:
         lines.append(
