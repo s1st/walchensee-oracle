@@ -143,7 +143,7 @@ def test_post_rain_dry_ground_go():
 
 
 def test_atmospheric_stability_too_stable_no_go():
-    assert atmospheric_stability(_meteo(max_li=7.0, min_li=5.0)).signal is Signal.NO_GO
+    assert atmospheric_stability(_meteo(max_li=11.0, min_li=5.0)).signal is Signal.NO_GO
 
 
 def test_atmospheric_stability_storm_risk_no_go():
@@ -227,7 +227,7 @@ def test_post_rain_no_go_is_soft():
 
 def test_atmospheric_stability_capped_is_soft():
     # LI ≥ +6 means atmosphere is too stable / capped — advisory.
-    assert atmospheric_stability(_meteo(max_li=7.0, min_li=5.0)).severity is Severity.SOFT
+    assert atmospheric_stability(_meteo(max_li=11.0, min_li=5.0)).severity is Severity.SOFT
 
 
 def test_atmospheric_stability_storm_is_hard():

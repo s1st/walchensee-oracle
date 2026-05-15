@@ -79,7 +79,10 @@ MIN_BOUNDARY_LAYER_HEIGHT_M = 600.0   # max BLH in morning; below = capped therm
 GOOD_BOUNDARY_LAYER_HEIGHT_M = 1000.0 # above this = deep mixing, strong thermal potential
 WET_SOIL_MOISTURE_M3M3 = 0.35    # soil_moisture_0_to_1cm above this = ground still wet
 RAINED_YESTERDAY_MM = 2.0        # threshold for treating target-1 as a wet day
-MAX_LIFTED_INDEX = 6.0           # above = atmosphere too stable, thermal capped
+MAX_LIFTED_INDEX = 10.0          # above = atmosphere too stable, thermal capped.
+                                 # Was 6.0; raised after n=22 calibration showed full
+                                 # sessions at li_max up to 8.9 (and rideable up to 12.3).
+                                 # Spring surface heating overpowers a "textbook" cap here.
 MIN_LIFTED_INDEX = -2.0          # below = thunderstorm risk, thermal destroyed
 MAX_DAYTIME_LOW_CLOUD_PCT = 60.0 # max cloud_cover_low 09:00–13:00; above = slopes shaded
 GOOD_DAYTIME_LOW_CLOUD_PCT = 30.0 # below this = unobstructed sun
