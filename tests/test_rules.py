@@ -89,7 +89,7 @@ def test_overnight_cooling_clear_night_go():
 
 
 def test_overnight_cooling_cloudy_night_no_go():
-    assert overnight_cooling(_meteo(cloud=60)).signal is Signal.NO_GO
+    assert overnight_cooling(_meteo(cloud=97)).signal is Signal.NO_GO
 
 
 def test_solar_radiation_bright_morning_go():
@@ -205,7 +205,7 @@ def test_foehn_override_is_hard():
 
 
 def test_overnight_cooling_no_go_is_soft():
-    assert overnight_cooling(_meteo(cloud=60)).severity is Severity.SOFT
+    assert overnight_cooling(_meteo(cloud=97)).severity is Severity.SOFT
 
 
 def test_solar_radiation_no_go_is_soft():

@@ -67,7 +67,11 @@ MIN_THERMIK_DELTA_HPA = -1.0  # Munich − Innsbruck. Below this the synoptic fl
 FOEHN_TRIGGER_DELTA_HPA = 4.0    # Bolzano − Innsbruck positive ≥ this => Föhn risk
 SYNOPTIC_OVERRIDE_KNOTS = 15.0   # ≥ 3 Bft base wind deforms the thermal cell
 IGNITION_WIND_KNOTS = 8.0        # shore reading that signals ignition
-MAX_OVERNIGHT_CLOUD_COVER_PCT = 30.0  # 22:00→06:00 average; above this, weak inversion
+MAX_OVERNIGHT_CLOUD_COVER_PCT = 95.0  # 22:00→06:00 average; above this, weak inversion.
+                                      # Was 30.0; raised after n=22 calibration — sessions
+                                      # fired at up to 94% cloud cover; only the 97.1% day
+                                      # was a true NO_GO. Alpine mountain effects dominate
+                                      # radiative cooling at this proximity to the ridge.
 MIN_MORNING_SOLAR_WM2 = 600.0    # max hourly shortwave radiation 09:00–13:00
 MIN_DEW_POINT_SPREAD_C = 5.0     # min(T − Td) in morning; below = moisture-suppressed
 COMFORTABLE_DEW_POINT_SPREAD_C = 8.0  # above this = confidently dry air

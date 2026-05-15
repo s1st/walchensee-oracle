@@ -166,7 +166,7 @@ def test_rescore_record_two_soft_vetos_yields_maybe():
     # still produce GO — the aggregator only downgrades when negative signals
     # converge.
     record = {
-        "inputs": _full_inputs(day="2026-04-22", li_max=8.0, overnight_cloud_pct=80.0),
+        "inputs": _full_inputs(day="2026-04-22", li_max=8.0, overnight_cloud_pct=97.0),
     }
     overall, _ = rescore_record(record)
     assert overall == "maybe"
@@ -178,7 +178,7 @@ def test_rescore_all_writes_resimulated_field(tmp_path: Path):
         "day": "2026-04-22",
         "overall": "no_go",  # what old aggregator said
         "verdicts": [],
-        "inputs": _full_inputs(day="2026-04-22", li_max=8.0, overnight_cloud_pct=80.0),
+        "inputs": _full_inputs(day="2026-04-22", li_max=8.0, overnight_cloud_pct=97.0),
         "ground_truth": {"machine": None, "human": None},
     })
 
