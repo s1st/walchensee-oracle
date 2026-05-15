@@ -581,6 +581,7 @@ def _history(today: date, lang: str, days: int = 30) -> list[dict]:
         peak = None
         verdict = None
         resimulated = None
+        machine: dict | None = None
         if record:
             machine = (record.get("ground_truth") or {}).get("machine") or {}
             peak = machine.get("peak_avg_knots")
