@@ -109,7 +109,7 @@ def test_dew_point_spread_dry_air_go():
 
 
 def test_dew_point_spread_humid_no_go():
-    assert dew_point_spread(_meteo(dew_spread=3.0)).signal is Signal.NO_GO
+    assert dew_point_spread(_meteo(dew_spread=2.0)).signal is Signal.NO_GO
 
 
 def test_dew_point_spread_marginal_maybe():
@@ -213,7 +213,7 @@ def test_solar_radiation_no_go_is_soft():
 
 
 def test_dew_point_spread_no_go_is_soft():
-    assert dew_point_spread(_meteo(dew_spread=3.0)).severity is Severity.SOFT
+    assert dew_point_spread(_meteo(dew_spread=2.0)).severity is Severity.SOFT
 
 
 def test_boundary_layer_no_go_is_soft():

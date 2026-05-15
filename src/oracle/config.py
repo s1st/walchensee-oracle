@@ -73,7 +73,10 @@ MAX_OVERNIGHT_CLOUD_COVER_PCT = 95.0  # 22:00→06:00 average; above this, weak 
                                       # was a true NO_GO. Alpine mountain effects dominate
                                       # radiative cooling at this proximity to the ridge.
 MIN_MORNING_SOLAR_WM2 = 600.0    # max hourly shortwave radiation 09:00–13:00
-MIN_DEW_POINT_SPREAD_C = 5.0     # min(T − Td) in morning; below = moisture-suppressed
+MIN_DEW_POINT_SPREAD_C = 2.5     # min(T − Td) in morning; below = moisture-suppressed.
+                                 # Was 5.0; lowered after n=22 calibration showed full
+                                 # sessions at spread 2.8–3.1. The only true NO_GO catch
+                                 # sat at spread 2.0 — moisture-cap only bites below ~2.5.
 COMFORTABLE_DEW_POINT_SPREAD_C = 8.0  # above this = confidently dry air
 MIN_BOUNDARY_LAYER_HEIGHT_M = 600.0   # max BLH in morning; below = capped thermal
 GOOD_BOUNDARY_LAYER_HEIGHT_M = 1000.0 # above this = deep mixing, strong thermal potential
