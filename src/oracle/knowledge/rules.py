@@ -98,7 +98,7 @@ def overnight_cooling(meteo: MeteoSnapshot) -> Verdict:
     return Verdict(
         "overnight_cooling", Signal.NO_GO,
         reason_en=f"{pct:.0f}% overnight cloud cover — weak inversion",
-        reason_de=f"{pct:.0f}% Bewölkung nachts — schwache Inversion",
+        reason_de=f"nachts {pct:.0f}% Bewölkung — schwache Inversion",
         severity=Severity.SOFT,
     )
 
@@ -108,12 +108,12 @@ def solar_radiation(meteo: MeteoSnapshot) -> Verdict:
     if wm2 >= config.MIN_MORNING_SOLAR_WM2:
         return Verdict(
             "solar_radiation", Signal.GO,
-            reason_en=f"peak radiation {wm2:.0f} W/m² ≥ threshold",
+            reason_en=f"peak solar radiation {wm2:.0f} W/m² ≥ threshold",
             reason_de=f"Strahlung {wm2:.0f} W/m² ≥ Schwellwert",
         )
     return Verdict(
         "solar_radiation", Signal.NO_GO,
-        reason_en=f"peak radiation {wm2:.0f} W/m² below {config.MIN_MORNING_SOLAR_WM2:.0f}",
+        reason_en=f"peak solar radiation {wm2:.0f} W/m² below {config.MIN_MORNING_SOLAR_WM2:.0f}",
         reason_de=f"Strahlung {wm2:.0f} W/m² unter {config.MIN_MORNING_SOLAR_WM2:.0f}",
         severity=Severity.SOFT,
     )
@@ -266,7 +266,7 @@ def synoptic_override(meteo: MeteoSnapshot) -> Verdict:
         return Verdict(
             "synoptic_override", Signal.NO_GO,
             reason_en=f"synoptic wind {speed:.0f} kt will destroy the thermal cell",
-            reason_de=f"Synoptikwind {speed:.0f} kt zerstört die Thermikzelle",
+            reason_de=f"Höhenwind {speed:.0f} kt zerstört die Thermikzelle",
             severity=Severity.HARD,
         )
     return Verdict(

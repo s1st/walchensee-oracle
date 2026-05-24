@@ -2,9 +2,12 @@
 
 - **Bright Sky** (DWD OpenData wrapper): nearest synoptic station, ~13 km
   south of the lake. Synoptic, not per-shore.
-- **Addicted-Sports Urfeld**: a private anemometer on the Panoramahotel
-  Karwendelblick buoy — the actual Urfeld shore reading. Scraped via
-  CSRF-guarded JSON endpoint; direction is not exposed.
+- **Addicted-Sports Urfeld**: a private anemometer mounted on a buoy
+  anchored over the deepest part of Walchensee (roughly mid-lake), ~1.6 m
+  above the water. The webcam and temperature/pressure/humidity sensors
+  are at the Panoramahotel Karwendelblick on the shore — that's where the
+  scraped page is hosted, but the wind reading itself comes from the
+  buoy. Scraped via CSRF-guarded JSON endpoint; direction is not exposed.
 
 Both sources are called in parallel; one failing does not take out the
 other. `fetch_latest` raises only if *all* sources fail.
