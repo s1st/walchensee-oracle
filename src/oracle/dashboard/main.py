@@ -135,7 +135,7 @@ _UI: dict[str, dict[str, str]] = {
         "strip_forecast": "Vorhersage",
         "strip_resimulated": "Neu berechnet (mit heutigen Regeln)",
         "strip_actual": "Tatsächlich (Session ≥ 1 h)",
-        "strip_legend_go": "Session (≥ 1 h ≥ 12 kt)",
+        "strip_legend_go": "Session (≥ 1 h ≥ 11 kt)",
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
         "strip_legend_no_go": "kein Wind",
         "strip_legend_empty": "keine Daten",
@@ -153,7 +153,7 @@ _UI: dict[str, dict[str, str]] = {
         "chart_legend_avg": "Mittelwind",
         "chart_legend_gust": "Böe",
         "chart_legend_ignition": "Zündung (8 kt)",
-        "chart_legend_session": "Session (12 kt)",
+        "chart_legend_session": "Session (11 kt)",
         "webcam_label": "Webcam Urfeld",
         "lead": "Geht heute Thermik am Walchensee?",
         "verdict_go": "LÄUFT",
@@ -180,7 +180,7 @@ _UI: dict[str, dict[str, str]] = {
         "strip_forecast": "Forecast",
         "strip_resimulated": "Re-scored (current aggregator)",
         "strip_actual": "Actual (session ≥ 1 h)",
-        "strip_legend_go": "session (≥ 1 h ≥ 12 kt)",
+        "strip_legend_go": "session (≥ 1 h ≥ 11 kt)",
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
         "strip_legend_no_go": "no wind",
         "strip_legend_empty": "no data",
@@ -198,7 +198,7 @@ _UI: dict[str, dict[str, str]] = {
         "chart_legend_avg": "avg wind",
         "chart_legend_gust": "gust",
         "chart_legend_ignition": "ignition (8 kt)",
-        "chart_legend_session": "session (12 kt)",
+        "chart_legend_session": "session (11 kt)",
         "webcam_label": "Urfeld webcam",
         "lead": "Will the thermal wind kick in at Walchensee today?",
         "verdict_go": "GO",
@@ -461,7 +461,7 @@ def _wind_chart_svgs(
     def pts_str(pts: list[tuple[float, float]]) -> str:
         return " ".join(f"{px:.1f},{py:.1f}" for px, py in pts)
 
-    y8, y12 = y(8), y(12)
+    y8, y11 = y(8), y(11)  # ignition / session reference lines (session bar: 11 kt)
     if fixed_xlim is not None:
         start_label = datetime.fromtimestamp(fixed_xlim[0]).strftime("%H:%M")
         end_label = datetime.fromtimestamp(fixed_xlim[1]).strftime("%H:%M")
@@ -474,14 +474,14 @@ def _wind_chart_svgs(
         f'<polygon points="{pts_str(gust_poly)}" fill="#8b949e" fill-opacity="0.18" />'
         f'<line x1="{pad_l}" y1="{y8:.1f}" x2="{width - pad_r}" y2="{y8:.1f}" '
         f'stroke="#d29922" stroke-opacity="0.55" stroke-dasharray="3 4" stroke-width="1" />'
-        f'<line x1="{pad_l}" y1="{y12:.1f}" x2="{width - pad_r}" y2="{y12:.1f}" '
+        f'<line x1="{pad_l}" y1="{y11:.1f}" x2="{width - pad_r}" y2="{y11:.1f}" '
         f'stroke="#2ea043" stroke-opacity="0.55" stroke-dasharray="3 4" stroke-width="1" />'
         f'<polyline points="{pts_str(avg_pts)}" fill="none" stroke="#c9d1d9" '
         f'stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />'
         f'<text x="{pad_l - 4:.0f}" y="{y8 + 3:.1f}" fill="#8b949e" font-size="10" '
         f'text-anchor="end">8</text>'
-        f'<text x="{pad_l - 4:.0f}" y="{y12 + 3:.1f}" fill="#8b949e" font-size="10" '
-        f'text-anchor="end">12</text>'
+        f'<text x="{pad_l - 4:.0f}" y="{y11 + 3:.1f}" fill="#8b949e" font-size="10" '
+        f'text-anchor="end">11</text>'
         f'<text x="{pad_l}" y="{height - 3}" fill="#8b949e" font-size="10">{start_label}</text>'
         f'<text x="{width - pad_r}" y="{height - 3}" fill="#8b949e" font-size="10" '
         f'text-anchor="end">{end_label}</text>'

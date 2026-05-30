@@ -36,9 +36,14 @@ _ACTUAL_GO_KT = 12.0      # session-worthy
 _ACTUAL_MAYBE_KT = 8.0    # ignited but marginal
 
 # Duration label — Urfeld samples are ~10 min apart, so 6 samples ≈ 1 hour.
-# A "GO" day needs an hour of session-strength wind; "MAYBE" needs an hour of
-# ignition-strength wind. Anything shorter is rated NO_GO regardless of peak.
-_DURATION_GO_SAMPLES_12KT = 6
+# A "GO" day needs ~an hour of session-strength average wind; "MAYBE" needs
+# ~an hour of ignition-strength wind. Anything shorter is NO_GO regardless of peak.
+_DURATION_GO_KT = 11.0          # was 12.0; lowered 2026-05 after n=34 Urfeld days.
+                                # Walchi thermals run long rideable sessions at
+                                # 10–11 kt avg with 16–18 kt gusts but rarely
+                                # sustain a 12 kt *average* — the 12 kt bar
+                                # labelled genuine sessions MAYBE (e.g. 05-28/29).
+_DURATION_GO_SAMPLES = 6        # ~1 hour at Urfeld's ~10-min cadence
 _DURATION_MAYBE_SAMPLES_8KT = 6
 
 
@@ -61,16 +66,32 @@ def actual_verdict(peak_avg_kt: float | None) -> str | None:
 def actual_verdict_duration(machine: dict | None) -> str | None:
     """Duration-aware label: needs sustained wind, not just a transient peak.
 
-    A 20-minute gust to 14 kt that dies again would label GO under the peak rule;
-    here it lands in NO_GO because `samples_above_12kt < 6`.
+    A 20-minute gust to 14 kt that dies again stays NO_GO because the average
+    never held session strength for an hour.
+
+    GO needs ≥ _DURATION_GO_SAMPLES samples (~1 h) where the 10-min average was
+    ≥ _DURATION_GO_KT (11 kt). That count is recomputed live from the stored raw
+    `samples` so the threshold can be tuned without a re-backfill — the logger's
+    `samples_above_12kt` field keeps its original 12 kt meaning as a frozen
+    historical metric (see CLAUDE.md: stored duration metrics aren't rewritten).
+    MAYBE still keys off the stored ≥ 8 kt ignition count.
     """
     if not machine:
         return None
-    above_12 = machine.get("samples_above_12kt")
     above_8 = machine.get("samples_above_8kt")
-    if above_12 is None or above_8 is None:
+    if above_8 is None:
         return None
-    if above_12 >= _DURATION_GO_SAMPLES_12KT:
+    samples = machine.get("samples")
+    if samples is not None:
+        above_go = sum(1 for s in samples if (s.get("avg_kt") or 0) >= _DURATION_GO_KT)
+    else:
+        # Legacy record without the raw curve: fall back to the stored 12 kt
+        # count (one notch stricter than the live 11 kt rule, but the best we have).
+        legacy = machine.get("samples_above_12kt")
+        if legacy is None:
+            return None
+        above_go = legacy
+    if above_go >= _DURATION_GO_SAMPLES:
         return Signal.GO.value
     if above_8 >= _DURATION_MAYBE_SAMPLES_8KT:
         return Signal.MAYBE.value

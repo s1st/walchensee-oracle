@@ -5,6 +5,7 @@ import csv
 
 from oracle.calibration import (
     actual_verdict,
+    actual_verdict_duration,
     compile_report,
     export_csv,
     format_text_report,
@@ -21,6 +22,36 @@ def test_actual_verdict_thresholds():
     assert actual_verdict(11.9) == "maybe"
     assert actual_verdict(12.0) == "go"
     assert actual_verdict(20.0) == "go"
+
+
+def _curve(*avgs: float) -> list[dict]:
+    """Minimal sample curve — only avg_kt matters for the duration label."""
+    return [{"t": f"2026-04-22T1{i}:00:00", "avg_kt": a, "gust_kt": a + 4} for i, a in enumerate(avgs)]
+
+
+def test_actual_verdict_duration_go_at_11kt():
+    # 6 samples (~1 h) of 11 kt average → GO under the lowered session bar,
+    # even though none reach the old 12 kt threshold.
+    machine = {"samples_above_8kt": 6, "samples": _curve(11, 11, 11, 11, 11, 11)}
+    assert actual_verdict_duration(machine) == "go"
+
+
+def test_actual_verdict_duration_maybe_below_session_bar():
+    # An hour of ignition wind (≥ 8 kt) but only a few samples reach 11 kt → MAYBE.
+    machine = {"samples_above_8kt": 8, "samples": _curve(9, 9, 9, 11, 11, 9, 8, 8)}
+    assert actual_verdict_duration(machine) == "maybe"
+
+
+def test_actual_verdict_duration_no_go_short_burst():
+    machine = {"samples_above_8kt": 2, "samples": _curve(11, 11)}
+    assert actual_verdict_duration(machine) == "no_go"
+
+
+def test_actual_verdict_duration_legacy_fallback_without_samples():
+    # Old record with no raw curve falls back to the stored 12 kt count.
+    assert actual_verdict_duration({"samples_above_8kt": 9, "samples_above_12kt": 6}) == "go"
+    assert actual_verdict_duration({"samples_above_8kt": 9, "samples_above_12kt": 1}) == "maybe"
+    assert actual_verdict_duration(None) is None
 
 
 def _record(*, day: str, overall: str, peak: float | None, verdicts: list[dict]) -> dict:
