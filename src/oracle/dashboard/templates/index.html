@@ -191,6 +191,7 @@
   }
   .advanced-panel { display: none; background: var(--panel); border-radius: 8px; padding: 4px 20px 16px; margin-top: 8px; }
   .advanced-toggle:checked ~ .advanced-panel { display: block; }
+  .advanced-note { color: var(--muted); font-size: 12px; margin: 4px 0 12px; }
 
   table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
   th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -331,8 +332,8 @@
     </h2>
     <p class="verdict-summary">{{ summary }}</p>
     <div class="verdict-meta">
-      {{ t.for_day }} {{ selected_date_label }} —
-      <span class="view-tag">{% if view == 'original' %}{{ t.view_label_original }}{% else %}{{ t.view_label_resimulated }}{% endif %}</span>.
+      {{ t.for_day }} {{ selected_date_label }}{% if view == 'original' %} —
+      <span class="view-tag">{{ t.view_label_original }}</span>{% endif %}.
     </div>
   </section>
 
@@ -349,29 +350,13 @@
   <div class="strip-row-label">{{ t.strip_forecast }}</div>
   <div class="strip">
     {% for d in history %}
-      {% set sel = (d.iso == selected_iso and view == 'original') %}
-      {% if d.verdict %}
-        <a class="cell {{ d.verdict }}{% if sel %} selected{% endif %}"
-           href="?day={{ d.iso }}&view=original"
-           title="{{ d.day }} — {{ t.strip_forecast }}: {{ d.verdict }}"></a>
-      {% else %}
-        <div class="cell empty" title="{{ d.day }} — {{ t.strip_forecast }}: —"></div>
-      {% endif %}
-    {% endfor %}
-  </div>
-</div>
-
-<div class="strip-row">
-  <div class="strip-row-label">{{ t.strip_resimulated }}</div>
-  <div class="strip">
-    {% for d in history %}
       {% set sel = (d.iso == selected_iso and view == 'resimulated') %}
       {% if d.resimulated %}
         <a class="cell {{ d.resimulated }}{% if sel %} selected{% endif %}"
            href="?day={{ d.iso }}&view=resimulated"
-           title="{{ d.day }} — {{ t.strip_resimulated }}: {{ d.resimulated }}"></a>
+           title="{{ d.day }} — {{ t.strip_forecast }}: {{ d.resimulated }}"></a>
       {% else %}
-        <div class="cell empty" title="{{ d.day }} — {{ t.strip_resimulated }}: —"></div>
+        <div class="cell empty" title="{{ d.day }} — {{ t.strip_forecast }}: —"></div>
       {% endif %}
     {% endfor %}
   </div>
@@ -412,6 +397,23 @@
 <label for="advanced" class="advanced-label">{{ t.advanced_label }}</label>
 
 <div class="advanced-panel">
+  <div class="strip-row">
+    <div class="strip-row-label">{{ t.strip_forecast_original }}</div>
+    <div class="strip">
+      {% for d in history %}
+        {% set sel = (d.iso == selected_iso and view == 'original') %}
+        {% if d.verdict %}
+          <a class="cell {{ d.verdict }}{% if sel %} selected{% endif %}"
+             href="?day={{ d.iso }}&view=original"
+             title="{{ d.day }} — {{ t.strip_forecast_original }}: {{ d.verdict }}"></a>
+        {% else %}
+          <div class="cell empty" title="{{ d.day }} — {{ t.strip_forecast_original }}: —"></div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  <p class="advanced-note">{{ t.strip_forecast_original_note }}</p>
+
   <table>
     <thead><tr><th>{{ t.col_rule }}</th><th>{{ t.col_signal }}</th><th>{{ t.col_reason }}</th></tr></thead>
     <tbody>

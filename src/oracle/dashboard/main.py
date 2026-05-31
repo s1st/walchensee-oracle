@@ -142,7 +142,8 @@ _RULE_I18N: dict[str, RuleI18n] = {
 _UI: dict[str, dict[str, str]] = {
     "de": {
         "strip_forecast": "Vorhersage",
-        "strip_resimulated": "Neu berechnet (mit heutigen Regeln)",
+        "strip_forecast_original": "Vergangene Vorhersageart",
+        "strip_forecast_original_note": "Wie der Tag damals vorhergesagt wurde, vor der Nachkalibrierung der Regeln — nur zum Vergleich.",
         "strip_actual": "Tatsächlich (Session ≥ 1 h)",
         "strip_legend_go": "Session (≥ 1 h ≥ 11 kt)",
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
@@ -174,7 +175,6 @@ _UI: dict[str, dict[str, str]] = {
         "no_data_headline": "—",
         "advanced_label": "Details — alle 12 Regeln",
         "view_label_original": "wie damals geschrieben",
-        "view_label_resimulated": "neu berechnet",
         "col_rule": "Regel",
         "col_signal": "Signal",
         "col_reason": "Begründung",
@@ -187,7 +187,8 @@ _UI: dict[str, dict[str, str]] = {
     },
     "en": {
         "strip_forecast": "Forecast",
-        "strip_resimulated": "Re-scored (current aggregator)",
+        "strip_forecast_original": "Previous forecast method",
+        "strip_forecast_original_note": "How the day was forecast at the time, before the rules were recalibrated — shown for comparison only.",
         "strip_actual": "Actual (session ≥ 1 h)",
         "strip_legend_go": "session (≥ 1 h ≥ 11 kt)",
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
@@ -219,7 +220,6 @@ _UI: dict[str, dict[str, str]] = {
         "no_data_headline": "—",
         "advanced_label": "Advanced — all 12 rules",
         "view_label_original": "as written at the time",
-        "view_label_resimulated": "re-scored",
         "col_rule": "Rule",
         "col_signal": "Signal",
         "col_reason": "Reason",
