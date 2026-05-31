@@ -786,6 +786,12 @@ async def index(request: Request) -> Response:
         display_overall = None
         display_verdicts = []
 
+    # The GitHub repo carries the author's real name (commit authors, LICENSE),
+    # so suppress the source link on the pseudonymous host (s1st.de) while
+    # keeping it on the real-name face (simon-stieber.de) and in local/dev.
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    show_github = not host.endswith("s1st.de")
+
     summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
     tooltips = _TOOLTIPS_BY_LANG[lang]
     rule_labels = _LABELS_BY_LANG[lang]
@@ -814,6 +820,7 @@ async def index(request: Request) -> Response:
             "is_today": is_today,
             "t": _UI[lang],
             "lang": lang,
+            "show_github": show_github,
         },
     )
     q = request.query_params.get("lang")
