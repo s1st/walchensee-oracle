@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from oracle.config import StationRole
+from oracle.engine import apply_rules
 from oracle.knowledge.rules import (
     Severity,
     Signal,
@@ -104,6 +105,10 @@ def test_synoptic_override_kills_thermal():
     assert synoptic_override(_meteo(synoptic=20)).signal is Signal.NO_GO
 
 
+def test_synoptic_override_calm_go():
+    assert synoptic_override(_meteo(synoptic=8)).signal is Signal.GO
+
+
 def test_dew_point_spread_dry_air_go():
     assert dew_point_spread(_meteo(dew_spread=10.0)).signal is Signal.GO
 
@@ -175,7 +180,11 @@ def test_upper_level_wind_opposing_direction_no_go():
 def test_upper_level_wind_crossflow_too_strong_no_go():
     v = upper_level_wind(_meteo(wind_850_dir=30, wind_700=30))
     assert v.signal is Signal.NO_GO
-    assert "Querströmung" in v.reason or "700" in v.reason
+    # English reason mentions the 700 hPa crossflow; the German reason carries
+    # the "Querströmung" wording. Check each against its own language so neither
+    # clause is silently dead (`.reason` is English-only).
+    assert "700" in v.reason_en
+    assert "Querströmung" in v.reason_de
 
 
 def test_upper_level_wind_neutral_go():
@@ -187,6 +196,17 @@ def test_thermal_ignition_detects_ignited_station():
         WindReading("Urfeld", StationRole.SHORE, 12.0, 18.0, 90.0, datetime.now()),
     ]
     assert thermal_ignition(winds).signal is Signal.GO
+
+
+def test_thermal_ignition_below_threshold_maybe():
+    # A reading below the ignition threshold doesn't count as ignited.
+    winds = [WindReading("Urfeld", StationRole.SHORE, 5.0, 9.0, None, datetime.now())]
+    assert thermal_ignition(winds).signal is Signal.MAYBE
+
+
+def test_thermal_ignition_no_readings_maybe():
+    # Urfeld is flaky — no readings at all is MAYBE (not-yet-ignited), not a veto.
+    assert thermal_ignition([]).signal is Signal.MAYBE
 
 
 # --- Severity tagging on NO_GO verdicts ----------------------------------
@@ -258,3 +278,35 @@ def test_go_verdicts_have_no_severity():
     assert foehn_override(_snapshot(3.0, foehn_delta=0.5)).severity is Severity.NONE
     assert dew_point_spread(_meteo(dew_spread=6.0)).severity is Severity.NONE  # MAYBE band
     assert boundary_layer_height(_meteo(blh=800.0)).severity is Severity.NONE  # MAYBE band
+
+
+# --- Bilingual reasons ----------------------------------------------------
+# Both reason_en and reason_de are emitted at evaluation time so the dashboard
+# can pick a language per visitor without post-hoc translation. Guard that no
+# rule ships an empty reason on any branch — a regression that's otherwise
+# invisible (the CLI/JSON only read the English one).
+
+
+def test_every_rule_emits_non_empty_reasons_on_all_branches():
+    pressure_cases = [
+        _snapshot(5.0, foehn_delta=0.5),    # thermik GO, no Föhn
+        _snapshot(-2.0, foehn_delta=5.0),   # thermik NO_GO, Föhn veto
+    ]
+    meteo_cases = [
+        _meteo(),  # broadly favourable → GO / MAYBE branches
+        _meteo(  # everything vetoes → exercises every NO_GO branch
+            cloud=97, solar=400, synoptic=20, dew_spread=2.0, blh=400.0,
+            rained_yesterday=True, yesterday_mm=5.0, max_li=11.0, min_li=-3.0,
+            daytime_low_cloud=80, wind_850_dir=180, wind_700=30,
+        ),
+    ]
+    winds_cases = [
+        [],  # thermal_ignition MAYBE
+        [WindReading("Urfeld", StationRole.SHORE, 12.0, 18.0, None, datetime.now())],  # GO
+    ]
+    for p in pressure_cases:
+        for m in meteo_cases:
+            for w in winds_cases:
+                for v in apply_rules(p, m, w):
+                    assert v.reason_en.strip(), f"{v.rule} emitted an empty reason_en"
+                    assert v.reason_de.strip(), f"{v.rule} emitted an empty reason_de"

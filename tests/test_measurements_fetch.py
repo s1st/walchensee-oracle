@@ -7,11 +7,13 @@ Covers:
 """
 from __future__ import annotations
 
+from datetime import date
+
 import httpx
 import pytest
 
 from oracle.config import ADDICTED_SPORTS_BASE_URL, BRIGHT_SKY_CURRENT_URL, StationRole
-from oracle.pillars.measurements import fetch_latest
+from oracle.pillars.measurements import fetch_latest, fetch_urfeld_day_curve
 
 
 _BRIGHT_SKY_PAYLOAD = {
@@ -159,3 +161,70 @@ async def test_fetch_latest_rejects_urfeld_csrf_error_response():
     # Bright Sky still returns; Urfeld source is dropped for this run.
     assert len(readings) == 1
     assert readings[0].role is StationRole.IGNITION_REFERENCE
+
+
+@pytest.mark.asyncio
+async def test_fetch_latest_skips_urfeld_metadata_only_rows():
+    """The newest Urfeld row is sometimes metadata-only (no wsavg/wsmax). It must
+    be skipped so the latest *usable* reading is reported, not dropped entirely."""
+    payload = {
+        "measurment": {
+            "417 2026-04-19 16:30:00": {  # newest, but no wind values → skip
+                "temp": "9.0",
+                "tsdatetime": "2026-04-19 16:30:00", "utctstamp": "1776609000",
+            },
+            "417 2026-04-19 16:01:00": {  # latest row that actually has wind
+                "wsavg": "1.08", "wsmax": "1.62",
+                "tsdatetime": "2026-04-19 16:01:00", "utctstamp": "1776607260",
+            },
+        }
+    }
+
+    def bright_sky(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_BRIGHT_SKY_PAYLOAD)
+
+    def urfeld_html(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_URFELD_HTML)
+
+    def urfeld_json(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
+    async with httpx.AsyncClient(transport=transport) as client:
+        readings = await fetch_latest(client=client)
+
+    urfeld = {r.role: r for r in readings}[StationRole.SHORE]
+    assert urfeld.avg_knots == pytest.approx(1.08)  # the metadata-only newer row was skipped
+
+
+@pytest.mark.asyncio
+async def test_fetch_urfeld_day_curve_skips_metadata_only_rows():
+    """The retrospective day-curve fetch (used by backfill) also tolerates
+    metadata-only rows mid-curve instead of aborting the whole pull."""
+    day = date(2026, 4, 19)
+    payload = {
+        "measurment": {
+            "417 2026-04-19 10:00:00": {
+                "wsavg": "5.0", "wsmax": "8.0",
+                "tsdatetime": "2026-04-19 10:00:00", "utctstamp": "1",
+            },
+            "417 2026-04-19 10:10:00": {  # metadata-only → skipped, not fatal
+                "temp": "9.0", "tsdatetime": "2026-04-19 10:10:00", "utctstamp": "2",
+            },
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.startswith(f"{ADDICTED_SPORTS_BASE_URL}/fileadmin/webcam/src/getWeatherData.php"):
+            return httpx.Response(200, json=payload)
+        if url.startswith(f"{ADDICTED_SPORTS_BASE_URL}/webcam/walchensee/urfeld/"):
+            return httpx.Response(200, text=_URFELD_HTML)
+        raise AssertionError(f"unexpected URL in test: {url}")
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        samples = await fetch_urfeld_day_curve(day, client=client)
+
+    assert len(samples) == 1
+    assert samples[0].avg_knots == pytest.approx(5.0)

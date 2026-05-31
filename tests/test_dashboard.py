@@ -1,14 +1,20 @@
-"""Smoke tests for `_public_view`, the single seam between stored run records
-and the rendered dashboard. The chat pillar was removed; this projection no
-longer carries any third-party content. Tests stay as a guard rail in case
-record-level redaction needs to be reintroduced later.
+"""Dashboard unit tests: record projection (`_public_view`, the redaction seam
+kept as a guard rail after the chat pillar's removal), sample/chart helpers,
+verdict-summary wording, language resolution, and date formatting.
 """
 from __future__ import annotations
 
+from datetime import date
+
+from starlette.requests import Request
+
 from oracle.dashboard.main import (
+    _fmt_date,
     _historical_chart_payload,
     _public_view,
+    _resolve_lang,
     _samples_from_record,
+    _summary_line,
 )
 
 
@@ -93,3 +99,105 @@ def test_historical_chart_payload_returns_placeholder_when_no_samples():
     ])
     assert _historical_chart_payload(one_sample)["has_data"] is False
     assert _historical_chart_payload(None)["has_data"] is False
+
+
+# --- _summary_line --------------------------------------------------------
+
+
+def _vd(rule, signal, severity="none", reason_en="", reason_de=""):
+    return {
+        "rule": rule, "signal": signal, "severity": severity,
+        "reason_en": reason_en, "reason_de": reason_de, "reason": reason_en,
+    }
+
+
+def test_summary_line_no_go_prefers_hard_blocker_over_soft():
+    verdicts = [
+        _vd("overnight_cooling", "no_go", "soft", "soft EN", "soft DE"),
+        _vd("foehn_override", "no_go", "hard", "Föhn EN", "Föhn DE"),
+    ]
+    assert _summary_line("no_go", verdicts, "en") == "Föhn EN"
+    assert _summary_line("no_go", verdicts, "de") == "Föhn DE"
+
+
+def test_summary_line_no_go_legacy_record_falls_back_to_any_no_go():
+    # Pre-severity logs have no `severity` key — there's no HARD blocker to find,
+    # so the summary falls back to whichever rule said NO_GO.
+    v = _vd("thermik", "no_go", reason_en="legacy blocker")
+    del v["severity"]
+    assert _summary_line("no_go", [v], "en") == "legacy blocker"
+
+
+def test_summary_line_go_counts_green_rules():
+    verdicts = [_vd("a", "go"), _vd("b", "go"), _vd("c", "no_go", "soft")]
+    assert _summary_line("go", verdicts, "en") == "2 of 3 rules green."
+    assert _summary_line("go", verdicts, "de") == "2 von 3 Regeln grün."
+
+
+def test_summary_line_maybe_prefers_soft_blocker():
+    verdicts = [
+        _vd("dew_point_spread", "no_go", "soft", "too moist", "zu feucht"),
+        _vd("boundary_layer_height", "maybe", reason_en="shallow"),
+    ]
+    assert _summary_line("maybe", verdicts, "en") == "too moist"
+    assert _summary_line("maybe", verdicts, "de") == "zu feucht"
+
+
+def test_summary_line_maybe_falls_back_to_maybe_then_mixed():
+    assert _summary_line("maybe", [_vd("blh", "maybe", reason_en="shallow")], "en") == "shallow"
+    # No SOFT NO_GO and no MAYBE rule → generic mixed-signals string.
+    assert _summary_line("maybe", [_vd("x", "go")], "en") == "Mixed signals."
+    assert _summary_line("maybe", [_vd("x", "go")], "de") == "Gemischte Signale."
+
+
+# --- _resolve_lang --------------------------------------------------------
+
+
+def _request(*, query_string: str = "", cookies: dict | None = None,
+             accept_language: str | None = None) -> Request:
+    headers: list[tuple[bytes, bytes]] = []
+    if accept_language is not None:
+        headers.append((b"accept-language", accept_language.encode()))
+    if cookies:
+        cookie = "; ".join(f"{k}={v}" for k, v in cookies.items())
+        headers.append((b"cookie", cookie.encode()))
+    return Request({
+        "type": "http", "method": "GET", "path": "/",
+        "query_string": query_string.encode(), "headers": headers,
+    })
+
+
+def test_resolve_lang_query_param_wins_over_everything():
+    req = _request(query_string="lang=en", cookies={"lang": "de"}, accept_language="de-DE")
+    assert _resolve_lang(req) == "en"
+
+
+def test_resolve_lang_cookie_beats_header():
+    assert _resolve_lang(_request(cookies={"lang": "en"}, accept_language="de-DE")) == "en"
+
+
+def test_resolve_lang_header_fallback():
+    assert _resolve_lang(_request(accept_language="en-US,en;q=0.9")) == "en"
+
+
+def test_resolve_lang_defaults_to_de():
+    assert _resolve_lang(_request()) == "de"
+    assert _resolve_lang(_request(accept_language="fr-FR")) == "de"  # unsupported → default
+    assert _resolve_lang(_request(query_string="lang=es")) == "de"   # unknown lang ignored
+
+
+# --- _fmt_date ------------------------------------------------------------
+
+
+def test_fmt_date_all_styles_both_languages():
+    d = date(2026, 4, 23)  # a Thursday
+    assert _fmt_date(d, "de", "short") == "23.4."
+    assert _fmt_date(d, "en", "short") == "Apr 23"
+    assert _fmt_date(d, "de", "full") == "23.04.2026"
+    assert _fmt_date(d, "en", "full") == "Apr 23, 2026"
+    assert _fmt_date(d, "de", "strip") == "Do 23.04."
+    assert _fmt_date(d, "en", "strip") == "Thu Apr 23"
+
+
+def test_fmt_date_accepts_iso_string():
+    assert _fmt_date("2026-04-23", "de", "short") == "23.4."

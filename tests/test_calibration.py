@@ -199,7 +199,9 @@ def test_rescore_record_two_soft_vetos_yields_maybe():
     record = {
         "inputs": _full_inputs(day="2026-04-22", li_max=11.0, overnight_cloud_pct=97.0),
     }
-    overall, _ = rescore_record(record)
+    result = rescore_record(record)
+    assert result is not None
+    overall, _ = result
     assert overall == "maybe"
 
 

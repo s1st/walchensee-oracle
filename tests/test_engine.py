@@ -8,7 +8,7 @@ def _v(signal: Signal, severity: Severity = Severity.NONE, rule: str = "x") -> V
     return Verdict(rule=rule, signal=signal, reason_en="", reason_de="", severity=severity)
 
 
-def test_all_goaggregates_to_go():
+def test_all_go_aggregates_to_go():
     assert aggregate([_v(Signal.GO), _v(Signal.GO)]) is Signal.GO
 
 
