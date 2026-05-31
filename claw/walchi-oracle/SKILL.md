@@ -13,23 +13,17 @@ kind: domain-forecast
 
 # Walchi Thermic Oracle
 
-Domain-specific forecaster for the thermal wind at Lake Walchensee. Combines
-four live data sources the user's models cannot see together:
-
-- Cross-Alps pressure gradient Munich–Innsbruck ("Thermik") and Föhn
-  detection Bolzano–Innsbruck (Open-Meteo MSL pressure).
-- Meteorological conditions — overnight cooling, morning solar radiation,
-  dew-point spread, boundary-layer height, soil moisture + recent rain,
-  lifted index, daytime low-cloud development, 850 hPa wind
-  direction + 700 hPa crossflow (all Open-Meteo).
-- Live shore wind — Addicted-Sports Urfeld anemometer + nearest DWD
-  synoptic station via Bright Sky.
+Domain-specific forecaster for the thermal wind at Lake Walchensee. It fuses
+cross-Alps pressure, meteorological conditions, and live shore-wind readings —
+signals that global models (Windy, Windguru) can't resolve — into a single
+`GO` / `MAYBE` / `NO_GO` call for the day. Full data-source and rule list lives
+in the project README; don't re-document it here.
 
 ## ✅ When to use
 
 Invoke when the user asks about:
 
-- Wind / thermal / Thermik / Wind conditions **at** Walchensee, Walchi, Urfeld,
+- Wind / thermal / Thermik conditions **at** Walchensee, Walchi, Urfeld,
   Galerie, Sachenbach, Nordufer, Zwergern, Wiese, Einsiedl, Kesselberg,
   Herzogstand, or Jochberg.
 - Whether it's worth driving from Munich to the lake today / tomorrow.
@@ -44,37 +38,21 @@ between April and September, when the user has previously asked about Walchensee
 - Wind / weather questions about any *other* lake or spot. Use the generic
   `weather` skill instead.
 - Generic pressure / radiation questions unrelated to Walchensee.
-- Historical research, climate science, or anything requiring past-date data
-  older than seven days — the tool only forecasts today and near-future days.
+- Historical research older than ~seven days — the tool forecasts today and
+  near-future days only.
 
-## Commands
-
-Run the CLI with `--json` to get structured output:
+## How to run it
 
 ```
-oracle forecast --json                    # today
+oracle forecast --json                    # today, machine-readable
 oracle forecast --day 2026-05-15 --json   # specific ISO date
-oracle forecast --horizon 3               # loop over today + next 2 days
-oracle backfill --day 2026-05-15          # merge actual Urfeld wind curve
+oracle forecast --horizon 3 --json        # today + next 2 days
 ```
 
-The JSON shape (12 rules, each verdict carries bilingual reasons):
-
-```
-{
-  "day": "2026-04-23",
-  "overall": "go" | "maybe" | "no_go",
-  "verdicts": [
-    {"rule": "thermik", "signal": "go|maybe|no_go",
-     "reason_en": "…", "reason_de": "…"},
-    // … 11 more: foehn_override, overnight_cooling, solar_radiation,
-    //           dew_point_spread, boundary_layer_height, post_rain_moisture,
-    //           atmospheric_stability, daytime_clouds, upper_level_wind,
-    //           synoptic_override, thermal_ignition
-  ],
-  "inputs": { "pressure": {…}, "meteo": {…}, "measurements": [{…}] }
-}
-```
+The JSON is self-describing: an `overall` verdict plus one entry per rule, each
+carrying `signal`, `reason_en`, and `reason_de`. Read what the command returns
+rather than relying on a schema copied here — the README has the canonical rule
+list and CLI reference.
 
 ## How to respond to the user
 
@@ -83,19 +61,16 @@ The JSON shape (12 rules, each verdict carries bilingual reasons):
    - `go` → "Heute läuft der Walchi — Thermik sieht solide aus."
    - `maybe` → "Grenzwertig am Walchensee — könnte reichen, eher Plan B."
    - `no_go` → "Heute kein Walchi-Tag — [top two blocking reasons in Stichworten]."
-2. Then list the **blocking verdicts** (signal = no_go) as short bullets,
-   translating the `reason` field to a human tone. Keep it terse.
-3. Keep the full reply under ~8 lines. The user is deciding whether to drive
-   80 km, not reading a report.
+2. List the **blocking verdicts** (signal = `no_go`) as short bullets,
+   translating the reason to a human tone. Keep it terse.
+3. Keep the reply under ~8 lines — the user is deciding whether to drive 80 km,
+   not reading a report.
 
 ## Notes
 
-- **Thresholds are partly calibrated** — the main driver rules (thermik delta,
-  overnight cloud, dew-point spread, lifted index) are fitted against logged
-  Urfeld sessions; the rest are still research-analogue guesses. A `go` verdict
-  is improving but not yet fully proven — flag uncertainty when the numerics
-  are borderline.
-- The `thermal_ignition` rule returns `maybe` until a shore station actually
-  reads ≥ 8 kt. In the morning, before the thermal has fired, that's expected,
-  not a failure.
+- **Partly calibrated** — the main driver rules are fitted against logged Urfeld
+  sessions; the rest are still research-analogue guesses. A `go` is improving
+  but not yet fully proven, so flag uncertainty when the numbers are borderline.
+- `thermal_ignition` stays `maybe` until a shore station actually reads ≥ 8 kt;
+  in the morning, before the thermal has fired, that's expected, not a failure.
 - Time zone is Europe/Berlin.
