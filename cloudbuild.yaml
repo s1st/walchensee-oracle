@@ -17,7 +17,7 @@ images: ['${_IMAGE}']
 options:
   logging: CLOUD_LOGGING_ONLY
 substitutions:
-  _DOCKERFILE: Dockerfile
+  _DOCKERFILE: Dockerfile.job
   _IMAGE: europe-west3-docker.pkg.dev/walchi-oracle-prod/walchi/placeholder:latest
   _DEPLOY_SERVICE: ''
   _DEPLOY_REGION: europe-west1

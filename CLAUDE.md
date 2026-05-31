@@ -80,6 +80,5 @@ Two Docker images built from the same source tree via `cloudbuild.yaml` (`_DOCKE
 
 - `Dockerfile.job` → `oracle-job:latest`, run as Cloud Run Jobs `oracle-forecast` (08:00 CET, `forecast --horizon=3`) and `oracle-backfill` (21:00 CET, `backfill`), both in `europe-west3`.
 - `Dockerfile.dashboard` → `dashboard:latest`, run as Cloud Run service `walchi-oracle-dash` in `europe-west1` (region required for custom domain mapping to `walchensee.simon-stieber.de`).
-- `Dockerfile` is a separate OpenClaw-based image that bundles the `claw/walchi-oracle` skill — unrelated to the scheduled pipeline.
 
 The service account split (`walchi-oracle-job@` read/write runs bucket, `walchi-oracle-dash@` read-only) is intentional; keep it when adding new resources. (Historical: `windinfo-user` / `windinfo-pass` Secret Manager entries and Cloud Run job env bindings can be deleted manually — no in-tree code consumes them after the chat pillar removal.)
