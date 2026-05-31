@@ -66,7 +66,7 @@ Preserving `ground_truth` across re-runs is important: `write_run` reads the exi
 
 ### Thresholds
 
-All threshold constants live in `src/oracle/config.py`. Most are still placeholders from research analogues (Garda + local kiter heuristics); a few have been data-fitted once the calibration log crossed n≥10 days of Urfeld ground truth — `MIN_THERMIK_DELTA_HPA` is the first (was +2.5, now -1.0). Use `oracle calibrate` to identify which rules are over-vetoing real session days before tuning the rest. Single-day evidence is not enough; demand the offender list from a sample of ≥10 ground-truthed days, then change one threshold per commit so the rescore-strip in the dashboard isolates the effect.
+All threshold constants live in `src/oracle/config.py`. They are mixed: the main driver thresholds have been data-fitted against the Urfeld calibration log — `MIN_THERMIK_DELTA_HPA` (+2.5 → −1.0, n=10), `MAX_OVERNIGHT_CLOUD_COVER_PCT` (30 → 95, n=22), `MIN_DEW_POINT_SPREAD_C` (5.0 → 2.5, n=22) and `MAX_LIFTED_INDEX` (6 → 10, n=22) — and the aggregator was reworked to severity-tier/consensus semantics (a single soft veto no longer downgrades). The rest (Föhn trigger, synoptic override, ignition wind, BLH, soil/rain, solar) are still research-analogue guesses — identifiable as the constants lacking an `n=` note in config.py. Use `oracle calibrate` to identify which rules are over-vetoing real session days before tuning the rest. Single-day evidence is not enough; demand the offender list from a sample of ≥10 ground-truthed days, then change one threshold per commit so the rescore-strip in the dashboard isolates the effect.
 
 ### Dashboard
 

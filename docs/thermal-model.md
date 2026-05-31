@@ -142,7 +142,10 @@ Föhn risk. Innsbruck serves as north anchor for both pairs.
 Mean cloud cover during the previous night. Clear skies allow strong
 radiative cooling and deep inversion buildup.
 
-- **Threshold:** <= 30% mean cloud cover = good inversion.
+- **Threshold:** <= 95% mean cloud cover (data-fitted, n=22; was 30%). Alpine
+  mountain effects dominate radiative cooling this close to the ridge, so
+  sessions fire even under near-overcast nights — only a 97.1% night was a true
+  NO_GO.
 - **Source:** Open-Meteo hourly `cloud_cover` at Urfeld coordinates.
 
 ### Morning solar radiation (09:00 - 13:00)
@@ -184,29 +187,31 @@ not exposed.
 Config defines these as shore stations but no fetcher is wired yet. Both are
 needed to track the N-to-S ignition propagation pattern.
 
-## Community data: windinfo.eu chat
+## Community data: windinfo.eu chat (removed)
 
-The Wind-Wetter-Chat on windinfo.eu is a WordPress "Wise Chat Pro" plugin
-behind a login. The oracle scrapes it for messages mentioning Walchensee
-keywords (walchensee, walchi, urfeld, galerie, nordufer, sachenbach, wiese,
-zwergern, einsiedl, kesselberg, herzogstand, jochberg).
-
-Currently display-only — messages are shown but no structured signal is
-extracted for the forecast verdict.
+The Wind-Wetter-Chat on windinfo.eu was previously scraped as a fourth pillar,
+but that was **removed** for DSGVO + § 87b UrhG (Datenbankschutz) reasons —
+third-party user posts can't be stored or republished. The dashboard now only
+carries a plain link to the chat for users who want community context; nothing
+is scraped, stored, or fed into the verdict. Do not reintroduce server-side
+scraping.
 
 ## Threshold calibration status
 
-Most thresholds are still informed guesses from Garda analogues and local
-kiter heuristics. The first data-driven retune landed once the calibration
-log had n≥10 days of Urfeld ground truth — see `oracle calibrate` for the
-ongoing per-rule false-positive-veto tracking.
+The main driver thresholds have been data-fitted against the Urfeld
+calibration log (thermik delta at n=10; overnight cloud, dew-point spread and
+lifted index at n=22), and the aggregator was reworked so only hard vetoes
+block the verdict. The remaining thresholds are still research-analogue guesses
+awaiting enough ground truth. See `oracle calibrate` for the ongoing per-rule
+false-positive-veto tracking.
 
 | Threshold | Current value | Confidence | Notes |
 |---|---|---|---|
 | Thermik delta | >= -1.0 hPa | Medium | Fitted from n=10 days; was +2.5, vetoed 9/10 session days |
-| Föhn trigger delta | >= 4.0 hPa | Medium | Well-established Föhn indicator |
+| Föhn trigger delta | >= 4.0 hPa | Medium | Well-established Föhn indicator (not yet stress-tested locally) |
 | Synoptic override | >= 15 kt | Medium | Standard ~3 Bft threshold |
 | Ignition wind | >= 8 kt | Low | Needs shore-station validation |
-| Overnight cloud cover | <= 30% | Low | Calibration shows 3/3 FP-vetoes; next candidate to retune |
+| Overnight cloud cover | <= 95% | Medium | Fitted from n=22; was 30%, which false-vetoed sessions up to 94% cloud |
+| Dew-point spread | >= 2.5 °C | Medium | Fitted from n=22; was 5.0, false-vetoed sessions at spread 2.8–3.1 |
 | Morning solar radiation | >= 600 W/m² | Low | Must vary with season |
-| Atmospheric stability (LI) | placeholder | Low | Calibration shows 5/5 FP-vetoes; next candidate to retune |
+| Atmospheric stability (LI) | <= 10 | Medium | Fitted from n=22; was 6, false-vetoed sessions at LI up to 8.9 |

@@ -1,8 +1,10 @@
 """Static configuration: stations, thresholds, endpoints.
 
-Thresholds are placeholders informed by research (Garda analogues + local kiter
-heuristics) and MUST be calibrated against logged Walchensee observations before
-they can be trusted operationally. Every threshold is marked TODO(calibrate).
+Thresholds are mixed provenance: several driver rules have been data-fitted
+against the Urfeld calibration log (each carries an inline ``n=`` note below),
+while the rest are still research-informed guesses (Garda analogues + local
+kiter heuristics) awaiting enough ground truth to fit. Treat any threshold
+*without* an ``n=`` note as provisional.
 """
 from __future__ import annotations
 
@@ -56,8 +58,9 @@ SACHENBACH = Station("Sachenbach", 47.5950, 11.3600, StationRole.SHORE)
 SHORE_PROPAGATION: tuple[Station, ...] = (URFELD, GALERIE, SACHENBACH)
 
 # --- Heuristic thresholds -------------------------------------------------
-# TODO(calibrate): all values below are informed guesses from research; replace
-# once we have a log of (inputs, actual-conditions) pairs from real sessions.
+# Mixed provenance: thresholds carrying an inline ``n=…`` note have been fitted
+# against the Urfeld calibration log; the rest are still research-informed
+# guesses (TODO(calibrate)) awaiting enough ground truth to fit.
 
 MIN_THERMIK_DELTA_HPA = -1.0  # Munich − Innsbruck. Below this the synoptic flow actively
                               # opposes the N-thermal. Set from n=10 calibration: 7/7 logged

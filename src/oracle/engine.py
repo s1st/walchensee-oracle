@@ -74,8 +74,8 @@ def aggregate(verdicts: list[Verdict]) -> Signal:
 
     Only HARD vetos (Föhn, ≥15 kt synoptic, opposing/decoupling upper-level
     flow, thunderstorm-risk LI) flip the overall to NO_GO. A *single* SOFT
-    veto on its own does not downgrade — placeholder thresholds firing one
-    rule shouldn't override the consensus of nine others. Two or more SOFT
+    veto on its own does not downgrade — one soft rule firing shouldn't
+    override the consensus of nine others. Two or more SOFT
     vetos do downgrade to MAYBE: that's where the negative signals start
     converging into something real. MAYBE emissions from individual rules are
     advisory only and don't trigger a downgrade by themselves.

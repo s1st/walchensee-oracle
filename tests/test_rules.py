@@ -192,8 +192,8 @@ def test_thermal_ignition_detects_ignited_station():
 # --- Severity tagging on NO_GO verdicts ----------------------------------
 # Hard vetos are the rules where a NO_GO physically destroys the thermal or
 # makes the lake unsafe. Soft vetos only attenuate; the new aggregator only
-# blocks on hard ones, so the right severity here is what makes the system
-# stop over-vetoing on placeholder thresholds.
+# blocks on hard ones, so the right severity here is what stops a single
+# soft rule over-vetoing the consensus.
 
 
 def test_thermik_no_go_is_soft():

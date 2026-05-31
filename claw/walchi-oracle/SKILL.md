@@ -97,9 +97,11 @@ The JSON shape (12 rules, each verdict carries bilingual reasons):
 
 ## Notes
 
-- **Thresholds are placeholders** calibrated from Garda analogues, not from
-  logged Walchensee sessions. A `go` verdict is still experimental — flag
-  uncertainty when the numerics are borderline.
+- **Thresholds are partly calibrated** — the main driver rules (thermik delta,
+  overnight cloud, dew-point spread, lifted index) are fitted against logged
+  Urfeld sessions; the rest are still research-analogue guesses. A `go` verdict
+  is improving but not yet fully proven — flag uncertainty when the numerics
+  are borderline.
 - The `thermal_ignition` rule returns `maybe` before ~10:30 local time
   because the thermal hasn't had a chance to start. That's expected, not a
   failure.
