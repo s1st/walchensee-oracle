@@ -3,22 +3,23 @@
 A proactive forecasting system for thermal wind conditions at Lake Walchensee
 (Bavaria) — one of Germany's premier windsurfing lakes. Standard forecast
 models (GFS, ECMWF) don't resolve the Walchensee thermal; this tool combines
-local expert chat, pressure gradients, meteorological data, and live sensor
-readings to fill the gap.
+pressure gradients, meteorological data, and live sensor readings to fill the
+gap.
 
 ## Data pillars
 
-1. **Oracle Chat** — authenticated read-only polling of the windinfo.eu
-   Wind-Wetter-Chat (WordPress Wise Chat Pro) for messages mentioning
-   Walchensee spots.
-2. **Pressure Gradient** — real-time Munich − Innsbruck hPa delta (the
+1. **Pressure Gradient** — real-time Munich − Innsbruck hPa delta (the
    community calls this "Thermik"; meteorologists call it "Alpenpumpe") and
    Bolzano − Innsbruck delta (Föhn detection).
-3. **Meteorological Conditions** — overnight cooling, morning solar radiation,
+2. **Meteorological Conditions** — overnight cooling, morning solar radiation,
    synoptic wind aloft, dew-point spread, boundary-layer height, soil
    moisture + recent precipitation.
-4. **Live Measurements** — shore wind from the Addicted-Sports anemometer at
+3. **Live Measurements** — shore wind from the Addicted-Sports anemometer at
    Urfeld + the nearest DWD synoptic station (via Bright Sky).
+
+> An earlier fourth pillar that scraped the windinfo.eu Wind-Wetter-Chat was
+> removed for DSGVO + § 87b UrhG (Datenbankschutz) reasons. The dashboard now
+> only links to that chat; nothing is scraped, stored, or fed into the verdict.
 
 Twelve heuristic rules — `thermik`, `foehn_override`, `overnight_cooling`,
 `solar_radiation`, `dew_point_spread`, `boundary_layer_height`,

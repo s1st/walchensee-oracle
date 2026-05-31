@@ -24,8 +24,6 @@ four live data sources the user's models cannot see together:
   direction + 700 hPa crossflow (all Open-Meteo).
 - Live shore wind — Addicted-Sports Urfeld anemometer + nearest DWD
   synoptic station via Bright Sky.
-- Community chat — windinfo.eu Wind-Wetter-Chat (filtered to
-  Walchensee-mentioning messages).
 
 ## ✅ When to use
 
