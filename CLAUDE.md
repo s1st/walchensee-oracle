@@ -34,7 +34,13 @@ pytest tests/test_rules.py                # single file
 pytest tests/test_rules.py::test_thermik_go  # single test
 ruff check src tests
 mypy src
+
+# Real dashboard traffic (bot-filtered, IPv6 /64-deduped) — for sizing rollout reach
+python3 scripts/dashboard_traffic.py            # last 30d, prod
+python3 scripts/dashboard_traffic.py --days 7   # shorter window
 ```
+
+To measure **actual visitors** to the live dashboard, use `scripts/dashboard_traffic.py` — do **not** hand-roll `gcloud logging read | sort -u` IP counts, which overcount ~4× (AI crawlers like GPTBot send browser-ish UAs; one-off scanner IPs read as visitors). The script pulls Cloud Run GET logs, drops bots / exploit-scanner paths / empty-UA probes, and dedupes IPv6 by /64 (flagging m-net's `2001:a61::/32`, which rotates the customer /48 so one person spans several /64s). Run it the day after each rollout step to see what a channel actually delivered.
 
 Storage backend is selected by env: `RUNS_BUCKET` set → `GCSRunStore` (writes `gs://$RUNS_BUCKET/runs/<iso>.json`); unset → `LocalRunStore` at `data/runs/`. Both implement the same `RunStore` protocol in `src/oracle/logger.py` — tests and local dev stay on the filesystem without needing GCP creds.
 
