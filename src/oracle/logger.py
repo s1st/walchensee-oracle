@@ -22,6 +22,7 @@ from typing import Protocol
 import httpx
 
 from oracle.engine import Forecast
+from oracle.knowledge.rules import Verdict
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
 
 DEFAULT_RUNS_DIR = Path("data/runs")
@@ -121,22 +122,31 @@ def default_store() -> RunStore:
 # --- public API ------------------------------------------------------------
 
 
+def verdict_to_dict(v: Verdict, *, legacy_reason: bool = False) -> dict:
+    """Serialise one Verdict to its stored JSON shape.
+
+    `legacy_reason` adds the English-only `reason` field that pre-i18n readers
+    (CLI, old dashboards) still expect. The resimulated verdicts written by the
+    calibration tooling omit it — they're internal and post-date bilingual reasons.
+    """
+    d = {
+        "rule": v.rule,
+        "signal": v.signal.value,
+        "severity": v.severity.value,
+        "reason_en": v.reason_en,
+        "reason_de": v.reason_de,
+    }
+    if legacy_reason:
+        d["reason"] = v.reason_en
+    return d
+
+
 def forecast_to_dict(result: Forecast, target_day: date) -> dict:
     """Canonical serialisation used by both `--json` output and the log writer."""
     return {
         "day": target_day.isoformat(),
         "overall": result.overall.value,
-        "verdicts": [
-            {
-                "rule": v.rule,
-                "signal": v.signal.value,
-                "severity": v.severity.value,
-                "reason": v.reason_en,        # legacy field — English, what pre-i18n readers expect
-                "reason_en": v.reason_en,
-                "reason_de": v.reason_de,
-            }
-            for v in result.verdicts
-        ],
+        "verdicts": [verdict_to_dict(v, legacy_reason=True) for v in result.verdicts],
         "inputs": {
             "pressure": result.pressure.to_dict(),
             "meteo": result.meteo.to_dict(),

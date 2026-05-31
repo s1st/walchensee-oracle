@@ -164,6 +164,7 @@ def boundary_layer_height(meteo: MeteoSnapshot) -> Verdict:
 
 
 def post_rain_moisture(meteo: MeteoSnapshot) -> Verdict:
+    sm = meteo.soil_moisture_m3m3
     if meteo.rained_yesterday:
         mm = meteo.yesterday_precipitation_mm
         return Verdict(
@@ -172,15 +173,13 @@ def post_rain_moisture(meteo: MeteoSnapshot) -> Verdict:
             reason_de=f"gestern {mm:.1f} mm Regen — Sonnenenergie geht in Verdunstung",
             severity=Severity.SOFT,
         )
-    if meteo.soil_moisture_m3m3 > config.WET_SOIL_MOISTURE_M3M3:
-        sm = meteo.soil_moisture_m3m3
+    if sm > config.WET_SOIL_MOISTURE_M3M3:
         return Verdict(
             "post_rain_moisture", Signal.NO_GO,
             reason_en=f"soil moisture {sm:.2f} m³/m³ — ground still wet",
             reason_de=f"Bodenfeuchte {sm:.2f} m³/m³ — Boden noch zu nass",
             severity=Severity.SOFT,
         )
-    sm = meteo.soil_moisture_m3m3
     return Verdict(
         "post_rain_moisture", Signal.GO,
         reason_en=f"dry ground (soil moisture {sm:.2f} m³/m³)",
@@ -189,23 +188,21 @@ def post_rain_moisture(meteo: MeteoSnapshot) -> Verdict:
 
 
 def atmospheric_stability(meteo: MeteoSnapshot) -> Verdict:
-    if meteo.max_lifted_index >= config.MAX_LIFTED_INDEX:
-        li = meteo.max_lifted_index
+    lo, hi = meteo.min_lifted_index, meteo.max_lifted_index
+    if hi >= config.MAX_LIFTED_INDEX:
         return Verdict(
             "atmospheric_stability", Signal.NO_GO,
-            reason_en=f"LI {li:.1f} — atmosphere too stable, thermal capped",
-            reason_de=f"LI {li:.1f} — Atmosphäre zu stabil, Thermik gedeckelt",
+            reason_en=f"LI {hi:.1f} — atmosphere too stable, thermal capped",
+            reason_de=f"LI {hi:.1f} — Atmosphäre zu stabil, Thermik gedeckelt",
             severity=Severity.SOFT,
         )
-    if meteo.min_lifted_index <= config.MIN_LIFTED_INDEX:
-        li = meteo.min_lifted_index
+    if lo <= config.MIN_LIFTED_INDEX:
         return Verdict(
             "atmospheric_stability", Signal.NO_GO,
-            reason_en=f"LI {li:.1f} — thunderstorm risk destroys the thermal",
-            reason_de=f"LI {li:.1f} — Gewittergefahr zerstört die Thermik",
+            reason_en=f"LI {lo:.1f} — thunderstorm risk destroys the thermal",
+            reason_de=f"LI {lo:.1f} — Gewittergefahr zerstört die Thermik",
             severity=Severity.HARD,
         )
-    lo, hi = meteo.min_lifted_index, meteo.max_lifted_index
     return Verdict(
         "atmospheric_stability", Signal.GO,
         reason_en=f"LI {lo:.1f}…{hi:.1f} — stability in normal range",

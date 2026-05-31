@@ -27,6 +27,7 @@ from oracle.config import (
     URFELD,
     StationRole,
 )
+from oracle.pillars import client_scope
 
 _KMH_TO_KNOTS = 0.5399568
 # Self-identifying UA — better to be transparent than to pretend to be a
@@ -69,17 +70,12 @@ class WindReading:
 
 async def fetch_latest(client: httpx.AsyncClient | None = None) -> list[WindReading]:
     """Call Bright Sky and Addicted-Sports in parallel. One failure is tolerated."""
-    owns_client = client is None
-    client = client or httpx.AsyncClient(timeout=10.0)
-    try:
+    async with client_scope(client) as client:
         results = await asyncio.gather(
             _fetch_bright_sky(client),
             _fetch_urfeld(client),
             return_exceptions=True,
         )
-    finally:
-        if owns_client:
-            await client.aclose()
 
     readings = [r for r in results if isinstance(r, WindReading)]
     errors = [r for r in results if isinstance(r, BaseException)]
@@ -204,13 +200,8 @@ async def fetch_urfeld_day_curve(
 
     Used by the calibration logger to capture ground-truth wind after the fact.
     """
-    owns_client = client is None
-    client = client or httpx.AsyncClient(timeout=15.0)
-    try:
+    async with client_scope(client, timeout=15.0) as client:
         entries = await _fetch_urfeld_entries(client, day, day + timedelta(days=1))
-    finally:
-        if owns_client:
-            await client.aclose()
 
     samples: list[UrfeldSample] = []
     for entry in entries:

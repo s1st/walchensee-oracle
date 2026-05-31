@@ -24,6 +24,7 @@ from datetime import date, datetime, time, timedelta
 import httpx
 
 from oracle.config import OPEN_METEO_URL, RAINED_YESTERDAY_MM, URFELD
+from oracle.pillars import client_scope
 
 
 @dataclass
@@ -109,9 +110,7 @@ async def fetch_snapshot(day: date, client: httpx.AsyncClient | None = None) -> 
     # Span day-1 (overnight window) back through day-3 (for yesterday's rain
     # check + headroom on soil moisture). Single request.
     start = day - timedelta(days=1)
-    owns_client = client is None
-    client = client or httpx.AsyncClient(timeout=10.0)
-    try:
+    async with client_scope(client) as client:
         response = await client.get(
             OPEN_METEO_URL,
             params={
@@ -126,9 +125,6 @@ async def fetch_snapshot(day: date, client: httpx.AsyncClient | None = None) -> 
         )
         response.raise_for_status()
         payload = response.json()
-    finally:
-        if owns_client:
-            await client.aclose()
 
     return _parse(payload, day)
 
@@ -175,19 +171,22 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
     )
     yesterday_rain = _in_window(times, hourly["precipitation"], yesterday_start, yesterday_end)
 
-    if (
-        not overnight_clouds
-        or not morning_radiation
-        or not morning_wind
-        or not morning_temp
-        or not morning_dew
-        or not morning_blh
-        or not morning_li
-        or not morning_low_clouds
-        or not morning_wind_700
-    ):
+    required_windows = {
+        "cloud_cover": overnight_clouds,
+        "shortwave_radiation": morning_radiation,
+        "wind_speed_850hPa": morning_wind,
+        "temperature_2m": morning_temp,
+        "dew_point_2m": morning_dew,
+        "boundary_layer_height": morning_blh,
+        "lifted_index": morning_li,
+        "cloud_cover_low": morning_low_clouds,
+        "wind_speed_700hPa": morning_wind_700,
+    }
+    missing = [name for name, window in required_windows.items() if not window]
+    if missing:
         raise RuntimeError(
-            f"Open-Meteo did not return expected hourly windows for {target.isoformat()}"
+            f"Open-Meteo did not return expected hourly windows for "
+            f"{target.isoformat()}: {', '.join(missing)}"
         )
 
     # Direction at the morning's peak 850 hPa wind — captures the dominant

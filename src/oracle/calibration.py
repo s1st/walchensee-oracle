@@ -19,13 +19,14 @@ Deliberately doesn't auto-tune thresholds; surfaces evidence for a human.
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
 from oracle.engine import aggregate, apply_rules
 from oracle.knowledge.rules import SIGNAL_ORDER, Signal, Verdict
-from oracle.logger import RunStore, default_store
+from oracle.logger import RunStore, default_store, verdict_to_dict
 from oracle.pillars.measurements import WindReading
 from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureSnapshot
@@ -163,6 +164,23 @@ def _ignition_minute_of_day(iso_ts: str | None) -> int | None:
     return dt.hour * 60 + dt.minute
 
 
+def _iter_window_days(
+    store: RunStore, since: date | None, until: date | None
+) -> Iterator[str]:
+    """Yield logged ISO days that fall within [since, until] (inclusive ends).
+
+    Single source of the date-window filter shared by `rescore_all`,
+    `compile_report` and `export_csv`.
+    """
+    for iso in store.list_days():
+        d = date.fromisoformat(iso)
+        if since and d < since:
+            continue
+        if until and d > until:
+            continue
+        yield iso
+
+
 # --- record re-scoring ----------------------------------------------------
 # Re-run the rule layer against a record's stored `inputs` block under the
 # *current* aggregator. Used to surface "what would the new severity-tiered
@@ -217,11 +235,7 @@ def rescore_all(
     skipped: list[str] = []
     flipped: list[tuple[str, str, str]] = []  # (iso, old_overall, new_overall)
 
-    for iso in store.list_days():
-        if since and date.fromisoformat(iso) < since:
-            continue
-        if until and date.fromisoformat(iso) > until:
-            continue
+    for iso in _iter_window_days(store, since, until):
         record = store.read(iso)
         if record is None:
             continue
@@ -231,16 +245,7 @@ def rescore_all(
             continue
         new_overall, new_verdicts = result
         record["overall_resimulated"] = new_overall
-        record["verdicts_resimulated"] = [
-            {
-                "rule": v.rule,
-                "signal": v.signal.value,
-                "severity": v.severity.value,
-                "reason_en": v.reason_en,
-                "reason_de": v.reason_de,
-            }
-            for v in new_verdicts
-        ]
+        record["verdicts_resimulated"] = [verdict_to_dict(v) for v in new_verdicts]
         old_overall = record.get("overall")
         if old_overall != new_overall:
             flipped.append((iso, old_overall, new_overall))
@@ -287,11 +292,7 @@ def compile_report(
     rule_stats: dict[str, RuleStats] = {}
     sample_days: list[str] = []
 
-    for iso in store.list_days():
-        if since and date.fromisoformat(iso) < since:
-            continue
-        if until and date.fromisoformat(iso) > until:
-            continue
+    for iso in _iter_window_days(store, since, until):
         record = store.read(iso)
         if record is None:
             continue
@@ -424,7 +425,7 @@ def _row_for(record: dict) -> dict | None:
     m = inputs.get("meteo") or {}
     if not p or not m:
         return None
-    machine = (record.get("ground_truth") or {}).get("machine") or {}
+    machine = _machine_from(record) or {}
     peak = machine.get("peak_avg_knots")
     if peak is None:
         return None
@@ -469,11 +470,7 @@ def export_csv(
     """Write every ground-truthed record to `path` as a flat CSV. Returns row count."""
     store = store or default_store()
     rows: list[dict] = []
-    for iso in store.list_days():
-        if since and date.fromisoformat(iso) < since:
-            continue
-        if until and date.fromisoformat(iso) > until:
-            continue
+    for iso in _iter_window_days(store, since, until):
         record = store.read(iso)
         if record is None:
             continue

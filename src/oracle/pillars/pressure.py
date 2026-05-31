@@ -21,6 +21,7 @@ from datetime import datetime
 import httpx
 
 from oracle.config import BOLZANO, INNSBRUCK_N, MUNICH, OPEN_METEO_URL, Station
+from oracle.pillars import client_scope
 
 
 @dataclass
@@ -68,9 +69,7 @@ _STATIONS: tuple[Station, ...] = (MUNICH, INNSBRUCK_N, BOLZANO)
 
 
 async def fetch_snapshot(client: httpx.AsyncClient | None = None) -> PressureSnapshot:
-    owns_client = client is None
-    client = client or httpx.AsyncClient(timeout=10.0)
-    try:
+    async with client_scope(client) as client:
         response = await client.get(
             OPEN_METEO_URL,
             params={
@@ -82,9 +81,6 @@ async def fetch_snapshot(client: httpx.AsyncClient | None = None) -> PressureSna
         )
         response.raise_for_status()
         payload = response.json()
-    finally:
-        if owns_client:
-            await client.aclose()
 
     # Open-Meteo returns a list when multiple locations are requested.
     locations = payload if isinstance(payload, list) else [payload]

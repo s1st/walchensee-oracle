@@ -4,7 +4,7 @@ Reads per-day records from the same store the scheduled job writes
 (local disk in dev, GCS in production via $RUNS_BUCKET). Shows:
 
 - Today's verdict + rule breakdown
-- Recent Walchensee chat snippets
+- Live Urfeld wind panel + 6-hour curve
 - 30-day strip of forecast vs. actual peak wind
 """
 from __future__ import annotations
@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from datetime import time as dtime
+from functools import lru_cache
 from pathlib import Path
 
 import httpx
@@ -24,8 +25,16 @@ from fastapi.templating import Jinja2Templates
 
 from oracle.calibration import actual_verdict_duration as _actual_verdict_duration
 from oracle.knowledge.rules import Severity, Signal
-from oracle.logger import default_store
+from oracle.logger import RunStore, default_store
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
+
+
+@lru_cache(maxsize=1)
+def _store() -> RunStore:
+    """Process-lifetime store handle. The dashboard is a long-running server, so
+    re-selecting the backend (and rebuilding the GCS `storage.Client` in prod) on
+    every cache miss is pure waste — the backend can't change without a restart."""
+    return default_store()
 
 # Per-rule UI strings. `label` is the short header in the Advanced panel;
 # `description` is the `?` hover tooltip. One entry per rule keeps the two
@@ -402,10 +411,13 @@ _CHART_TOOLTIP_FMT = {
     "de": "{t} · Ø {avg:.1f} kt · Böe {gust:.1f} kt",
     "en": "{t} · avg {avg:.1f} kt · gust {gust:.1f} kt",
 }
-_CHART_ARIA = {
-    "de": "Urfeld-Wind, letzte 6 Stunden",
-    "en": "Urfeld wind, last 6 hours",
-}
+
+# Reference lines drawn on the wind charts: ignition (8 kt) and the sustained-
+# session bar (11 kt, mirroring calibration._DURATION_GO_KT). Named here so the
+# line geometry and its axis label can't drift apart. The legend prose in `_UI`
+# still spells the numbers out; keep them in sync when tuning.
+_CHART_IGNITION_KT = 8
+_CHART_SESSION_KT = 11
 
 
 def _wind_chart_svgs(
@@ -461,7 +473,7 @@ def _wind_chart_svgs(
     def pts_str(pts: list[tuple[float, float]]) -> str:
         return " ".join(f"{px:.1f},{py:.1f}" for px, py in pts)
 
-    y8, y11 = y(8), y(11)  # ignition / session reference lines (session bar: 11 kt)
+    y8, y11 = y(_CHART_IGNITION_KT), y(_CHART_SESSION_KT)  # ignition / session reference lines
     if fixed_xlim is not None:
         start_label = datetime.fromtimestamp(fixed_xlim[0]).strftime("%H:%M")
         end_label = datetime.fromtimestamp(fixed_xlim[1]).strftime("%H:%M")
@@ -479,9 +491,9 @@ def _wind_chart_svgs(
         f'<polyline points="{pts_str(avg_pts)}" fill="none" stroke="#c9d1d9" '
         f'stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />'
         f'<text x="{pad_l - 4:.0f}" y="{y8 + 3:.1f}" fill="#8b949e" font-size="10" '
-        f'text-anchor="end">8</text>'
+        f'text-anchor="end">{_CHART_IGNITION_KT}</text>'
         f'<text x="{pad_l - 4:.0f}" y="{y11 + 3:.1f}" fill="#8b949e" font-size="10" '
-        f'text-anchor="end">11</text>'
+        f'text-anchor="end">{_CHART_SESSION_KT}</text>'
         f'<text x="{pad_l}" y="{height - 3}" fill="#8b949e" font-size="10">{start_label}</text>'
         f'<text x="{width - pad_r}" y="{height - 3}" fill="#8b949e" font-size="10" '
         f'text-anchor="end">{end_label}</text>'
@@ -508,7 +520,7 @@ def _wind_chart_svgs(
         lang: (
             f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg" '
             f'class="wind-chart" role="img" '
-            f'aria-label="{_svg_escape(_CHART_ARIA.get(lang, _CHART_ARIA["en"]))}">'
+            f'aria-label="{_svg_escape(_UI.get(lang, _UI["en"])["chart_aria"])}">'
             f'{body}{hover_layer(lang)}</svg>'
         )
         for lang in _UI
@@ -527,7 +539,7 @@ def _cached_read(iso_day: str) -> dict | None:
     value, expires_at = _cache.get(iso_day, (None, 0.0))
     if now < expires_at:
         return value
-    fresh = default_store().read(iso_day)
+    fresh = _store().read(iso_day)
     _cache[iso_day] = (fresh, now + _CACHE_TTL_S)
     _evict_if_full()
     return fresh
@@ -553,7 +565,7 @@ async def _prefetch_days(iso_days: list[str]) -> None:
     misses = list({d for d in iso_days if _cache.get(d, (None, 0.0))[1] <= now})
     if not misses:
         return
-    store = default_store()
+    store = _store()
     fresh_values = await asyncio.gather(
         *(asyncio.to_thread(store.read, d) for d in misses)
     )
