@@ -93,6 +93,8 @@ oracle forecast --day 2026-05-15     # specific day
 oracle forecast --json               # machine-readable output for agents
 oracle backfill                      # merge today's Urfeld wind curve as ground truth
 oracle backfill --day 2026-05-15     # backfill a specific past day
+oracle rescore                       # re-run the rule layer on logged records under the current aggregator
+oracle calibrate                     # score logged forecasts against Urfeld ground truth
 ```
 
 Each forecast writes `data/runs/<YYYY-MM-DD>.json` with the raw inputs, the

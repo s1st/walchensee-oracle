@@ -72,9 +72,7 @@ The JSON shape (12 rules, each verdict carries bilingual reasons):
     //           atmospheric_stability, daytime_clouds, upper_level_wind,
     //           synoptic_override, thermal_ignition
   ],
-  "chat_messages": [
-    {"posted_at": "...", "author": "...", "channel": "...", "text": "..."}
-  ]
+  "inputs": { "pressure": {…}, "meteo": {…}, "measurements": [{…}] }
 }
 ```
 
@@ -87,10 +85,7 @@ The JSON shape (12 rules, each verdict carries bilingual reasons):
    - `no_go` → "Heute kein Walchi-Tag — [top two blocking reasons in Stichworten]."
 2. Then list the **blocking verdicts** (signal = no_go) as short bullets,
    translating the `reason` field to a human tone. Keep it terse.
-3. If there are **chat_messages**, include the most recent 1–2 in quotes with
-   the author's name as attribution. The chat is often the deciding signal
-   when the numerics are borderline.
-4. Keep the full reply under ~8 lines. The user is deciding whether to drive
+3. Keep the full reply under ~8 lines. The user is deciding whether to drive
    80 km, not reading a report.
 
 ## Notes
@@ -100,10 +95,7 @@ The JSON shape (12 rules, each verdict carries bilingual reasons):
   Urfeld sessions; the rest are still research-analogue guesses. A `go` verdict
   is improving but not yet fully proven — flag uncertainty when the numerics
   are borderline.
-- The `thermal_ignition` rule returns `maybe` before ~10:30 local time
-  because the thermal hasn't had a chance to start. That's expected, not a
-  failure.
-- The `windinfo.eu` chat source requires `WINDINFO_USER` / `WINDINFO_PASS`
-  env vars. If they're missing the `chat_messages` array will be empty; still
-  produce a forecast from the numeric signals.
+- The `thermal_ignition` rule returns `maybe` until a shore station actually
+  reads ≥ 8 kt. In the morning, before the thermal has fired, that's expected,
+  not a failure.
 - Time zone is Europe/Berlin.

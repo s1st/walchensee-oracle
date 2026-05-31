@@ -45,7 +45,7 @@ BOLZANO = Station("Bolzano", 46.4983, 11.3548, StationRole.FOEHN_SOUTH)
 
 # --- Local wind stations around Walchensee --------------------------------
 # Krün is ~10 km west of the lake and is the station locals watch for the
-# first ignition gust. Herzogstand summit (~1,531 m) is the Föhn/ridge check.
+# first ignition gust. Herzogstand summit (~1,731 m) is the Föhn/ridge check.
 # The three shore stations cover the N→S ignition-fan propagation.
 KRUEN = Station("Krün", 47.5772, 11.2622, StationRole.IGNITION_REFERENCE)
 HERZOGSTAND = Station("Herzogstand", 47.5839, 11.3081, StationRole.RIDGE)
