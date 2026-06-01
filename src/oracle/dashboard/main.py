@@ -24,6 +24,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from oracle.calibration import actual_verdict_duration as _actual_verdict_duration
+from oracle.calibration import storm_suspected as _storm_suspected
 from oracle.knowledge.rules import Severity, Signal
 from oracle.logger import RunStore, default_store
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
@@ -149,6 +150,8 @@ _UI: dict[str, dict[str, str]] = {
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
         "strip_legend_no_go": "kein Wind",
         "strip_legend_empty": "keine Daten",
+        "strip_legend_storm": "Gewitter (aus Kalibrierung ausgenommen)",
+        "storm_hint": "⚡ Gewitter-Risiko — kein Thermik-Tag",
         "live_header": "Aktuell in Urfeld",
         "live_now": "jetzt",
         "live_gust_label": "Böe",
@@ -194,6 +197,8 @@ _UI: dict[str, dict[str, str]] = {
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
         "strip_legend_no_go": "no wind",
         "strip_legend_empty": "no data",
+        "strip_legend_storm": "thunderstorm (excluded from calibration)",
+        "storm_hint": "⚡ thunderstorm risk — not a thermal day",
         "live_header": "Live at Urfeld",
         "live_now": "now",
         "live_gust_label": "gust",
@@ -278,6 +283,7 @@ def _horizon_days(today: date, lang: str, selected_iso: str) -> list[dict]:
             "short_date": _fmt_date(d, lang, "short"),
             "verdict": record.get("overall") if record else None,
             "selected": d.isoformat() == selected_iso,
+            "storm": _storm_suspected(record) if record else False,
         })
     return out
 
@@ -610,6 +616,7 @@ def _history(today: date, lang: str, days: int = 30) -> list[dict]:
             "resimulated": resimulated,
             "peak_avg_knots": peak,
             "actual": _actual_verdict_duration(machine),
+            "storm": _storm_suspected(record) if record else False,
         })
     return items
 

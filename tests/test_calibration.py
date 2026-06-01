@@ -11,6 +11,7 @@ from oracle.calibration import (
     format_text_report,
     rescore_all,
     rescore_record,
+    storm_suspected,
 )
 from oracle.logger import LocalRunStore
 
@@ -128,6 +129,46 @@ def test_false_positive_veto_attribution(tmp_path: Path):
     # `worst_offenders` should rank this rule first.
     worst = report.worst_offenders()
     assert worst and worst[0].rule == "post_rain_moisture"
+
+
+def test_storm_suspected_reads_lifted_index():
+    assert storm_suspected({"inputs": _full_inputs(day="2026-06-01", li_min=-3.0)}) is True
+    assert storm_suspected({"inputs": _full_inputs(day="2026-06-01", li_min=1.0)}) is False
+    # Legacy record with no meteo inputs → can't tell → not a storm (keep the day).
+    assert storm_suspected({"day": "2026-06-01"}) is False
+
+
+def test_compile_report_quarantines_storm_days(tmp_path: Path):
+    store = LocalRunStore(tmp_path)
+    # Storm day: forecast NO_GO via the atmospheric_stability HARD veto, but the
+    # Urfeld gust front peaked at 16 kt, which the peak label calls GO. This must
+    # be quarantined — otherwise atmospheric_stability is charged a false-positive
+    # veto for correctly calling the storm.
+    store.write("2026-06-01", {
+        "day": "2026-06-01",
+        "overall": "no_go",
+        "verdicts": [_verdict("atmospheric_stability", "no_go", "hard")],
+        "inputs": _full_inputs(day="2026-06-01", li_min=-3.0),
+        "ground_truth": {"machine": {"peak_avg_knots": 16.0}, "human": None},
+    })
+    # Clear-air day: a genuine thermal that post_rain_moisture over-vetoed.
+    store.write("2026-06-02", {
+        "day": "2026-06-02",
+        "overall": "no_go",
+        "verdicts": [_verdict("post_rain_moisture", "no_go", "soft")],
+        "inputs": _full_inputs(day="2026-06-02", li_min=1.0),
+        "ground_truth": {"machine": {"peak_avg_knots": 14.0}, "human": None},
+    })
+
+    report = compile_report(store=store)
+    assert report.quarantined_days == ["2026-06-01"]
+    assert report.sample_size == 1
+    assert report.days_with_ground_truth == ["2026-06-02"]
+    # Storm rule was NOT charged a false-positive veto…
+    assert "atmospheric_stability" not in report.rule_stats
+    # …while the genuine over-veto on the clear-air day still surfaces.
+    assert report.rule_stats["post_rain_moisture"].false_positive_vetos == 1
+    assert "quarantined" in format_text_report(report)
 
 
 def test_format_text_report_handles_empty(tmp_path: Path):
@@ -282,6 +323,7 @@ def test_export_csv_writes_features_and_ground_truth(tmp_path: Path):
     assert row["samples_above_8kt"] == "18"
     assert row["samples_above_12kt"] == "6"
     assert row["actual_verdict"] == "go"
+    assert row["storm_suspected"] == "False"  # li_min default 1.0 → clear air
     assert row["forecast_overall"] == "go"
 
 

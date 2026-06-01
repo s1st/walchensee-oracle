@@ -24,8 +24,9 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
+from oracle import config
 from oracle.engine import aggregate, apply_rules
-from oracle.knowledge.rules import SIGNAL_ORDER, Signal, Verdict
+from oracle.knowledge.rules import SIGNAL_ORDER, Signal, Verdict, is_storm_risk
 from oracle.logger import RunStore, default_store, verdict_to_dict
 from oracle.pillars.measurements import WindReading
 from oracle.pillars.meteo import MeteoSnapshot
@@ -116,6 +117,7 @@ class Report:
     rule_stats: dict[str, RuleStats] = field(default_factory=dict)
     label_mode: str = "peak"
     resimulated: bool = False
+    quarantined_days: list[str] = field(default_factory=list)  # storm-suspected, excluded
 
     @property
     def overall_accuracy(self) -> float:
@@ -144,6 +146,22 @@ def _peak_from(record: dict) -> float | None:
 
 def _machine_from(record: dict) -> dict | None:
     return (record.get("ground_truth") or {}).get("machine") or None
+
+
+def storm_suspected(record: dict) -> bool:
+    """Forecast-time thunderstorm flag for a stored record, read from the lifted
+    index in its meteo inputs.
+
+    Drives both the calibration quarantine in `compile_report` and the
+    dashboard's yellow storm border. Storm days are excluded from the confusion
+    matrix and per-rule offender stats: the high wind a gust front delivers is
+    not a thermal session, so counting it would punish the very rules that
+    correctly vetoed the storm (e.g. `atmospheric_stability`). Defensive against
+    legacy records written before the lifted-index field existed.
+    """
+    meteo = (record.get("inputs") or {}).get("meteo") or {}
+    li = meteo.get("min_lifted_index")
+    return li is not None and is_storm_risk(float(li))
 
 
 def _label_record(record: dict, mode: str) -> str | None:
@@ -291,6 +309,7 @@ def compile_report(
     confusion = _empty_confusion()
     rule_stats: dict[str, RuleStats] = {}
     sample_days: list[str] = []
+    quarantined: list[str] = []
 
     for iso in _iter_window_days(store, since, until):
         record = store.read(iso)
@@ -303,6 +322,11 @@ def compile_report(
         if forecast not in confusion:
             # Unknown overall — skip rather than crash on legacy data, or on
             # records that haven't been rescored yet when --resimulated is set.
+            continue
+        if storm_suspected(record):
+            # Gust-front wind isn't a thermal session; learning from it would
+            # punish the rules that correctly vetoed the storm. Quarantine it.
+            quarantined.append(iso)
             continue
         confusion[forecast][actual] += 1
         sample_days.append(iso)
@@ -325,16 +349,23 @@ def compile_report(
         rule_stats=rule_stats,
         label_mode=label,
         resimulated=resimulated,
+        quarantined_days=quarantined,
     )
 
 
 def format_text_report(report: Report, rule_filter: str | None = None) -> str:
     """Plain-text summary suitable for `oracle calibrate` stdout."""
     if report.sample_size == 0:
-        return (
+        msg = (
             "No days with ground truth yet. Run `oracle backfill` to merge "
             "Urfeld peak data into the day's forecast log first."
         )
+        if report.quarantined_days:
+            msg += (
+                f" ({len(report.quarantined_days)} storm-suspected day(s) "
+                "quarantined — see `oracle backfill`.)"
+            )
+        return msg
 
     label_desc = {
         "peak": "peak avg ≥12 kt → GO, ≥8 kt → MAYBE",
@@ -347,6 +378,12 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
         f"Calibration sample: {report.sample_size} days with ground truth "
         f"(label = {report.label_mode}: {label_desc}; view = {view})."
     )
+    if report.quarantined_days:
+        lines.append(
+            f"  ⚡ {len(report.quarantined_days)} storm-suspected day(s) quarantined "
+            f"(LI ≤ {config.MIN_LIFTED_INDEX:.0f}) — excluded from the matrix and "
+            "offender stats; gust-front wind isn't a thermal session."
+        )
     if report.sample_size < 14:
         lines.append(
             "  ⚠  small sample — interpret with caution. Wait for "
@@ -413,6 +450,9 @@ _CSV_COLUMNS = [
     "peak_avg_knots", "peak_gust_knots",
     "first_ignition_minute", "samples_above_8kt", "samples_above_12kt",
     "actual_verdict",
+    # storm flag: True = gust-front-contaminated label, quarantined from calibration.
+    # Kept in the export (not dropped) so the ML notebook can mask or model it.
+    "storm_suspected",
     # what the rule layer said (for benchmarking ML against the heuristic)
     "forecast_overall", "forecast_overall_resimulated",
 ]
@@ -456,6 +496,7 @@ def _row_for(record: dict) -> dict | None:
         "samples_above_8kt": machine.get("samples_above_8kt"),
         "samples_above_12kt": machine.get("samples_above_12kt"),
         "actual_verdict": actual_verdict(peak),
+        "storm_suspected": storm_suspected(record),
         "forecast_overall": record.get("overall"),
         "forecast_overall_resimulated": record.get("overall_resimulated"),
     }

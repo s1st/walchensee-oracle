@@ -66,6 +66,9 @@
   .day-tab.dot-go::after    { background: var(--go); }
   .day-tab.dot-maybe::after { background: var(--maybe); }
   .day-tab.dot-no_go::after { background: var(--no-go); }
+  /* Thunderstorm-forecast day: black+yellow dashed "hazard" ring so it reads as
+     a warning, not a verdict colour. Dash gaps reveal the dark page background. */
+  .day-tab.storm { outline: 2px dashed var(--maybe); outline-offset: 2px; }
 
   .live-panel {
     display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px;
@@ -155,6 +158,13 @@
   .cell.maybe { background: var(--maybe); }
   .cell.no_go { background: var(--no-go); }
   .cell.empty { background: var(--panel); opacity: .35; }
+  /* Thunderstorm-forecast day: a black border with a yellow dashed outline laid
+     over it = black/yellow hazard dashes. Stays legible even on a yellow MAYBE
+     fill, where a plain yellow border would disappear. */
+  .cell.storm {
+    border: 2px solid #000;
+    outline: 2px dashed var(--maybe); outline-offset: -2px;
+  }
   .view-tag { font-style: italic; opacity: .8; }
   .strip-labels { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
   .strip-legend {
@@ -169,6 +179,7 @@
   .strip-legend i.maybe { background: var(--maybe); }
   .strip-legend i.no_go { background: var(--no-go); }
   .strip-legend i.empty { background: var(--panel); border: 1px solid var(--border); }
+  .strip-legend i.storm { background: #000; border: 1px dashed var(--maybe); }
 
   .advanced-toggle { display: none; }
   .advanced-label {
@@ -317,7 +328,8 @@
 <nav class="day-tabs">
   {% for d in horizon %}
     <a href="?day={{ d.iso }}{% if lang %}&lang={{ lang }}{% endif %}"
-       class="day-tab {% if d.selected %}selected{% endif %} {% if d.verdict %}dot-{{ d.verdict }}{% endif %}">
+       class="day-tab {% if d.selected %}selected{% endif %} {% if d.verdict %}dot-{{ d.verdict }}{% endif %}{% if d.storm %} storm{% endif %}"
+       {% if d.storm %}title="{{ t.storm_hint }}"{% endif %}>
       <span class="day-tab-label">{{ d.label }}</span>
       <span class="day-tab-date">{{ d.short_date }}</span>
     </a>
@@ -354,11 +366,11 @@
     {% for d in history %}
       {% set sel = (d.iso == selected_iso and view == 'resimulated') %}
       {% if d.resimulated %}
-        <a class="cell {{ d.resimulated }}{% if sel %} selected{% endif %}"
+        <a class="cell {{ d.resimulated }}{% if sel %} selected{% endif %}{% if d.storm %} storm{% endif %}"
            href="?day={{ d.iso }}&view=resimulated"
-           title="{{ d.day }} — {{ t.strip_forecast }}: {{ d.resimulated }}"></a>
+           title="{{ d.day }} — {{ t.strip_forecast }}: {{ d.resimulated }}{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
       {% else %}
-        <div class="cell empty" title="{{ d.day }} — {{ t.strip_forecast }}: —"></div>
+        <div class="cell empty{% if d.storm %} storm{% endif %}" title="{{ d.day }} — {{ t.strip_forecast }}: —{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></div>
       {% endif %}
     {% endfor %}
   </div>
@@ -370,13 +382,13 @@
     {% for d in history %}
       {% set sel = (d.iso == selected_iso) %}
       {% if d.actual %}
-        <a class="cell {{ d.actual }}{% if sel %} selected{% endif %}"
+        <a class="cell {{ d.actual }}{% if sel %} selected{% endif %}{% if d.storm %} storm{% endif %}"
            href="?day={{ d.iso }}&view={{ view }}"
-           title="{{ d.day }} — {{ t.strip_actual }}: {% if d.peak_avg_knots %}{{ '%.1f'|format(d.peak_avg_knots) }} kt peak{% else %}—{% endif %}"></a>
+           title="{{ d.day }} — {{ t.strip_actual }}: {% if d.peak_avg_knots %}{{ '%.1f'|format(d.peak_avg_knots) }} kt peak{% else %}—{% endif %}{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
       {% else %}
-        <a class="cell empty{% if sel %} selected{% endif %}"
+        <a class="cell empty{% if sel %} selected{% endif %}{% if d.storm %} storm{% endif %}"
            href="?day={{ d.iso }}&view={{ view }}"
-           title="{{ d.day }} — {{ t.strip_actual }}: —"></a>
+           title="{{ d.day }} — {{ t.strip_actual }}: —{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
       {% endif %}
     {% endfor %}
   </div>
@@ -392,6 +404,7 @@
   <span><i class="maybe"></i>{{ t.strip_legend_maybe }}</span>
   <span><i class="no_go"></i>{{ t.strip_legend_no_go }}</span>
   <span><i class="empty"></i>{{ t.strip_legend_empty }}</span>
+  <span><i class="storm"></i>{{ t.strip_legend_storm }}</span>
 </div>
 
 {% if current %}
@@ -405,11 +418,11 @@
       {% for d in history %}
         {% set sel = (d.iso == selected_iso and view == 'original') %}
         {% if d.verdict %}
-          <a class="cell {{ d.verdict }}{% if sel %} selected{% endif %}"
+          <a class="cell {{ d.verdict }}{% if sel %} selected{% endif %}{% if d.storm %} storm{% endif %}"
              href="?day={{ d.iso }}&view=original"
-             title="{{ d.day }} — {{ t.strip_forecast_original }}: {{ d.verdict }}"></a>
+             title="{{ d.day }} — {{ t.strip_forecast_original }}: {{ d.verdict }}{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
         {% else %}
-          <div class="cell empty" title="{{ d.day }} — {{ t.strip_forecast_original }}: —"></div>
+          <div class="cell empty{% if d.storm %} storm{% endif %}" title="{{ d.day }} — {{ t.strip_forecast_original }}: —{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></div>
         {% endif %}
       {% endfor %}
     </div>
