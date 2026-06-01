@@ -10,6 +10,7 @@ from oracle.knowledge.rules import (
     daytime_clouds,
     dew_point_spread,
     foehn_override,
+    is_storm_risk,
     overnight_cooling,
     post_rain_moisture,
     solar_radiation,
@@ -157,6 +158,17 @@ def test_atmospheric_stability_storm_risk_no_go():
 
 def test_atmospheric_stability_normal_go():
     assert atmospheric_stability(_meteo(max_li=3.0, min_li=1.0)).signal is Signal.GO
+
+
+def test_is_storm_risk_matches_atmospheric_stability_hard_veto():
+    # The predicate must agree with the rule's HARD branch at the threshold:
+    # LI ≤ MIN_LIFTED_INDEX (−2) is a storm; just above it is not.
+    assert is_storm_risk(-3.0) is True
+    assert is_storm_risk(-2.0) is True
+    assert is_storm_risk(-1.9) is False
+    assert (
+        atmospheric_stability(_meteo(max_li=0.0, min_li=-3.0)).severity is Severity.HARD
+    ) == is_storm_risk(-3.0)
 
 
 def test_daytime_clouds_clear_go():

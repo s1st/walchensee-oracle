@@ -187,6 +187,20 @@ def post_rain_moisture(meteo: MeteoSnapshot) -> Verdict:
     )
 
 
+def is_storm_risk(min_lifted_index: float) -> bool:
+    """True when convective instability is high enough to flag thunderstorm risk.
+
+    Single source of truth for three things that must agree: the
+    `atmospheric_stability` HARD veto below, the calibration storm-quarantine
+    (`calibration.storm_suspected`), and the dashboard's yellow storm border.
+    Keyed on the lifted index (≤ MIN_LIFTED_INDEX) — the project's existing
+    thunderstorm signal. CAPE and target-day precipitation are captured but not
+    yet folded in (see config.py); tighten here when calibrated, and all three
+    consumers move together.
+    """
+    return min_lifted_index <= config.MIN_LIFTED_INDEX
+
+
 def atmospheric_stability(meteo: MeteoSnapshot) -> Verdict:
     lo, hi = meteo.min_lifted_index, meteo.max_lifted_index
     if hi >= config.MAX_LIFTED_INDEX:
@@ -196,7 +210,7 @@ def atmospheric_stability(meteo: MeteoSnapshot) -> Verdict:
             reason_de=f"LI {hi:.1f} — Atmosphäre zu stabil, Thermik gedeckelt",
             severity=Severity.SOFT,
         )
-    if lo <= config.MIN_LIFTED_INDEX:
+    if is_storm_risk(lo):
         return Verdict(
             "atmospheric_stability", Signal.NO_GO,
             reason_en=f"LI {lo:.1f} — thunderstorm risk destroys the thermal",
