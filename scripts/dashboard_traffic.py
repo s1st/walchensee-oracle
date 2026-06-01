@@ -21,6 +21,7 @@ Usage:
   python scripts/dashboard_traffic.py                     # last 30 days, prod
   python scripts/dashboard_traffic.py --days 7
   python scripts/dashboard_traffic.py --top 20
+  python scripts/dashboard_traffic.py --days 1 --host walchensee.s1st.de   # one channel
 """
 from __future__ import annotations
 
@@ -47,13 +48,24 @@ EXPLOIT_RX = re.compile(
 )
 
 
-def fetch_logs(project: str, service: str, days: int, limit: int) -> list[str]:
-    """Shell out to gcloud to pull GET-request logs. Returns raw TSV lines."""
+def fetch_logs(
+    project: str, service: str, days: int, limit: int, host: str | None = None
+) -> list[str]:
+    """Shell out to gcloud to pull GET-request logs. Returns raw TSV lines.
+
+    `host` restricts to one served hostname (substring match on requestUrl) so a
+    single service can be split per channel — e.g. a Reddit-only vanity domain
+    vs. the Discord/LinkedIn domain. NB: a brand-new domain becomes a CT-log
+    scanner magnet within minutes (leakix, GPTBot, datacenter IPs faking browser
+    UAs), so its raw host count overstates humans for days — read the top-IP
+    list and discount datacenter ranges hammering ~70 hits each."""
     filter_expr = (
         f'resource.type="cloud_run_revision" AND '
         f'resource.labels.service_name="{service}" AND '
         f'httpRequest.requestMethod="GET" AND httpRequest.status<400'
     )
+    if host:
+        filter_expr += f' AND httpRequest.requestUrl:"{host}"'
     cmd = [
         "gcloud", "logging", "read", filter_expr,
         f"--project={project}",
@@ -161,10 +173,16 @@ def main() -> None:
     ap.add_argument("--service", default=DEFAULT_SERVICE)
     ap.add_argument("--top", type=int, default=10, help="how many top IPs to list (default: 10)")
     ap.add_argument("--limit", type=int, default=20000, help="max log entries to pull (default: 20000)")
+    ap.add_argument(
+        "--host",
+        default=None,
+        help="restrict to one served hostname (e.g. walchensee.s1st.de) to isolate a channel",
+    )
     args = ap.parse_args()
 
-    print(f"fetching last {args.days}d of GET logs for {args.service} in {args.project}…")
-    raw = fetch_logs(args.project, args.service, args.days, args.limit)
+    scope = f" for host {args.host}" if args.host else ""
+    print(f"fetching last {args.days}d of GET logs for {args.service} in {args.project}{scope}…")
+    raw = fetch_logs(args.project, args.service, args.days, args.limit, args.host)
     if len(raw) >= args.limit:
         print(f"warning: hit --limit ({args.limit}); raise it or shorten --days for full data")
     print(f"raw GET entries returned: {len(raw)}")
