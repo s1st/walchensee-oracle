@@ -27,6 +27,7 @@ One threshold per commit, so each effect is isolated in the rescore strip.
 - overnight_cooling cloud-cover veto → 95% (`9ea86d7`)
 - atmospheric_stability cap-arm lifted-index → 10 (`19b6c06`)
 - dew_point_spread veto → 2.5 °C (`f5013c1`)
+- **post_rain_moisture: rained-yesterday veto dropped** (`0405c85`) — wrong on 13 of 17 calibration days; post-frontal days fire fine here. Soil-moisture branch (2/2 correct) kept. Resimulated accuracy 50% → 52%, two full sessions un-stuck from MAYBE
 
 ## Measuring the outcome
 
@@ -43,6 +44,7 @@ The shift in *what counts as a session*.
 - **Duration-based ground-truth label** — sustained wind, not just a transient peak (`36ba93e`)
 - Actual row switched to the **duration label (Session ≥ 1 h)** (`49313ba`)
 - **Session GO bar lowered avg 12 → 11 kt** — stop labelling genuine 11-kt-with-gusts Walchi sessions as MAYBE; fitted on n=34 backfilled days, 6 days flipped MAYBE→GO with no NO_GO disturbed (`f6b5cb9`)
+- Horizon tab dots follow the same verdict layer as the headline, so a rescore can't leave them contradicting each other (`6e476e2`)
 
 ## The throughline
 
