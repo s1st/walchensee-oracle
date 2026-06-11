@@ -27,25 +27,18 @@ from __future__ import annotations
 
 import argparse
 import collections
-import ipaddress
-import re
 import subprocess
 import sys
+from pathlib import Path
+
+try:
+    from oracle.traffic import is_mnet_prefix, real_browser_hit
+except ModuleNotFoundError:  # plain `python3 scripts/…` outside the venv
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+    from oracle.traffic import is_mnet_prefix, real_browser_hit
 
 DEFAULT_PROJECT = "walchi-oracle-prod"
 DEFAULT_SERVICE = "walchi-oracle-dash"
-
-BOT_RX = re.compile(
-    r"bot|crawler|spider|HeadlessChrome|GoogleHC|kube-probe|UptimeRobot|"
-    r"googlebot|bingbot|yandex|baidu|ahrefs|semrush|pingdom|datadog|monitis|"
-    r"python-requests|curl|wget|Go-http-client|okhttp|libwww|Java/|httpclient",
-    re.I,
-)
-EXPLOIT_RX = re.compile(
-    r"\.(php|git|env|aspx?)|/admin|/wp-|/xmlrpc|/setup|/login\.|/owa|"
-    r"/manager|/phpunit|credentials|parameters\.yml|settings\.py|"
-    r"config\.json|config/application"
-)
 
 
 def fetch_logs(
@@ -79,26 +72,6 @@ def fetch_logs(
     return [ln for ln in result.stdout.splitlines() if ln.strip()]
 
 
-def normalize_ip(ip: str) -> str:
-    """IPv6 → /64 prefix string; IPv4 → unchanged. /64 is the right grouping
-    because IPv6 privacy addresses rotate the lower 64 bits within a stable
-    customer prefix."""
-    if not ip:
-        return ""
-    try:
-        addr = ipaddress.ip_address(ip)
-    except ValueError:
-        return ip
-    if addr.version == 6:
-        net = ipaddress.IPv6Network((int(addr) & ((1 << 128) - (1 << 64)), 64))
-        return f"{net.network_address}/64"
-    return ip
-
-
-def is_real_browser(ua: str) -> bool:
-    return bool(ua) and ua.startswith("Mozilla/") and not BOT_RX.search(ua)
-
-
 def parse(lines: list[str]) -> list[tuple[str, str, str]]:
     """Return (day, ip_key, path) for every real-browser hit."""
     out: list[tuple[str, str, str]] = []
@@ -108,20 +81,12 @@ def parse(lines: list[str]) -> list[tuple[str, str, str]]:
             continue
         ts, ip, url = parts[0], parts[1], parts[2]
         ua = parts[3] if len(parts) > 3 else ""
-        if not is_real_browser(ua):
+        hit = real_browser_hit(ua, url, ip)
+        if hit is None:
             continue
-        path = re.sub(r"^https?://[^/]+", "", url) or "/"
-        if EXPLOIT_RX.search(path):
-            continue
-        out.append((ts[:10], normalize_ip(ip), path.split("?")[0]))
+        ip_key, path = hit
+        out.append((ts[:10], ip_key, path))
     return out
-
-
-def is_mnet_prefix(ip_key: str) -> bool:
-    """True if this /64 looks like an m-net customer prefix (2001:a61::/32).
-    m-net rotates the /48 below this — so a single customer can appear under
-    several /64s in the same month."""
-    return ip_key.startswith("2001:a61:")
 
 
 def render(hits: list[tuple[str, str, str]], top_n: int) -> None:
