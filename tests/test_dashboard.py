@@ -8,12 +8,15 @@ from datetime import date
 
 from starlette.requests import Request
 
+from oracle.calibration import Report
 from oracle.dashboard.main import (
+    _binary_rates,
     _fmt_date,
     _historical_chart_payload,
     _public_view,
     _resolve_lang,
     _samples_from_record,
+    _stats_payload,
     _summary_line,
 )
 
@@ -201,3 +204,64 @@ def test_fmt_date_all_styles_both_languages():
 
 def test_fmt_date_accepts_iso_string():
     assert _fmt_date("2026-04-23", "de", "short") == "23.4."
+
+
+# --- statistics panel helpers ----------------------------------------------
+
+def _conf(go_go=0, go_mb=0, go_ng=0, mb_go=0, mb_mb=0, mb_ng=0, ng_go=0, ng_mb=0, ng_ng=0):
+    return {
+        "go": {"go": go_go, "maybe": go_mb, "no_go": go_ng},
+        "maybe": {"go": mb_go, "maybe": mb_mb, "no_go": mb_ng},
+        "no_go": {"go": ng_go, "maybe": ng_mb, "no_go": ng_ng},
+    }
+
+
+def test_binary_rates_known_values():
+    # 16 actual-positive days, 12 forecast-positive among them → sens 0.75;
+    # 4 actual-negative days, 3 forecast no_go among them → spec 0.75.
+    sens, spec = _binary_rates(
+        _conf(go_go=8, go_mb=2, go_ng=1, mb_go=1, mb_mb=1, mb_ng=0, ng_go=2, ng_mb=2, ng_ng=3)
+    )
+    assert sens == 12 / 16
+    assert spec == 3 / 4
+
+
+def test_binary_rates_all_positive_sample_has_no_specificity():
+    sens, spec = _binary_rates(_conf(go_go=5, ng_go=1))
+    assert sens == 5 / 6
+    assert spec is None
+
+
+def test_binary_rates_empty_matrix():
+    sens, spec = _binary_rates(_conf())
+    assert sens is None
+    assert spec is None
+
+
+def test_stats_payload_shapes_matrix_and_rates():
+    report = Report(
+        sample_size=4,
+        days_with_ground_truth=["2026-05-01", "2026-05-02", "2026-05-03", "2026-05-04"],
+        confusion=_conf(go_go=2, mb_mb=1, ng_ng=1),
+        label_mode="duration",
+        resimulated=True,
+        quarantined_days=["2026-05-05"],
+    )
+    p = _stats_payload(report)
+    assert p["n"] == 4
+    assert p["accuracy"] == 1.0
+    assert p["quarantined"] == 1
+    assert p["axis"] == ["go", "maybe", "no_go"]
+    assert [row["forecast"] for row in p["matrix"]] == ["go", "maybe", "no_go"]
+    assert p["matrix"][0]["cells"] == [2, 0, 0]
+    assert p["sensitivity"] == 1.0
+    assert p["specificity"] == 1.0
+
+
+def test_stats_payload_empty_report():
+    report = Report(sample_size=0, days_with_ground_truth=[], confusion=_conf())
+    p = _stats_payload(report)
+    assert p["n"] == 0
+    assert p["accuracy"] is None
+    assert p["sensitivity"] is None
+    assert p["specificity"] is None

@@ -204,6 +204,19 @@
   .advanced-toggle:checked ~ .advanced-panel { display: block; }
   .advanced-note { color: var(--muted); font-size: 12px; margin: 4px 0 12px; }
 
+  .stats-section { margin-top: 8px; }
+  .stats-section .advanced-label { margin-top: 12px; }
+  .stats-header {
+    color: var(--muted); font-size: 11px; letter-spacing: .04em;
+    text-transform: uppercase; margin: 18px 0 4px;
+  }
+  .stats-grid { display: flex; gap: 40px; margin: 8px 0 4px; }
+  .stats-grid dt { color: var(--muted); font-size: 12px; }
+  .stats-grid dd { margin: 2px 0 0; font-size: 22px; font-weight: 600; }
+  .confusion th, .confusion td { text-align: center; }
+  .confusion th:first-child, .confusion td:first-child { text-align: left; }
+  .confusion td.diag { font-weight: 700; color: var(--text); }
+
   table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
   th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { font-weight: 500; color: var(--muted); }
@@ -451,6 +464,63 @@
 </div>
 {% endif %}
 
+{# Statistics panel — independent of today's record, so outside the guard.
+   Wrapped in its own <section>: the `~` sibling combinator that powers the
+   checkbox toggles is scoped per parent, otherwise #advanced would expand
+   this panel too. #}
+<section class="stats-section">
+  <input type="checkbox" id="stats" class="advanced-toggle">
+  <label for="stats" class="advanced-label">{{ t.stats_label }}</label>
+  <div class="advanced-panel">
+    <h3 class="stats-header">{{ t.stats_views_header }}</h3>
+    <dl class="stats-grid">
+      <div><dt>{{ t.stats_unique_visitors }}</dt><dd>{{ views.unique_visitors if views else t.stats_unavailable }}</dd></div>
+      <div><dt>{{ t.stats_total_hits }}</dt><dd>{{ views.total_hits if views else t.stats_unavailable }}</dd></div>
+    </dl>
+    <p class="advanced-note">{{ t.stats_views_note }}</p>
+
+    <h3 class="stats-header">{{ t.stats_forecast_header }}</h3>
+    <dl class="stats-grid">
+      <div><dt>{{ t.stats_sample_size }}</dt><dd>{{ stats.n if stats else t.stats_unavailable }}</dd></div>
+      <div><dt>{{ t.stats_accuracy }}</dt><dd>{% if stats and stats.accuracy is not none %}{{ '%.0f%%'|format(stats.accuracy * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
+    </dl>
+    <p class="advanced-note">{{ t.stats_accuracy_note }}{% if stats and stats.quarantined %} ({{ stats.quarantined }} {{ t.stats_quarantined_note }}.){% endif %}</p>
+
+    {% if stats and stats.n %}
+    <input type="checkbox" id="stats-advanced" class="advanced-toggle">
+    <label for="stats-advanced" class="advanced-label">{{ t.stats_advanced_label }}</label>
+    <div class="advanced-panel">
+      <h3 class="stats-header">{{ t.stats_confusion_header }}</h3>
+      <table class="confusion">
+        <thead>
+          <tr>
+            <th>{{ t.stats_axis_forecast }} ↓&nbsp;&nbsp;{{ t.stats_axis_actual }} →</th>
+            {% for a in stats.axis %}<th class="signal {{ a }}">{{ t['verdict_' ~ a] }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in stats.matrix %}
+          {% set ri = loop.index0 %}
+          <tr>
+            <td class="signal {{ row.forecast }}">{{ t['verdict_' ~ row.forecast] }}</td>
+            {% for c in row.cells %}<td{% if loop.index0 == ri %} class="diag"{% endif %}>{{ c }}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="advanced-note">{{ t.stats_confusion_note }}</p>
+
+      <dl class="stats-grid">
+        <div><dt>{{ t.stats_sensitivity }}</dt><dd>{% if stats.sensitivity is not none %}{{ '%.0f%%'|format(stats.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
+        <div><dt>{{ t.stats_specificity }}</dt><dd>{% if stats.specificity is not none %}{{ '%.0f%%'|format(stats.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
+      </dl>
+      <p class="advanced-note">{{ t.stats_sensitivity_note }}</p>
+      <p class="advanced-note">{{ t.stats_specificity_note }}</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
 <footer>
   {{ t.footer_urfeld }}
   <a href="https://www.addicted-sports.com/webcam/walchensee/urfeld/" target="_blank" rel="noopener">addicted-sports.com</a>.
@@ -486,8 +556,10 @@
           if (newRows[i]) row.innerHTML = newRows[i].innerHTML;
         });
         // Advanced panel: swap inner only — leave the checkbox state alone.
-        const panelOld = document.querySelector('.advanced-panel');
-        const panelNew = doc.querySelector('.advanced-panel');
+        // Scoped to the rules panel (#advanced sibling) — the stats panel
+        // shares the class but is day-independent and must not be swapped.
+        const panelOld = document.querySelector('#advanced ~ .advanced-panel');
+        const panelNew = doc.querySelector('#advanced ~ .advanced-panel');
         if (panelOld && panelNew) panelOld.innerHTML = panelNew.innerHTML;
         // Live/historical panel + wind chart: replace whole nodes so the
         // chart itself swaps to the selected day's curve (and back to live

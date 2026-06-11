@@ -10,10 +10,11 @@ Reads per-day records from the same store the scheduled job writes
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from datetime import time as dtime
 from functools import lru_cache
 from pathlib import Path
@@ -23,11 +24,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from oracle.calibration import Report, compile_report
 from oracle.calibration import actual_verdict_duration as _actual_verdict_duration
 from oracle.calibration import storm_suspected as _storm_suspected
-from oracle.knowledge.rules import Severity, Signal
+from oracle.knowledge.rules import SIGNAL_ORDER, Severity, Signal
 from oracle.logger import RunStore, default_store
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
+from oracle.traffic import real_browser_hit
 
 
 @lru_cache(maxsize=1)
@@ -181,6 +184,26 @@ _UI: dict[str, dict[str, str]] = {
         "col_rule": "Regel",
         "col_signal": "Signal",
         "col_reason": "Begründung",
+        "stats_label": "Statistik",
+        "stats_views_header": "Besucher",
+        "stats_unique_visitors": "Echte Besucher (30 Tage)",
+        "stats_total_hits": "Seitenaufrufe (30 Tage)",
+        "stats_views_note": "Bots und Scanner herausgefiltert; IPv6-Adressen pro Haushalt (/64) zusammengefasst.",
+        "stats_forecast_header": "Vorhersage-Qualität (ganze Saison)",
+        "stats_sample_size": "Bewertete Tage",
+        "stats_accuracy": "Treffergenauigkeit",
+        "stats_accuracy_note": "Anteil der Tage, an denen die Vorhersage genau die richtige Kategorie (Session / marginal / kein Wind) getroffen hat.",
+        "stats_quarantined_note": "Gewittertage aus der Wertung ausgenommen",
+        "stats_advanced_label": "Erweiterte Statistik",
+        "stats_confusion_header": "Konfusionsmatrix",
+        "stats_confusion_note": "Zeilen = was vorhergesagt wurde, Spalten = was tatsächlich am See passiert ist. Auf der Diagonalen liegen die Treffer.",
+        "stats_axis_forecast": "Vorhersage",
+        "stats_axis_actual": "Tatsächlich",
+        "stats_sensitivity": "Sensitivität",
+        "stats_sensitivity_note": "Anteil der echten Wind-Tage (≥ 1 h ≥ 8 kt), an denen das Orakel nicht FLAUTE gesagt hat — wie viele gute Tage wir erwischen.",
+        "stats_specificity": "Spezifität",
+        "stats_specificity_note": "Anteil der Flaute-Tage, die korrekt als FLAUTE vorhergesagt wurden — wie selten wir umsonst an den See schicken.",
+        "stats_unavailable": "—",
         "footer_outline": "Schwellwerte noch Schätzungen auf Basis von Gardasee-Analogien — Kalibrierung läuft.",
         "footer_urfeld": "Urfeld-Wind: © Panoramahotel Karwendelblick, via",
         "footer_dwd": "DWD-Synoptik via",
@@ -228,6 +251,26 @@ _UI: dict[str, dict[str, str]] = {
         "col_rule": "Rule",
         "col_signal": "Signal",
         "col_reason": "Reason",
+        "stats_label": "Statistics",
+        "stats_views_header": "Visitors",
+        "stats_unique_visitors": "Real visitors (30 days)",
+        "stats_total_hits": "Page views (30 days)",
+        "stats_views_note": "Bots and scanners filtered out; IPv6 addresses grouped per household (/64).",
+        "stats_forecast_header": "Forecast quality (whole season)",
+        "stats_sample_size": "Days scored",
+        "stats_accuracy": "Accuracy",
+        "stats_accuracy_note": "Share of days where the forecast hit exactly the right bucket (session / marginal / no wind).",
+        "stats_quarantined_note": "thunderstorm days excluded from scoring",
+        "stats_advanced_label": "Advanced statistics",
+        "stats_confusion_header": "Confusion matrix",
+        "stats_confusion_note": "Rows = what was forecast, columns = what actually happened at the lake. The diagonal holds the hits.",
+        "stats_axis_forecast": "Forecast",
+        "stats_axis_actual": "Actual",
+        "stats_sensitivity": "Sensitivity",
+        "stats_sensitivity_note": "Share of real wind days (≥ 1 h ≥ 8 kt) where the oracle did not say NO GO — how many good days we catch.",
+        "stats_specificity": "Specificity",
+        "stats_specificity_note": "Share of calm days correctly forecast as NO GO — how rarely we send you to the lake for nothing.",
+        "stats_unavailable": "—",
         "footer_outline": "Thresholds still guesses from Lake Garda analogues — calibration in progress.",
         "footer_urfeld": "Urfeld wind: © Panoramahotel Karwendelblick, via",
         "footer_dwd": "DWD synoptic via",
@@ -421,6 +464,127 @@ async def _fetch_urfeld_live() -> dict:
     }
     _urfeld_live_at = now
     return _urfeld_live
+
+
+# Page-views cache — 12 h TTL. One Cloud Logging walk costs a few seconds and
+# the number only needs to be roughly current; failures (e.g. local dev
+# without ADC, missing logging.viewer) cache None for the full TTL so a
+# creds-less box doesn't retry on every request.
+_VIEWS_TTL_S = 12 * 3600.0
+_views: dict | None = None
+_views_at: float = 0.0
+
+
+def _fetch_page_views_sync() -> dict:
+    """Count real-browser traffic over the last 30 days from Cloud Run logs.
+
+    Same classification as scripts/dashboard_traffic.py (shared via
+    oracle.traffic). Capped at 20k log entries — beyond that the count
+    silently undercounts, which is acceptable for a vanity metric.
+    On Cloud Run no configuration is needed: the project comes from ADC and
+    `K_SERVICE` is set by the platform; LOG_PROJECT/LOG_SERVICE are dev
+    overrides in the spirit of RUNS_BUCKET.
+    """
+    from google.cloud import logging as gcp_logging  # lazy: [dashboard] extra
+
+    client = gcp_logging.Client(project=os.environ.get("LOG_PROJECT") or None)
+    service = os.environ.get("LOG_SERVICE") or os.environ.get("K_SERVICE") or "walchi-oracle-dash"
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    flt = (
+        f'resource.type="cloud_run_revision" AND '
+        f'resource.labels.service_name="{service}" AND '
+        f'httpRequest.requestMethod="GET" AND httpRequest.status<400 AND '
+        f'timestamp>="{cutoff}"'
+    )
+    ips: set[str] = set()
+    hits = 0
+    for entry in client.list_entries(filter_=flt, page_size=1000, max_results=20000):
+        req = entry.http_request or {}
+        hit = real_browser_hit(
+            req.get("userAgent") or "", req.get("requestUrl") or "", req.get("remoteIp") or ""
+        )
+        if hit is not None:
+            hits += 1
+            ips.add(hit[0])
+    return {"unique_visitors": len(ips), "total_hits": hits}
+
+
+async def _fetch_page_views() -> dict | None:
+    global _views, _views_at
+    now = time.time()
+    if _views_at and now - _views_at < _VIEWS_TTL_S:
+        return _views
+    try:
+        _views = await asyncio.to_thread(_fetch_page_views_sync)
+    except Exception:  # no ADC locally, missing IAM, API hiccup — show "—"
+        _views = None
+    _views_at = now
+    return _views
+
+
+# Forecast-quality stats cache — 1 h TTL. compile_report walks every stored
+# day via store.read() (bypassing the per-day request cache), so it must not
+# run on the request hot path more than once per TTL. Stale-on-error: a
+# failed refresh keeps the last good payload for another TTL.
+_STATS_TTL_S = 3600.0
+_stats: dict | None = None
+_stats_at: float = 0.0
+
+
+def _binary_rates(confusion: dict[str, dict[str, int]]) -> tuple[float | None, float | None]:
+    """Sensitivity/specificity under a binary collapse of the 3×3 matrix.
+
+    Positive = the day actually fired (actual go|maybe, i.e. ≥ 1 h above
+    8 kt); forecast-positive = forecast go|maybe. None when the denominator
+    class is empty (template renders "—").
+    """
+    pos = (Signal.GO.value, Signal.MAYBE.value)
+    neg = Signal.NO_GO.value
+    tp = sum(confusion[f][a] for f in pos for a in pos)
+    fn = sum(confusion[neg][a] for a in pos)
+    tn = confusion[neg][neg]
+    fp = sum(confusion[f][neg] for f in pos)
+    sens = tp / (tp + fn) if tp + fn else None
+    spec = tn / (tn + fp) if tn + fp else None
+    return sens, spec
+
+
+def _stats_payload(report: Report) -> dict:
+    """Project a calibration Report into a template-ready dict."""
+    sens, spec = _binary_rates(report.confusion)
+    matrix = [
+        {
+            "forecast": f.value,
+            "cells": [report.confusion[f.value][a.value] for a in SIGNAL_ORDER],
+        }
+        for f in SIGNAL_ORDER
+    ]
+    return {
+        "n": report.sample_size,
+        "accuracy": report.overall_accuracy if report.sample_size else None,
+        "quarantined": len(report.quarantined_days),
+        "matrix": matrix,
+        "axis": [s.value for s in SIGNAL_ORDER],
+        "sensitivity": sens,
+        "specificity": spec,
+    }
+
+
+async def _forecast_stats() -> dict | None:
+    global _stats, _stats_at
+    now = time.time()
+    if _stats_at and now - _stats_at < _STATS_TTL_S:
+        return _stats
+    try:
+        report = await asyncio.to_thread(
+            compile_report, _store(), label="duration", resimulated=True
+        )
+    except Exception:  # store hiccup — keep last good payload one more TTL
+        _stats_at = now
+        return _stats
+    _stats = _stats_payload(report)
+    _stats_at = now
+    return _stats
 
 
 # Tooltip format per language. Kept compact so the browser's native tooltip
@@ -787,7 +951,9 @@ async def index(request: Request) -> Response:
     history_isos = [(today - timedelta(days=i)).isoformat() for i in range(30)]
     fallback_isos = [(today - timedelta(days=i)).isoformat() for i in range(8)]
     all_isos = horizon_isos + history_isos + fallback_isos + [selected_day.isoformat()]
-    _, live = await asyncio.gather(_prefetch_days(all_isos), _fetch_urfeld_live())
+    _, live, views, stats = await asyncio.gather(
+        _prefetch_days(all_isos), _fetch_urfeld_live(), _fetch_page_views(), _forecast_stats()
+    )
 
     # Fall back to the most-recent-available record only when today's isn't yet
     # written (early in the morning before the scheduled job has run).
@@ -835,6 +1001,8 @@ async def index(request: Request) -> Response:
             "rule_descriptions": tooltips,
             "rule_labels": rule_labels,
             "live": live,
+            "views": views,
+            "stats": stats,
             "historical": historical,
             "is_today": is_today,
             "t": _UI[lang],
