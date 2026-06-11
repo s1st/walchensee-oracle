@@ -510,6 +510,7 @@
       </table>
       <p class="advanced-note">{{ t.stats_confusion_note }}</p>
 
+      <p class="advanced-note">{{ t.stats_binary_note }}</p>
       <dl class="stats-grid">
         <div><dt>{{ t.stats_sensitivity }}</dt><dd>{% if stats.sensitivity is not none %}{{ '%.0f%%'|format(stats.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
         <div><dt>{{ t.stats_specificity }}</dt><dd>{% if stats.specificity is not none %}{{ '%.0f%%'|format(stats.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
