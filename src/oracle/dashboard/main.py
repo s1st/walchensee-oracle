@@ -270,18 +270,30 @@ def _fmt_date(d: date | str, lang: str, style: str) -> str:
     return d.isoformat()
 
 
-def _horizon_days(today: date, lang: str, selected_iso: str) -> list[dict]:
-    """Return today + next 2 days with label, verdict (if logged), selection flag."""
+def _horizon_days(
+    today: date, lang: str, selected_iso: str, view: str = "resimulated"
+) -> list[dict]:
+    """Return today + next 2 days with label, verdict (if logged), selection flag.
+
+    `view` mirrors the main panel's verdict-layer toggle so the tab dots can't
+    contradict the headline after a rescore shifts `overall_resimulated`.
+    """
     labels = _HORIZON_LABELS.get(lang, _HORIZON_LABELS["en"])
     out: list[dict] = []
     for i, label in enumerate(labels):
         d = today + timedelta(days=i)
         record = _cached_read(d.isoformat())
+        if record is None:
+            verdict = None
+        elif view == "original":
+            verdict = record.get("overall")
+        else:
+            verdict = record.get("overall_resimulated") or record.get("overall")
         out.append({
             "iso": d.isoformat(),
             "label": label,
             "short_date": _fmt_date(d, lang, "short"),
-            "verdict": record.get("overall") if record else None,
+            "verdict": verdict,
             "selected": d.isoformat() == selected_iso,
             "storm": _storm_suspected(record) if record else False,
         })
@@ -802,7 +814,7 @@ async def index(request: Request) -> Response:
     summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
     tooltips = _TOOLTIPS_BY_LANG[lang]
     rule_labels = _LABELS_BY_LANG[lang]
-    horizon = _horizon_days(today, lang, selected_day.isoformat())
+    horizon = _horizon_days(today, lang, selected_day.isoformat(), view)
     is_today = selected_day == today
     historical = None if is_today else _historical_chart_payload(raw)
 
