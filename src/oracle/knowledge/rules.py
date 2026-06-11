@@ -164,15 +164,10 @@ def boundary_layer_height(meteo: MeteoSnapshot) -> Verdict:
 
 
 def post_rain_moisture(meteo: MeteoSnapshot) -> Verdict:
+    # Soil moisture only — rained_yesterday was dropped as a veto (n=17,
+    # 13 FP: post-frontal days at Walchensee fire fine once the sun is out;
+    # genuinely washed-out days are caught by soil/cloud/solar instead).
     sm = meteo.soil_moisture_m3m3
-    if meteo.rained_yesterday:
-        mm = meteo.yesterday_precipitation_mm
-        return Verdict(
-            "post_rain_moisture", Signal.NO_GO,
-            reason_en=f"{mm:.1f} mm rain yesterday — solar energy lost to evaporation",
-            reason_de=f"gestern {mm:.1f} mm Regen — Sonnenenergie geht in Verdunstung",
-            severity=Severity.SOFT,
-        )
     if sm > config.WET_SOIL_MOISTURE_M3M3:
         return Verdict(
             "post_rain_moisture", Signal.NO_GO,

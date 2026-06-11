@@ -84,7 +84,10 @@ COMFORTABLE_DEW_POINT_SPREAD_C = 8.0  # above this = confidently dry air
 MIN_BOUNDARY_LAYER_HEIGHT_M = 600.0   # max BLH in morning; below = capped thermal
 GOOD_BOUNDARY_LAYER_HEIGHT_M = 1000.0 # above this = deep mixing, strong thermal potential
 WET_SOIL_MOISTURE_M3M3 = 0.35    # soil_moisture_0_to_1cm above this = ground still wet
-RAINED_YESTERDAY_MM = 2.0        # threshold for treating target-1 as a wet day
+RAINED_YESTERDAY_MM = 2.0        # threshold for the logged `rained_yesterday` flag.
+                                 # No longer drives a veto: n=17 calibration days
+                                 # showed 13 FP — post-frontal days fire fine here.
+                                 # Kept for the log schema / ML export.
 MAX_LIFTED_INDEX = 10.0          # above = atmosphere too stable, thermal capped.
                                  # Was 6.0; raised after n=22 calibration showed full
                                  # sessions at li_max up to 8.9 (and rideable up to 12.3).

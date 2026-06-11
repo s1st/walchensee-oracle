@@ -134,10 +134,11 @@ def test_boundary_layer_capped_no_go():
     assert boundary_layer_height(_meteo(blh=400.0)).signal is Signal.NO_GO
 
 
-def test_post_rain_yesterday_blocks():
-    v = post_rain_moisture(_meteo(rained_yesterday=True, yesterday_mm=5.2))
-    assert v.signal is Signal.NO_GO
-    assert "5.2" in v.reason
+def test_post_rain_yesterday_alone_does_not_block():
+    # rained_yesterday was dropped as a veto (13/17 FP on calibration data);
+    # only wet soil blocks now.
+    v = post_rain_moisture(_meteo(rained_yesterday=True, yesterday_mm=5.2, soil=0.18))
+    assert v.signal is Signal.GO
 
 
 def test_post_rain_wet_soil_blocks():
@@ -253,7 +254,6 @@ def test_boundary_layer_no_go_is_soft():
 
 
 def test_post_rain_no_go_is_soft():
-    assert post_rain_moisture(_meteo(rained_yesterday=True, yesterday_mm=5.0)).severity is Severity.SOFT
     assert post_rain_moisture(_meteo(soil=0.40)).severity is Severity.SOFT
 
 
@@ -308,7 +308,7 @@ def test_every_rule_emits_non_empty_reasons_on_all_branches():
         _meteo(),  # broadly favourable → GO / MAYBE branches
         _meteo(  # everything vetoes → exercises every NO_GO branch
             cloud=97, solar=400, synoptic=20, dew_spread=2.0, blh=400.0,
-            rained_yesterday=True, yesterday_mm=5.0, max_li=11.0, min_li=-3.0,
+            soil=0.40, max_li=11.0, min_li=-3.0,
             daytime_low_cloud=80, wind_850_dir=180, wind_700=30,
         ),
     ]
