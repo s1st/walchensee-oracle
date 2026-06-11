@@ -243,13 +243,14 @@ def daytime_clouds(meteo: MeteoSnapshot) -> Verdict:
 
 def upper_level_wind(meteo: MeteoSnapshot) -> Verdict:
     direction = meteo.wind_850_direction_at_peak_deg
+    speed_850 = meteo.synoptic_wind_knots
     crossflow = meteo.max_wind_700_knots
     lo, hi = config.SYNOPTIC_OPPOSING_DEG
-    if lo <= direction <= hi:
+    if lo <= direction <= hi and speed_850 >= config.SYNOPTIC_OPPOSING_MIN_KNOTS:
         return Verdict(
             "upper_level_wind", Signal.NO_GO,
-            reason_en=f"850 hPa from {direction:.0f}° (SSE) — counters the N-thermal",
-            reason_de=f"850 hPa aus {direction:.0f}° (SSE) — Gegenströmung zur N-Thermik",
+            reason_en=f"850 hPa {speed_850:.0f} kt from {direction:.0f}° (SSE) — counters the N-thermal",
+            reason_de=f"850 hPa {speed_850:.0f} kt aus {direction:.0f}° (SSE) — Gegenströmung zur N-Thermik",
             severity=Severity.HARD,
         )
     if crossflow > config.MAX_UPPER_CROSSFLOW_KNOTS:

@@ -96,6 +96,10 @@ MIN_LIFTED_INDEX = -2.0          # below = thunderstorm risk, thermal destroyed
 MAX_DAYTIME_LOW_CLOUD_PCT = 60.0 # max cloud_cover_low 09:00–13:00; above = slopes shaded
 GOOD_DAYTIME_LOW_CLOUD_PCT = 30.0 # below this = unobstructed sun
 SYNOPTIC_OPPOSING_DEG = (150, 210)  # 850 hPa wind from SSE counters the N→S thermal
+SYNOPTIC_OPPOSING_MIN_KNOTS = 12.0  # SSE direction only vetoes at meaningful 850 speed.
+                                    # n=4 calibration days: light SSE drift (2.8–10.3 kt)
+                                    # never stopped a session (peaks 10.8–14.0 kt); the
+                                    # direction-only veto was 0/4 with no correct catch.
 MAX_UPPER_CROSSFLOW_KNOTS = 25.0    # 700 hPa above this decouples valley-wind system
 
 # Classic Urfeld ignition window 10:30–11:30; propagation done by ~15:00.

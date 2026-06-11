@@ -185,9 +185,15 @@ def test_daytime_clouds_mixed_maybe():
 
 
 def test_upper_level_wind_opposing_direction_no_go():
-    v = upper_level_wind(_meteo(wind_850_dir=180))  # pure S
+    v = upper_level_wind(_meteo(wind_850_dir=180, synoptic=15))  # pure S, real speed
     assert v.signal is Signal.NO_GO
     assert "SSE" in v.reason or "180" in v.reason
+
+
+def test_upper_level_wind_light_sse_drift_not_vetoed():
+    # SSE direction alone isn't opposition: n=4 calibration days with 850 hPa
+    # SSE drift at 2.8-10.3 kt all fired. The veto needs meaningful speed.
+    assert upper_level_wind(_meteo(wind_850_dir=180, synoptic=5)).signal is Signal.GO
 
 
 def test_upper_level_wind_crossflow_too_strong_no_go():
@@ -272,7 +278,7 @@ def test_daytime_clouds_no_go_is_soft():
 
 
 def test_upper_level_wind_opposing_is_hard():
-    assert upper_level_wind(_meteo(wind_850_dir=180)).severity is Severity.HARD
+    assert upper_level_wind(_meteo(wind_850_dir=180, synoptic=15)).severity is Severity.HARD
 
 
 def test_upper_level_wind_crossflow_is_hard():
