@@ -46,6 +46,7 @@ The shift in *what counts as a session*.
 - Actual row switched to the **duration label (Session ≥ 1 h)** (`49313ba`)
 - **Session GO bar lowered avg 12 → 11 kt** — stop labelling genuine 11-kt-with-gusts Walchi sessions as MAYBE; fitted on n=34 backfilled days, 6 days flipped MAYBE→GO with no NO_GO disturbed (`f6b5cb9`)
 - Horizon tab dots follow the same verdict layer as the headline, so a rescore can't leave them contradicting each other (`6e476e2`)
+- **Public statistics panel** — collapsible section at the page bottom: real-visitor count from Cloud Run logs (shared `oracle.traffic` bot filters, `3f5fff7`) plus whole-season forecast quality; nested "Advanced statistics" with confusion matrix, sensitivity and specificity incl. plain-language explanations (`394e599`)
 
 ## The throughline
 
