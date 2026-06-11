@@ -213,6 +213,11 @@
   .stats-grid { display: flex; gap: 40px; margin: 8px 0 4px; }
   .stats-grid dt { color: var(--muted); font-size: 12px; }
   .stats-grid dd { margin: 2px 0 0; font-size: 22px; font-weight: 600; }
+  .stats-grid-cols { align-items: flex-start; }
+  .stats-grid-cols > div { flex: 1; max-width: 360px; }
+  .stats-grid dd.note {
+    color: var(--muted); font-size: 12px; font-weight: 400; margin-top: 6px;
+  }
   .confusion th, .confusion td { text-align: center; }
   .confusion th:first-child, .confusion td:first-child { text-align: left; }
   .confusion td.diag { font-weight: 700; color: var(--text); }
@@ -511,12 +516,18 @@
       <p class="advanced-note">{{ t.stats_confusion_note }}</p>
 
       <p class="advanced-note">{{ t.stats_binary_note }}</p>
-      <dl class="stats-grid">
-        <div><dt>{{ t.stats_sensitivity }}</dt><dd>{% if stats.sensitivity is not none %}{{ '%.0f%%'|format(stats.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
-        <div><dt>{{ t.stats_specificity }}</dt><dd>{% if stats.specificity is not none %}{{ '%.0f%%'|format(stats.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
+      <dl class="stats-grid stats-grid-cols">
+        <div>
+          <dt>{{ t.stats_sensitivity }}</dt>
+          <dd>{% if stats.sensitivity is not none %}{{ '%.0f%%'|format(stats.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+          <dd class="note">{{ t.stats_sensitivity_note }}</dd>
+        </div>
+        <div>
+          <dt>{{ t.stats_specificity }}</dt>
+          <dd>{% if stats.specificity is not none %}{{ '%.0f%%'|format(stats.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+          <dd class="note">{{ t.stats_specificity_note }}</dd>
+        </div>
       </dl>
-      <p class="advanced-note">{{ t.stats_sensitivity_note }}</p>
-      <p class="advanced-note">{{ t.stats_specificity_note }}</p>
     </div>
     {% endif %}
   </div>
