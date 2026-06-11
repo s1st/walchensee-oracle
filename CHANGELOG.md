@@ -28,6 +28,7 @@ One threshold per commit, so each effect is isolated in the rescore strip.
 - atmospheric_stability cap-arm lifted-index → 10 (`19b6c06`)
 - dew_point_spread veto → 2.5 °C (`f5013c1`)
 - **post_rain_moisture: rained-yesterday veto dropped** (`0405c85`) — wrong on 13 of 17 calibration days; post-frontal days fire fine here. Soil-moisture branch (2/2 correct) kept. Resimulated accuracy 50% → 52%, two full sessions un-stuck from MAYBE
+- **SSE opposing-flow veto gated on 850 hPa speed ≥ 12 kt** (`941c326`) — direction-only veto was 0/4: light SSE drift (3–10 kt) never stopped a session. Accuracy 52% → 57%, NO_GO row shrunk 9 → 5 days
 
 ## Measuring the outcome
 
