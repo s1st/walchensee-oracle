@@ -92,8 +92,8 @@ def overnight_cooling(meteo: MeteoSnapshot) -> Verdict:
     if pct <= config.MAX_OVERNIGHT_CLOUD_COVER_PCT:
         return Verdict(
             "overnight_cooling", Signal.GO,
-            reason_en=f"clear night: {pct:.0f}% cloud cover",
-            reason_de=f"klare Nacht: {pct:.0f}% Bewölkung",
+            reason_en=f"{pct:.0f}% overnight cloud cover — cooling sufficient",
+            reason_de=f"nachts {pct:.0f}% Bewölkung — Abkühlung ausreichend",
         )
     return Verdict(
         "overnight_cooling", Signal.NO_GO,
