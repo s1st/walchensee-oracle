@@ -68,7 +68,29 @@ MIN_THERMIK_DELTA_HPA = -1.0  # Munich − Innsbruck. Below this the synoptic fl
                               # delta is a *background* condition for Walchi, not a trigger —
                               # local slope-vs-lake T-gradient is the real driver.
 FOEHN_TRIGGER_DELTA_HPA = 4.0    # Bolzano − Innsbruck positive ≥ this => Föhn risk
-SYNOPTIC_OVERRIDE_KNOTS = 15.0   # ≥ 3 Bft base wind deforms the thermal cell
+SYNOPTIC_OVERRIDE_KNOTS = 25.0   # ≥ 3 Bft base wind deforms the thermal cell
+                                 # Was 15.0 (research-analogue guess); refitted from
+                                 # n=648 ICON-era replay sample (2026-06-12, branch
+                                 # threshold-tuning, plan Phase 3, third tune).
+                                 # Only 648 of 3,331 days have a non-null
+                                 # synoptic_wind_knots (the pre-2021 IFS-HRES
+                                 # archive doesn't expose 850 hPa wind). The
+                                 # rule fires on 4 days at 15 kt — all 4 are
+                                 # fired-anyway (FP), so the rule is
+                                 # net-negative at 15. The data-fitted peak
+                                 # is at 0 kt (rule always fires, net +22) but
+                                 # that's the OPPOSITE of the rule's intent
+                                 # (it was meant to be a safety net for
+                                 # extreme synoptic days). 25 kt is the clean
+                                 # read: only 1 day in the ICON-era sample has
+                                 # synoptic >= 25, so the rule is essentially
+                                 # a safety net rather than a regular veto.
+                                 # The HARD severity stays — when it does
+                                 # fire, it's because the synoptic flow is
+                                 # strong enough to genuinely override a
+                                 # thermal. (Severity is a separate axis; the
+                                 # plan's "HARD→SOFT" hint could be a future
+                                 # commit if the safety net is over-vetoing.)
 IGNITION_WIND_KNOTS = 8.0        # shore reading that signals ignition
 MAX_OVERNIGHT_CLOUD_COVER_PCT = 95.0  # 22:00→06:00 average; above this, weak inversion.
                                       # Was 30.0; raised after n=22 calibration — sessions

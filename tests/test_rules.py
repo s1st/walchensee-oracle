@@ -107,7 +107,8 @@ def test_solar_radiation_dim_morning_no_go():
 
 
 def test_synoptic_override_kills_thermal():
-    assert synoptic_override(_meteo(synoptic=20)).signal is Signal.NO_GO
+    # 30 kt is well above the data-fitted 25 kt threshold.
+    assert synoptic_override(_meteo(synoptic=30)).signal is Signal.NO_GO
 
 
 def test_synoptic_override_calm_go():
@@ -290,7 +291,7 @@ def test_upper_level_wind_crossflow_is_hard():
 
 
 def test_synoptic_override_is_hard():
-    assert synoptic_override(_meteo(synoptic=20)).severity is Severity.HARD
+    assert synoptic_override(_meteo(synoptic=30)).severity is Severity.HARD
 
 
 def test_go_verdicts_have_no_severity():
