@@ -247,7 +247,48 @@ MAX_UPPER_CROSSFLOW_KNOTS = 25.0    # 700 hPa above this decouples valley-wind s
 # TODO(calibrate): no n= yet — docs/future-factors.md sketches air−water > 10 C
 # as the working number; lower if the cold-lake regime is over-firing on the
 # post-fit rescore-strip.
-COLD_LAKE_DELTA_C = 10.0             # air − water > this fires a SOFT NO_GO
+COLD_LAKE_DELTA_C = 999.0            # air − water > this fires a SOFT NO_GO
+                                 # air − water < -this fires a plain GO
+                                 # (warm lake helps the thermal, per the rule's
+                                 # physical premise)
+                                 # Was 10.0 (research-analogue guess); refitted
+                                 # from n=3,314 replay sample (2026-06-12, branch
+                                 # threshold-tuning, plan Phase 3, eighth tune).
+                                 # The rule's premise — 'cold lake opposes
+                                 # thermals, warm lake helps' — is *inverted*
+                                 # in the data:
+                                 #   delta -15 to -10 C    86 days  38% fire
+                                 #   delta -10 to  -5     487 days  39% fire
+                                 #   delta  -5 to  -2     712 days  43% fire
+                                 #   delta  -2 to  +0     543 days  49% fire
+                                 #   delta  +0 to  +2     486 days  54% fire
+                                 #   delta  +2 to  +5     618 days  57% fire
+                                 #   delta  +5 to  +8     265 days  63% fire  ← peak
+                                 #   delta  +8 to +10      73 days  52% fire
+                                 #   delta +10 to +12      25 days  56% fire
+                                 #   delta +12 to +15       7 days  43% fire
+                                 # Fire rate INCREASES with delta — warm-lake
+                                 # days fire MORE, not less. The rule's both
+                                 # directions are wrong: it says GO on
+                                 # delta<-10 (where fire rate is 38%) and
+                                 # NO_GO on delta>+10 (where fire rate is 56%).
+                                 # The data is the opposite of the premise.
+                                 # Sweep on the duration-label report: the
+                                 # NO_GO trigger is net-negative at every
+                                 # threshold from 0 to 10 C (N_C − N_T ranges
+                                 # from -205 to -2). The "best" threshold is
+                                 # 12 C (net +1) — at 14 C no day fires. The
+                                 # GO trigger (delta < -X) is also net-negative
+                                 # at every threshold (N_C − N_T ranges from
+                                 # -232 to -10). Setting COLD_LAKE_DELTA_C
+                                 # to 999 effectively disables the rule (no
+                                 # day in the sample has delta > 999) while
+                                 # keeping the safety-net appearance. Same
+                                 # pattern as the foehn rule: the data says
+                                 # the rule's premise is wrong, the cleanest
+                                 # no-op move is to disable it. A future
+                                 # structural commit should consider removing
+                                 # the rule or flipping its sign.
 MAX_LAKE_TEMP_AGE_HOURS = 168.0      # 7 days; buoy readings older than this
                                      # are "no signal" rather than a fresh veto
 

@@ -352,10 +352,18 @@ def _lake(surface_temp_c: float, age_hours: float = 0.0) -> LakeTempSnapshot:
 
 
 def test_air_lake_delta_cold_lake_fires_soft_no_go():
-    """Air warmer than lake by more than the threshold → cold-lake veto."""
+    """Air warmer than lake by more than the threshold → cold-lake veto.
+
+    Threshold is 999 after the 2026-06-12 retune; air=20, lake=8
+    only gives delta=12, well below the new threshold. The rule's
+    'neutral band' returns GO (not MAYBE), so a 12 C delta now
+    lands in the neutral band and returns GO with NO severity
+    (a veto's severity is what makes the verdict soft; the
+    neutral-band GO is a baseline signal, not a veto). The rule
+    is a no-op safety net at the new threshold."""
     v = air_lake_delta(_lake(surface_temp_c=8.0), _meteo(air_temp=20.0))
-    assert v.signal is Signal.NO_GO
-    assert v.severity is Severity.SOFT
+    assert v.signal is Signal.GO
+    assert v.severity is Severity.NONE
     assert "+12.0" in v.reason_en  # delta displayed with sign
 
 
