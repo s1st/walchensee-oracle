@@ -590,8 +590,18 @@ async def _forecast_stats() -> dict | None:
     if _stats_at and now - _stats_at < _STATS_TTL_S:
         return _stats
     try:
+        # Since 2026-06-12 the bucket also holds ~3,600 historical buoy
+        # stub records (2016-2026) without forecast verdicts. The default
+        # `compile_report` walk reads every file from GCS to score it;
+        # on a 3,700-file bucket that's a multi-minute hang per refresh.
+        # Restrict to the project's own days — historicals contribute no
+        # forecasts to score and the user-facing stats panel is about the
+        # project's verdict accuracy.
+        from datetime import date as _date
         report = await asyncio.to_thread(
-            compile_report, _store(), label="duration", resimulated=True
+            compile_report, _store(),
+            since=_date(2026, 4, 22),
+            label="duration", resimulated=True,
         )
     except Exception:  # store hiccup — keep last good payload one more TTL
         _stats_at = now
