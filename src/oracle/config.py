@@ -102,6 +102,14 @@ SYNOPTIC_OPPOSING_MIN_KNOTS = 12.0  # SSE direction only vetoes at meaningful 85
                                     # direction-only veto was 0/4 with no correct catch.
 MAX_UPPER_CROSSFLOW_KNOTS = 25.0    # 700 hPa above this decouples valley-wind system
 
+# Lake-temperature rule (air_lake_delta) thresholds.
+# TODO(calibrate): no n= yet — docs/future-factors.md sketches air−water > 10 C
+# as the working number; lower if the cold-lake regime is over-firing on the
+# post-fit rescore-strip.
+COLD_LAKE_DELTA_C = 10.0             # air − water > this fires a SOFT NO_GO
+MAX_LAKE_TEMP_AGE_HOURS = 168.0      # 7 days; buoy readings older than this
+                                     # are "no signal" rather than a fresh veto
+
 # Classic Urfeld ignition window 10:30–11:30; propagation done by ~15:00.
 IGNITION_WINDOW_LOCAL: tuple[time, time] = (time(10, 30), time(15, 0))
 

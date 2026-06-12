@@ -187,6 +187,51 @@ not exposed.
 Config defines these as shore stations but no fetcher is wired yet. Both are
 needed to track the N-to-S ignition propagation pattern.
 
+## Air–lake temperature delta
+
+Lake Walchensee is 192 m deep — surface temperature lags air temperature by
+weeks. In spring, the lake sits 6–10 °C below the warming air, creating a
+cold-surface dome that opposes the incoming N-thermal flow (a mini
+lake-breeze). In late summer the lake warms to 17–22 °C, the gap closes,
+and the lake is neutral-to-helpful. The new `air_lake_delta` rule captures
+this regime.
+
+The rule pairs the most recent buoy water temperature (Addicted-Sports
+Urfeld, same JSON as the wind scrape — `wtemp` field) with the Open-Meteo
+forecast mean of 09:00–13:00 2 m air temperature. Lake temperature changes
+~1 °C/day, so today's reading is a sound proxy for tomorrow's — the rule
+does not need a separate lake-temp forecast source.
+
+- **Sign convention:** `air − water` is positive when the lake is colder
+  than the air. Above the threshold it's a SOFT NO_GO; below the
+  *negated* threshold (warm lake) it's plain GO; in between is GO with a
+  neutral reason. Warm lakes help, not oppose — the sign matters.
+- **Threshold:** `air − water > 10 °C`. Un-fitted — this is the
+  `docs/future-factors.md` sketch value, flagged `TODO(calibrate)` in
+  `config.py`. Per project discipline, retune only after collecting the
+  ≥10-day offender list from `oracle calibrate`. The threshold is
+  probably season-dependent too (10 °C is a spring number; summer deltas
+  are smaller because the air is closer to the lake's surface temp
+  anyway) — a candidate for the seasonal-threshold-calibration work in
+  `docs/future-factors.md`.
+- **Stations:** Addicted-Sports Urfeld buoy (47.59 N, 11.34 E) for
+  water; Open-Meteo grid cell at the same coordinates for forecast air.
+- **Missing data:** if the buoy is down or the latest usable row
+  didn't carry `wtemp`, the rule returns MAYBE rather than guessing.
+  Same for buoy readings older than 7 days (configurable via
+  `config.MAX_LAKE_TEMP_AGE_HOURS`). The air-temp field is None for
+  records written before the rule shipped — same MAYBE treatment.
+- **Severity:** SOFT. A single cold-lake day won't flip the overall
+  forecast on its own — the aggregator needs ≥2 SOFT vetos to
+  downgrade to MAYBE, so air_lake_delta has to converge with another
+  rule (low BLH, low solar, etc.) to matter. Consistent with the
+  project's "spring cold dome attenuates but doesn't destroy the
+  thermal" framing.
+
+A catalog of other buoy-fed signals still queued (local rain gauge,
+time-series katabatic detection, etc.) lives in
+[`docs/future-buoy-signals.md`](future-buoy-signals.md).
+
 ## Community data: windinfo.eu chat (removed)
 
 The Wind-Wetter-Chat on windinfo.eu was previously scraped as a fourth pillar,
@@ -215,3 +260,4 @@ false-positive-veto tracking.
 | Dew-point spread | >= 2.5 °C | Medium | Fitted from n=22; was 5.0, false-vetoed sessions at spread 2.8–3.1 |
 | Morning solar radiation | >= 600 W/m² | Low | Must vary with season |
 | Atmospheric stability (LI) | <= 10 | Medium | Fitted from n=22; was 6, false-vetoed sessions at LI up to 8.9 |
+| Air–lake delta (cold-lake veto) | air − water > 10 °C | Low | Docs sketch value; un-fitted — needs the ≥10-day offender list from `oracle calibrate` |

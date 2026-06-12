@@ -49,20 +49,22 @@ hour blows from 150–210° (SSE, counters the N-thermal) OR if 700 hPa max wind
 exceeds 25 kt (crossflow decouples the valley-wind system). Complements the
 existing `synoptic_override` which only looks at 850 hPa speed.
 
+### Lake surface temperature (air-lake delta) ✅
+
+`wtemp` from the same Addicted-Sports Urfeld buoy scrape that already feeds
+`thermal_ignition`. No new HTTP, no new CSRF dance — the field was being
+discarded on JSON parse. The new `air_lake_delta` rule uses the most recent
+buoy reading (lake temp changes ~1 °C/day, so today's reading is a sound
+proxy for tomorrow's) and the Open-Meteo forecast air temperature to compute
+the delta. Cold-lake regime (air warmer than lake by a meaningful margin)
+fires a SOFT veto in spring; warm-lake regime is neutral to helpful. See
+`docs/thermal-model.md` for the physical reasoning.
+
+The full list of buoy-fed signals still queued after this (local rain gauge,
+time-series katabatic detection, etc.) lives in
+[`docs/future-buoy-signals.md`](future-buoy-signals.md).
+
 ## 🔜 Still open
-
-### Lake surface temperature
-
-Walchensee is 192 m deep; surface temperature lags air temperature
-significantly. In spring the lake is 6-10 C while air reaches 15-20 C,
-creating a cold-surface dome that opposes the incoming thermal flow (a mini
-lake breeze). In late summer (17-22 C surface) this opposition diminishes.
-
-- **Data:** Bavarian Water Authority or wassertemperatur.org (external scrape);
-  or a seasonal lookup table (Jan ~4 C, Apr ~7 C, Jun ~14 C, Aug ~20 C)
-- **Rule sketch:** air-lake delta > 10 C = penalize ignition timing;
-  delta < 5 C = no opposition
-- **Effort:** Medium — new data source required.
 
 ### Snow cover on surrounding peaks
 

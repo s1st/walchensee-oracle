@@ -295,6 +295,9 @@
         {{ '%.1f'|format(live.latest_avg_kt) }}<span class="unit"> kt {{ t.live_now }}</span>
       </div>
       <div class="live-gust">{{ t.live_gust_label }} {{ '%.1f'|format(live.latest_gust_kt) }} kt</div>
+      {% if live.latest_water_temp_c is not none %}
+      <div class="live-gust">{{ t.live_water_label }} {{ '%.1f'|format(live.latest_water_temp_c) }} °C</div>
+      {% endif %}
       <div class="live-avg">
         <span class="value">⌀ {{ '%.1f'|format(live.last_hour_avg) }} kt</span>
         <span>{{ t.live_last_hour }}</span>

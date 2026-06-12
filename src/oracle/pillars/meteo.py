@@ -45,6 +45,10 @@ class MeteoSnapshot:
     max_daytime_low_cloud_pct: float    # 09:00–13:00; low clouds shade slopes
     wind_850_direction_at_peak_deg: float  # direction at the morning 850 hPa speed peak
     max_wind_700_knots: float           # 09:00–13:00; 700 hPa crossflow aloft
+    # Mean of 09:00–13:00 2 m air temperatures — paired with the buoy's water
+    # temperature for the air_lake_delta rule. `None` for records written before
+    # this field shipped; the rule treats that as "no signal" (MAYBE).
+    morning_air_temp_c: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -63,6 +67,11 @@ class MeteoSnapshot:
             "max_daytime_low_cloud_pct": self.max_daytime_low_cloud_pct,
             "wind_850_direction_at_peak_deg": self.wind_850_direction_at_peak_deg,
             "max_wind_700_knots": self.max_wind_700_knots,
+            "morning_air_temp_c": (
+                round(self.morning_air_temp_c, 2)
+                if self.morning_air_temp_c is not None
+                else None
+            ),
         }
 
     @classmethod
@@ -83,6 +92,11 @@ class MeteoSnapshot:
             max_daytime_low_cloud_pct=float(m["max_daytime_low_cloud_pct"]),
             wind_850_direction_at_peak_deg=float(m["wind_850_direction_at_peak_deg"]),
             max_wind_700_knots=float(m["max_wind_700_knots"]),
+            morning_air_temp_c=(
+                float(m["morning_air_temp_c"])
+                if m.get("morning_air_temp_c") is not None
+                else None
+            ),
         )
 
 
@@ -203,6 +217,7 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
 
     spreads = [t - d for t, d in zip(morning_temp, morning_dew)]
     yesterday_mm = sum(yesterday_rain)
+    mean_morning_air_temp = sum(morning_temp) / len(morning_temp) if morning_temp else None
 
     return MeteoSnapshot(
         day=target,
@@ -220,6 +235,7 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
         max_daytime_low_cloud_pct=max(morning_low_clouds),
         wind_850_direction_at_peak_deg=wind_850_dir,
         max_wind_700_knots=max(morning_wind_700),
+        morning_air_temp_c=mean_morning_air_temp,
     )
 
 
