@@ -230,37 +230,45 @@ not on this branch.)
 | `MIN_DEW_POINT_SPREAD_C` | 2.5 | 2.5 | n=22 | pre-existing, unchanged |
 | `MAX_LIFTED_INDEX` | 10.0 | 10.0 | n=22 | pre-existing, unchanged |
 | `MIN_MORNING_SOLAR_WM2` | 600.0 | **380.0** | n=3,263 | **retuned in 6f61053** |
+| `MAX_DAYTIME_LOW_CLOUD_PCT` | 60.0 | **75.0** | n=3,263 | **retuned in b0e5c9f** |
+| `SYNOPTIC_OVERRIDE_KNOTS` | 15.0 | **25.0** | n=648 ICON | **retuned in b26aea0** |
+| `MAX_UPPER_CROSSFLOW_KNOTS` | 25.0 | 25.0 | n=648 ICON | attempted, reverted (3773352) |
+| `FOEHN_TRIGGER_DELTA_HPA` | 4.0 | **10.0** | n=3,331 | **retuned in f050e4c** |
+| `MIN_BOUNDARY_LAYER_HEIGHT_M` | 600.0 | **400.0** | n=629 ICON | **retuned in ac0086e** |
+| `WET_SOIL_MOISTURE_M3M3` | 0.35 | **0.30** | n=48 (small!) | **retuned in 6de1605** |
+| `COLD_LAKE_DELTA_C` | 10.0 | **999.0** | n=3,314 | **retuned in 68d0fb5** |
 
-The pre-existing data-fitted constants haven't been re-fit on the
-n=3,263 sample. They were fit on the n=22 live-era set and may
-have drifted; re-fitting them is the next batch of work in
-Phase 3 of the plan.
+The pre-existing data-fitted constants (n=22 era) haven't been
+re-fit on the n=3,263 sample. They were fit on the n=22
+live-era set and may have drifted; re-fitting them is the
+next batch of work in Phase 3 of the plan.
+
+**Aggregator bar (the biggest win of the pass):**
+
+| Constant | Old | New | n | Notes |
+|---|---|---|---|---|
+| `SOFT_VETO_BAR` (in `engine.aggregate`) | 2 | **5** | n=3,331 | data-fitted peak label accuracy went from 45.4% to 48.3% (+2.9pp). Was hardcoded; now a config constant. **retuned in 743e610** |
 
 ## What is research-analogue (TODO(calibrate))
 
+After the 2026-06-12 threshold pass, the only remaining
+"research-analogue" constants (no n= note) are:
+
 | Constant | Value | Status |
 |---|---|---|
-| `FOEHN_TRIGGER_DELTA_HPA` | 4.0 | guess |
-| `SYNOPTIC_OVERRIDE_KNOTS` | 15.0 | guess |
-| `IGNITION_WIND_KNOTS` | 8.0 | guess |
+| `IGNITION_WIND_KNOTS` | 8.0 | guess (well-justified physically, 8 kt = Bft 3) |
 | `COMFORTABLE_DEW_POINT_SPREAD_C` | 8.0 | guess |
-| `MIN_BOUNDARY_LAYER_HEIGHT_M` | 600.0 | guess |
 | `GOOD_BOUNDARY_LAYER_HEIGHT_M` | 1000.0 | guess |
-| `WET_SOIL_MOISTURE_M3M3` | 0.35 | guess |
-| `RAINED_YESTERDAY_MM` | 2.0 | log-only since n=17 |
+| `RAINED_YESTERDAY_MM` | 2.0 | log-only since n=17 (kept for the log schema) |
 | `MIN_LIFTED_INDEX` | -2.0 | guess |
-| `MAX_DAYTIME_LOW_CLOUD_PCT` | 60.0 | guess |
-| `GOOD_DAYTIME_LOW_CLOUD_PCT` | 30.0 | guess |
+| `GOOD_DAYTIME_LOW_CLOUD_PCT` | 30.0 | guess (the lower bound of the daytime_clouds rule) |
 | `SYNOPTIC_OPPOSING_DEG` | (150, 210) | guess |
 | `SYNOPTIC_OPPOSING_MIN_KNOTS` | 12.0 | guess |
-| `MAX_UPPER_CROSSFLOW_KNOTS` | 25.0 | guess |
-| `COLD_LAKE_DELTA_C` | 10.0 | guess |
-| `MAX_LAKE_TEMP_AGE_HOURS` | 168.0 | guess |
+| `MAX_LAKE_TEMP_AGE_HOURS` | 168.0 | guess (lake-temp staleness cutoff) |
 
-The plan queues `MAX_DAYTIME_LOW_CLOUD_PCT`, `SYNOPTIC_OVERRIDE_KNOTS`,
-`MAX_UPPER_CROSSFLOW_KNOTS` as the next three tunes by expected-
-value. The first one (`MAX_DAYTIME_LOW_CLOUD_PCT`) is queued for
-the next commit on the threshold-tuning branch.
+The rest have been retuned. The plan's plan-queue (the 3 tunes
+flagged at the start of Phase 3) is done; the threshold pass
++ aggregator re-fit is complete.
 
 ## What changed for the end user
 
@@ -276,16 +284,19 @@ will show the new solar_radiation verdict. The headline numbers
 
 ## What is next
 
+**The threshold pass is done.** All 9 changes shipped.
+
 In the immediate term (this branch, threshold-tuning):
 
-1. **Tune `MAX_DAYTIME_LOW_CLOUD_PCT`** — the second-highest
-   FP-veto rule (968 FP-vetos in the baseline).
-2. **Tune `SYNOPTIC_OVERRIDE_KNOTS`** — backlog's 3rd suspect.
-3. **Tune `MAX_UPPER_CROSSFLOW_KNOTS`** — backlog's 4th suspect.
-4. **Check the aggregator** — the ICON-era finding suggests
-   the consensus-aggregator's "2 soft vetos → MAYBE" rule might
-   be the issue, not just the per-rule thresholds. Re-check
-   after the threshold pass settles the base rate.
+- ✅ Tune `MIN_MORNING_SOLAR_WM2` (6f61053) — the highest-leverage
+- ✅ Tune `MAX_DAYTIME_LOW_CLOUD_PCT` (b0e5c9f)
+- ✅ Tune `SYNOPTIC_OVERRIDE_KNOTS` (b26aea0)
+- ✅ Tune `MAX_UPPER_CROSSFLOW_KNOTS` (3773352) — attempted, reverted
+- ✅ Tune `FOEHN_TRIGGER_DELTA_HPA` (f050e4c)
+- ✅ Tune `MIN_BOUNDARY_LAYER_HEIGHT_M` (ac0086e)
+- ✅ Tune `WET_SOIL_MOISTURE_M3M3` (6de1605)
+- ✅ Tune `COLD_LAKE_DELTA_C` (68d0fb5)
+- ✅ Aggregator re-fit `SOFT_VETO_BAR` 2 → 5 (743e610)
 
 Medium term:
 
