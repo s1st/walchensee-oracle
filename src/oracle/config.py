@@ -165,7 +165,30 @@ MIN_BOUNDARY_LAYER_HEIGHT_M = 400.0   # max BLH in morning; below = capped therm
                                  # 400 keeps the intent: catch clearly-shallow
                                  # mornings as a thermal cap.
 GOOD_BOUNDARY_LAYER_HEIGHT_M = 1000.0 # above this = deep mixing, strong thermal potential
-WET_SOIL_MOISTURE_M3M3 = 0.35    # soil_moisture_0_to_1cm above this = ground still wet
+WET_SOIL_MOISTURE_M3M3 = 0.30    # soil_moisture_0_to_1cm above this = ground still wet
+                                 # Was 0.35 (research-analogue guess); refitted
+                                 # from n=48 ICON-era replay sample (2026-06-12,
+                                 # branch threshold-tuning, plan Phase 3, seventh
+                                 # tune). SMALL SAMPLE CAVEAT: only 48 ICON-era
+                                 # days have non-null soil_moisture_m3m3, all from
+                                 # 2022-11-24 onward (the DWD ICON launch window).
+                                 # The Open-Meteo archive response for this
+                                 # variable is inconsistent across years; the
+                                 # data we have is ~5-6 weeks of late-2022 soil
+                                 # moisture. Use this tune with caution.
+                                 # Sweep on the duration-label report: N_C − N_T
+                                 # peaks at +28 around X=0.10-0.25 (the rule
+                                 # fires on every day with non-null soil moisture
+                                 # in the sample), plateauing through X=0.30
+                                 # (+27, fires on 43 of 48 days). At the current
+                                 # 0.35 the rule never fires (the maximum
+                                 # observed value is 0.339) — it's a no-op.
+                                 # Fire rate by soil moisture bucket:
+                                 #   0.20-0.30 m³/m³    4 days    50% fire
+                                 #   0.30-0.40 m³/m³   44 days    18% fire
+                                 # The 0.30 threshold catches the "wet band" only
+                                 # and avoids the borderline 0.20-0.30 days
+                                 # where the fire rate is 50% (no signal).
 RAINED_YESTERDAY_MM = 2.0        # threshold for the logged `rained_yesterday` flag.
                                  # No longer drives a veto: n=17 calibration days
                                  # showed 13 FP — post-frontal days fire fine here.

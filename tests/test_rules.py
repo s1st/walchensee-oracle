@@ -150,7 +150,8 @@ def test_post_rain_yesterday_alone_does_not_block():
 
 
 def test_post_rain_wet_soil_blocks():
-    assert post_rain_moisture(_meteo(soil=0.40)).signal is Signal.NO_GO
+    # 0.35 is above the data-fitted 0.30 m³/m³ threshold.
+    assert post_rain_moisture(_meteo(soil=0.35)).signal is Signal.NO_GO
 
 
 def test_post_rain_dry_ground_go():
@@ -268,7 +269,7 @@ def test_boundary_layer_no_go_is_soft():
 
 
 def test_post_rain_no_go_is_soft():
-    assert post_rain_moisture(_meteo(soil=0.40)).severity is Severity.SOFT
+    assert post_rain_moisture(_meteo(soil=0.35)).severity is Severity.SOFT
 
 
 def test_atmospheric_stability_capped_is_soft():
