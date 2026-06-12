@@ -183,7 +183,10 @@ def test_format_text_report_handles_empty(tmp_path: Path):
 
 def _full_inputs(*, day: str, thermik_delta: float = 5.0, foehn_delta: float = 0.0,
                  li_max: float = 3.0, li_min: float = 1.0,
-                 overnight_cloud_pct: float = 10.0) -> dict:
+                 overnight_cloud_pct: float = 10.0,
+                 daytime_low_cloud_pct: float = 20.0,
+                 dew_spread: float = 8.0,
+                 soil: float = 0.20) -> dict:
     """Synthesise an inputs block matching what logger writes."""
     return {
         "pressure": {
@@ -199,15 +202,15 @@ def _full_inputs(*, day: str, thermik_delta: float = 5.0, foehn_delta: float = 0
             "overnight_cloud_cover_pct": overnight_cloud_pct,
             "morning_solar_radiation_wm2": 800.0,
             "synoptic_wind_knots": 5.0,
-            "min_dew_point_spread_c": 10.0,
+            "min_dew_point_spread_c": dew_spread,
             "max_boundary_layer_height_m": 1500.0,
-            "soil_moisture_m3m3": 0.20,
+            "soil_moisture_m3m3": soil,
             "rained_yesterday": False,
             "yesterday_precipitation_mm": 0.0,
             "max_lifted_index": li_max,
             "min_lifted_index": li_min,
             "max_cape_j_kg": 0.0,
-            "max_daytime_low_cloud_pct": 20.0,
+            "max_daytime_low_cloud_pct": daytime_low_cloud_pct,
             "wind_850_direction_at_peak_deg": 30.0,
             "max_wind_700_knots": 10.0,
         },
@@ -232,13 +235,22 @@ def test_rescore_record_skips_incomplete_inputs():
     assert rescore_record(record) is None
 
 
-def test_rescore_record_two_soft_vetos_yields_maybe():
-    # Two soft vetos (LI too stable + overnight cloud > threshold) downgrade to
-    # maybe under the consensus aggregator. A single soft veto on its own would
-    # still produce GO — the aggregator only downgrades when negative signals
-    # converge.
+def test_rescore_record_five_soft_vetos_yields_maybe():
+    # Five soft vetos downgrade to maybe under the consensus aggregator
+    # (2026-06-12 SOFT_VETO_BAR=5, was 2). The record has LI too stable
+    # + overnight cloud > threshold + daytime cloud + dew-point spread
+    # + soil moisture — five soft vetos. A single soft veto on its
+    # own would still produce GO; the aggregator only downgrades when
+    # negative signals converge at the 5-veto threshold.
     record = {
-        "inputs": _full_inputs(day="2026-04-22", li_max=11.0, overnight_cloud_pct=97.0),
+        "inputs": _full_inputs(
+            day="2026-04-22",
+            li_max=11.0,
+            overnight_cloud_pct=97.0,
+            daytime_low_cloud_pct=80.0,
+            dew_spread=2.0,
+            soil=0.40,
+        ),
     }
     result = rescore_record(record)
     assert result is not None
@@ -252,7 +264,14 @@ def test_rescore_all_writes_resimulated_field(tmp_path: Path):
         "day": "2026-04-22",
         "overall": "no_go",  # what old aggregator said
         "verdicts": [],
-        "inputs": _full_inputs(day="2026-04-22", li_max=11.0, overnight_cloud_pct=97.0),
+        "inputs": _full_inputs(
+            day="2026-04-22",
+            li_max=11.0,
+            overnight_cloud_pct=97.0,
+            daytime_low_cloud_pct=80.0,
+            dew_spread=2.0,
+            soil=0.40,
+        ),
         "ground_truth": {"machine": None, "human": None},
     })
 

@@ -11,6 +11,7 @@ import httpx
 from oracle.config import (
     OPEN_METEO_ARCHIVE_URL,
     OPEN_METEO_HISTORICAL_FORECAST_URL,
+    SOFT_VETO_BAR,
     StationRole,
 )
 from oracle.knowledge import rules
@@ -195,13 +196,38 @@ def _project_buoy_day_curve(samples: list[UrfeldSample]) -> tuple[list[WindReadi
 def aggregate(verdicts: list[Verdict]) -> Signal:
     """Consensus aggregation, severity-aware.
 
-    Only HARD vetos (Föhn, ≥15 kt synoptic, opposing/decoupling upper-level
-    flow, thunderstorm-risk LI) flip the overall to NO_GO. A *single* SOFT
-    veto on its own does not downgrade — one soft rule firing shouldn't
-    override the consensus of nine others. Two or more SOFT
-    vetos do downgrade to MAYBE: that's where the negative signals start
-    converging into something real. MAYBE emissions from individual rules are
-    advisory only and don't trigger a downgrade by themselves.
+    Only HARD vetos (Föhn, synoptic > 25 kt, opposing/decoupling
+    upper-level flow, thunderstorm-risk LI) flip the overall to
+    NO_GO. A *single* SOFT veto on its own does not downgrade.
+
+    The 2-soft-veto bar (the rule-of-thumb in the project's
+    pre-replay history) was wrong on the n=3,331 replay
+    baseline. The replay data shows the rules' soft vetos are
+    too noisy individually: the per-rule FP-veto rates are
+    30-70% in many cases, so a "2 of N soft vetos say NO_GO"
+    threshold catches mostly noise. The data-fitted optimum
+    is 5-soft-veto, which catches only the cases where the
+    noise has converged to real consensus. Hard-error rate
+    (NO_GO predicted for an actually-fired day) is unchanged
+    at 2.9% across all bars; the bar only affects the
+    SOFT-veto downgrade path. Sensitivity table (peak
+    label, n=3,263, post-threshold-tune):
+      bar=1:  41.3%  (2957 MAYBE days)
+      bar=2:  45.4%  (1952 MAYBE)  ← was the project default
+      bar=3:  47.2%  (1248)
+      bar=4:  47.8%  (656)
+      bar=5:  48.3%  (167)        ← new default
+      bar=7+: 47.2%  (no aggregator effect — baseline)
+
+    Per the data, raising the bar from 2 to 5 gives +2.9pp
+    on the headline with no change in hard-error rate. Past
+    bar=5, accuracy plateaus / declines as the aggregator
+    stops triggering for most days. The 'no aggregator
+    effect' baseline (bar=7+) is 47.2% — the aggregator's
+    job is to find the sweet spot, which is 5.
+
+    MAYBE emissions from individual rules remain advisory
+    only and don't trigger the downgrade.
     """
     if any(
         v.signal is Signal.NO_GO and v.severity is Severity.HARD for v in verdicts
@@ -211,6 +237,6 @@ def aggregate(verdicts: list[Verdict]) -> Signal:
         1 for v in verdicts
         if v.signal is Signal.NO_GO and v.severity is Severity.SOFT
     )
-    if soft_no_gos >= 2:
+    if soft_no_gos >= SOFT_VETO_BAR:
         return Signal.MAYBE
     return Signal.GO

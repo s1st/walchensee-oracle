@@ -292,6 +292,16 @@ COLD_LAKE_DELTA_C = 999.0            # air − water > this fires a SOFT NO_GO
 MAX_LAKE_TEMP_AGE_HOURS = 168.0      # 7 days; buoy readings older than this
                                      # are "no signal" rather than a fresh veto
 
+# Aggregator: how many SOFT vetos are needed to downgrade a
+# GO verdict to MAYBE. The 2-soft-veto bar (the project's
+# pre-replay default) was wrong on the n=3,331 replay baseline.
+# Per-rule FP-veto rates are 30-70% in many cases, so a 2-of-N
+# consensus catches mostly noise. Data-fitted optimum is
+# SOFT_VETO_BAR=5 (see docs/findings/aggregator-bar.md for the
+# sensitivity table). Raising from 2 to 5 gives +2.9pp on
+# the headline accuracy with no change in hard-error rate.
+SOFT_VETO_BAR = 5                 # SOFT vetos required to downgrade → MAYBE
+
 # Classic Urfeld ignition window 10:30–11:30; propagation done by ~15:00.
 IGNITION_WINDOW_LOCAL: tuple[time, time] = (time(10, 30), time(15, 0))
 

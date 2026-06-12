@@ -42,15 +42,32 @@ def test_single_soft_veto_does_not_downgrade():
     assert aggregate(verdicts) is Signal.GO
 
 
-def test_two_soft_vetos_downgrade_to_maybe():
-    # Two converging negative signals = real concern, downgrade.
-    verdicts = [_v(Signal.GO)] * 7 + [_v(Signal.NO_GO, Severity.SOFT)] * 2
+def test_two_soft_vetos_stay_go():
+    # Two soft vetos are below the 2026-06-12 SOFT_VETO_BAR=5
+    # threshold. The 2-soft-veto bar (the project's pre-replay
+    # default) was wrong on the n=3,331 replay baseline; the data-
+    # fitted optimum is at 5. Two soft vetos leave the verdict at
+    # GO; five or more downgrade to MAYBE. See
+    # docs/findings/aggregator-bar.md.
+    verdicts = [_v(Signal.GO)] * 11 + [_v(Signal.NO_GO, Severity.SOFT)] * 2
+    assert aggregate(verdicts) is Signal.GO
+
+
+def test_five_soft_vetos_downgrade_to_maybe():
+    # Five converging negative signals = real concern, downgrade.
+    verdicts = [_v(Signal.GO)] * 8 + [_v(Signal.NO_GO, Severity.SOFT)] * 5
     assert aggregate(verdicts) is Signal.MAYBE
+
+
+def test_four_soft_vetos_still_go():
+    # Four soft vetos are below the 5-veto threshold.
+    verdicts = [_v(Signal.GO)] * 9 + [_v(Signal.NO_GO, Severity.SOFT)] * 4
+    assert aggregate(verdicts) is Signal.GO
 
 
 def test_many_soft_vetos_still_only_maybe():
     # Soft alone never reaches NO_GO regardless of count.
-    verdicts = [_v(Signal.NO_GO, Severity.SOFT)] * 5
+    verdicts = [_v(Signal.NO_GO, Severity.SOFT)] * 8
     assert aggregate(verdicts) is Signal.MAYBE
 
 
