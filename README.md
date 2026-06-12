@@ -42,25 +42,17 @@ domain via Cloudflare DNS). Shows:
   forecasts every morning.
 - **Verdict card** with a single-line summary (top blocking reason for
   NO_GO, counter of green rules for GO).
-- **Community sentiment badge** derived per-day from chat messages that
-  explicitly reference that day (`heute` / `morgen` / `übermorgen` / weekday
-  names in German).
 - **30-day strip** split into two rows — the oracle's forecast verdict on
   top, the actual Urfeld peak wind below, same colour scale so forecast
   misses jump out visually.
-- **Advanced panel** (checkbox-toggled) with the full rule table, `?`
-  tooltips explaining each rule, and anonymised chat excerpts.
+- **Advanced panel** (checkbox-toggled) with the full rule table and `?`
+  tooltips explaining each rule.
 - **DE / EN language toggle** in the top right corner, with auto-detection
   via `Accept-Language`.
-
-**Privacy note on chat:** the raw log captured by the scheduled job contains
-windinfo.eu usernames (used privately for calibration analysis of who tends
-to call conditions correctly). The public dashboard strips all author fields
-and redacts `@handle` mentions from message bodies so no windinfo identities
-surface on the open web. External polling is twice daily (08:00 and 21:00
-CET) to stay comfortably below any reasonable rate limit. windinfo.eu
-operators can reach out via the contact on the repository's Issues tab or
-via my Impressum if they'd prefer the polling stopped.
+- Footer link to the windinfo.eu Wind-Wetter-Chat (login required there) for
+  visitors who want community context. The dashboard does not scrape, store,
+  or republish that chat — a previous version that did was removed for DSGVO
+  + § 87b UrhG (Datenbankschutz) reasons. Do not reintroduce.
 
 ## Documentation
 
