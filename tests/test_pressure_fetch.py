@@ -5,7 +5,7 @@ Uses httpx.MockTransport so we don't hit the network. Verifies:
   - the three stations are batched into a single call
   - the response is parsed into a PressureSnapshot with correct deltas
   - replay mode (target_day set) swaps `current` for `hourly` and picks
-    the 09:00 UTC reading of the target day
+    the 08:00 Europe/Berlin reading of the target day (the live job hour)
 """
 from __future__ import annotations
 
@@ -51,9 +51,10 @@ async def test_fetch_snapshot_parses_open_meteo_response():
 
 
 @pytest.mark.asyncio
-async def test_fetch_snapshot_replay_mode_uses_hourly_and_picks_09_utc():
+async def test_fetch_snapshot_replay_mode_uses_hourly_and_picks_08_local():
     """Replay mode (target_day set) must use `hourly=pressure_msl` with a
-    date range, target the archive host, and pick the 09:00 UTC reading."""
+    date range, target the archive host, and pick the 08:00 Europe/Berlin
+    reading — the hour the live 08:00 CET job samples `current` pressure."""
     replay_day = date(2021, 6, 15)
     captured: dict[str, httpx.Request] = {}
 
@@ -61,21 +62,21 @@ async def test_fetch_snapshot_replay_mode_uses_hourly_and_picks_09_utc():
         captured["req"] = request
         # Three locations, each with an hourly timeseries for 2021-06-15.
         return httpx.Response(200, json=[
-            {  # Munich: pick 1018.4 at 09:00 UTC
+            {  # Munich: pick 1018.4 at 08:00 local
                 "hourly": {
-                    "time": ["2021-06-15T00:00", "2021-06-15T09:00", "2021-06-15T18:00"],
+                    "time": ["2021-06-15T00:00", "2021-06-15T08:00", "2021-06-15T18:00"],
                     "pressure_msl": [1019.0, 1018.4, 1017.2],
                 },
             },
-            {  # Innsbruck: pick 1016.0 at 09:00 UTC
+            {  # Innsbruck: pick 1016.0 at 08:00 local
                 "hourly": {
-                    "time": ["2021-06-15T00:00", "2021-06-15T09:00", "2021-06-15T18:00"],
+                    "time": ["2021-06-15T00:00", "2021-06-15T08:00", "2021-06-15T18:00"],
                     "pressure_msl": [1016.5, 1016.0, 1014.8],
                 },
             },
-            {  # Bolzano: pick 1020.5 at 09:00 UTC
+            {  # Bolzano: pick 1020.5 at 08:00 local
                 "hourly": {
-                    "time": ["2021-06-15T00:00", "2021-06-15T09:00", "2021-06-15T18:00"],
+                    "time": ["2021-06-15T00:00", "2021-06-15T08:00", "2021-06-15T18:00"],
                     "pressure_msl": [1021.0, 1020.5, 1019.3],
                 },
             },
@@ -91,14 +92,15 @@ async def test_fetch_snapshot_replay_mode_uses_hourly_and_picks_09_utc():
     assert str(req.url).startswith(OPEN_METEO_HISTORICAL_FORECAST_URL)
     assert "current" not in req.url.params  # replay uses hourly, not current
     assert req.url.params["hourly"] == "pressure_msl"
+    assert req.url.params["timezone"] == "Europe/Berlin"
     assert req.url.params["start_date"] == "2021-06-15"
     assert req.url.params["end_date"] == "2021-06-15"
 
-    # The 09:00 UTC reading of each station is what we picked.
+    # The 08:00 local reading of each station is what we picked.
     assert snapshot.thermik_north.hpa == pytest.approx(1018.4)
     assert snapshot.thermik_south.hpa == pytest.approx(1016.0)
     assert snapshot.foehn_south.hpa == pytest.approx(1020.5)
-    assert snapshot.thermik_north.measured_at.hour == 9
+    assert snapshot.thermik_north.measured_at.hour == 8
     assert snapshot.thermik_delta_hpa == pytest.approx(2.4)
     assert snapshot.foehn_delta_hpa == pytest.approx(4.5)
 
@@ -111,7 +113,7 @@ async def test_fetch_snapshot_replay_mode_raises_if_target_hour_missing():
     replay_day = date(2021, 6, 15)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        # Server returns a timeseries for a different day — the 09:00 UTC
+        # Server returns a timeseries for a different day — the 08:00
         # reading of the target day isn't in there.
         return httpx.Response(200, json=[
             {"hourly": {"time": ["2020-07-01T09:00"], "pressure_msl": [1019.0]}},

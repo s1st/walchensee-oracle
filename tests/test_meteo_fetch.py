@@ -155,3 +155,31 @@ async def test_fetch_snapshot_host_param_routes_to_archive():
     # Date range is the same shape as the live call.
     assert captured["req"].url.params["start_date"] == "2021-06-14"
     assert captured["req"].url.params["end_date"] == "2021-06-15"
+
+
+def test_from_dict_round_trips_null_optional_fields():
+    """A replay of a pre-2021 day stores null for every pressure-level /
+    soil / BLH field — `from_dict` must round-trip those as None, not
+    crash on float(None). Regression: synoptic_wind_knots was the one
+    nullable field missing the guard."""
+    from oracle.pillars.meteo import MeteoSnapshot
+
+    snapshot = MeteoSnapshot(
+        day=date(2017, 6, 15),
+        overnight_cloud_cover_pct=20.0,
+        morning_solar_radiation_wm2=750.0,
+        synoptic_wind_knots=None,
+        min_dew_point_spread_c=9.0,
+        max_boundary_layer_height_m=None,
+        soil_moisture_m3m3=None,
+        rained_yesterday=False,
+        yesterday_precipitation_mm=0.0,
+        max_lifted_index=None,
+        min_lifted_index=None,
+        max_cape_j_kg=None,
+        max_daytime_low_cloud_pct=25.0,
+        wind_850_direction_at_peak_deg=None,
+        max_wind_700_knots=None,
+        morning_air_temp_c=None,
+    )
+    assert MeteoSnapshot.from_dict(snapshot.to_dict()) == snapshot

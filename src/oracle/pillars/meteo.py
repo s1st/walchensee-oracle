@@ -83,7 +83,10 @@ class MeteoSnapshot:
             day=date.fromisoformat(m["day"]),
             overnight_cloud_cover_pct=float(m["overnight_cloud_cover_pct"]),
             morning_solar_radiation_wm2=float(m["morning_solar_radiation_wm2"]),
-            synoptic_wind_knots=float(m["synoptic_wind_knots"]),
+            synoptic_wind_knots=(
+                float(m["synoptic_wind_knots"])
+                if m.get("synoptic_wind_knots") is not None else None
+            ),
             min_dew_point_spread_c=float(m["min_dew_point_spread_c"]),
             max_boundary_layer_height_m=(
                 float(m["max_boundary_layer_height_m"])

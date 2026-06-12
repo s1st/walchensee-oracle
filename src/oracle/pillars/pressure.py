@@ -79,8 +79,9 @@ async def fetch_snapshot(
 
     Live mode (default): hits the live forecast host with `current=pressure_msl`.
     Replay mode (`target_day` set): uses hourly timeseries for the target day
-    and picks the 09:00 UTC reading — same morning window the meteo pillar
-    uses, so the two pillars stay aligned in a replay run.
+    and picks the 08:00 Europe/Berlin reading — the hour the production
+    `oracle-forecast` job samples `current` pressure (08:00 CET schedule),
+    so replayed deltas stay comparable to the data-fitted thresholds.
     """
     if target_day is None:
         return await _fetch_live(client, host or OPEN_METEO_URL)
@@ -120,11 +121,11 @@ async def _fetch_replay(
     """Replay-mode pressure fetch: hourly timeseries for the target day,
     morning reading. Works against both the historical-forecast and
     archive hosts — query schema is identical to the live one."""
-    # We need the 09:00 UTC reading of the target day, with one UTC day
-    # of headroom in case the model run boundaries straddle midnight.
-    start = target_day
-    end = target_day
-    target_hour = datetime.combine(target_day, time(9, 0))
+    # Pick the hour the live job samples: 08:00 local (Europe/Berlin), the
+    # `oracle-forecast` Cloud Run schedule. The thermik/Föhn deltas evolve
+    # over the morning, and MIN_THERMIK_DELTA_HPA was fitted against 08:00
+    # samples — a different replay hour would make the deltas incomparable.
+    target_hour = datetime.combine(target_day, time(8, 0))
 
     async with client_scope(client) as client:
         response = await client.get(
@@ -133,9 +134,9 @@ async def _fetch_replay(
                 "latitude": ",".join(f"{s.lat}" for s in _STATIONS),
                 "longitude": ",".join(f"{s.lon}" for s in _STATIONS),
                 "hourly": "pressure_msl",
-                "timezone": "UTC",
-                "start_date": start.isoformat(),
-                "end_date": end.isoformat(),
+                "timezone": "Europe/Berlin",
+                "start_date": target_day.isoformat(),
+                "end_date": target_day.isoformat(),
             },
         )
         response.raise_for_status()

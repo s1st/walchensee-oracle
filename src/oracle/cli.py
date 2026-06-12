@@ -11,9 +11,8 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from oracle.engine import Forecast, run_forecast
+from oracle.engine import Forecast, run_forecast, run_replay
 from oracle.logger import backfill_run, forecast_to_dict, load_run, write_run
-from oracle.engine import run_replay
 
 load_dotenv()
 
