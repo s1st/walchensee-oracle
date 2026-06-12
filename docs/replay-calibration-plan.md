@@ -11,44 +11,67 @@ Background: `docs/historical_forecasts.md` (data coverage per era),
 
 ## Phase 0 — merge + local mirror
 
-- [ ] Merge `replay-calibration` into `main` (PR or fast-forward).
-- [ ] Mirror the bucket locally so the iterate loop doesn't pay GCS
-      latency on every pass (~7,000 reads otherwise):
-      `gcloud storage cp -r gs://walchi-oracle-prod-runs/runs data/`
-      then run everything **without** `RUNS_BUCKET`. Replays written
-      locally can be synced back to the bucket at the end
-      (`gcloud storage cp -r data/runs/replay gs://walchi-oracle-prod-runs/runs/`)
-      — or kept local-only; nothing in prod reads them.
+- [x] Merged `replay-calibration` into `main` as `a7516f9` (no-ff
+      merge commit, the branch's narrative is worth keeping).
+- [x] Mirrored the bucket locally: 3,699 files (99 MB) in `data/runs/`
+      via `gcloud storage cp -r gs://walchi-oracle-prod-runs/runs
+      data/`, took 24s. Saved the pre-existing 41 local files to
+      `data/runs.localbackup/` (irrelevant now that the mirror is
+      authoritative).
+- [x] Ran everything without `RUNS_BUCKET`; replays wrote to
+      `data/runs/replay/` (3,331 records). Did not sync back to GCS
+      — nothing in prod reads them per the plan.
 
 ## Phase 1 — the one-time batch replay (~15 min, ~20 archive requests)
 
-- [ ] `oracle replay --from 2017-01-01 --to 2026-06-11`
-      (2016 has no forecast archive — IFS HRES starts 2017-01-01; skip
-      or revisit with `--source reanalysis` later, see Phase 4.)
-- [ ] Review the skipped list: archive holes are expected, but a whole
+- [x] `oracle replay --from 2017-01-01 --to 2026-06-12` (2026-06-12 is
+      today's backfilled stub; the plan said 06-11, included the
+      backfill day)
+- [x] Review the skipped list: archive holes are expected, but a whole
       skipped *year* means something structural (request error, model
       gap) worth checking before trusting the sample.
-- [ ] Sanity-check coverage: `oracle calibrate --replayed --label duration`
-      should report n in the low thousands. Record n in this file.
+      **Finding:** the default "Best Match" model path is the slow one
+      for 2023-2026 (Best Match picks a model that triggers a slow
+      server-side lookup). Re-running with `--models ecmwf_ifs` (the
+      older IFS HRES) made 2023-2026 fetch in 0.5-1s for full-year
+      requests. Used `ecmwf_ifs` for the second pass.
+- [x] Sanity-check coverage: `oracle calibrate --replayed --label duration`
+      reports **n = 3,263** (after 68-day storm quarantine). Era split:
+      IFS-era (2017-01-01 → 2022-11-23) **n = 1,968**; ICON-era
+      (2022-11-24 → 2026-06-12) **n = 1,295**.
 
-Decision deliberately taken: default Best Match model (no `--models`
-pin) for the first pass — highest-resolution model per era, which is
-what the live pipeline effectively uses. Pin a model only if a later
-analysis needs cross-era comparability of a specific variable.
+Decision taken: pin to `ecmwf_ifs` for the entire 2017-2026 replay
+(both the original 2017-2022 pass at the natural Best Match and the
+retry). Cross-era comparability of the thermik/Föhn pressure signal
+was the rationale; the live pipeline effectively uses Best Match
+too, so era-disjoint pinning means the replayed deltas match what
+the live deltas would have been at the time.
+
+Caveat: ICON-era days (2022-11-24+) had IFS HRES still be the
+highest-resolution model in the historical-forecast API for the
+2-3 month window between ICON-D2 launching (2022-11-24) and
+IFS 0.25° joining (2024-02-03). For 2024-02-03 onward the live
+pipeline may be using IFS 0.25° via Best Match — that era is
+slightly under-modeled in the replay. A future `--models
+ecmwf_ifs025` retry for 2024-02-03 → today would close it, but
+the size of the calibration sample (n=3,263) is plenty for the
+threshold-tuning questions.
 
 ## Phase 2 — first real scoring pass
 
-- [ ] `oracle calibrate --replayed --label duration` — the headline
-      confusion matrix + per-rule offender table.
-- [ ] Score the two eras separately (variable coverage differs — five
-      rules emit no-signal MAYBE pre-2021/2022):
-      - `--until 2022-11-23` (IFS-era: ~7 effective rules)
-      - `--since 2022-11-24` (ICON-era: all 13 rules)
-- [ ] Export the ML dataset while at it:
-      `oracle calibrate --replayed --csv data/replay_full.csv`
-- [ ] Save the three report outputs (paste into a dated section below or
-      commit alongside) — they are the baseline every threshold tune is
-      compared against.
+- [x] `oracle calibrate --replayed --label duration` — baseline matrix
+      + per-rule offender table recorded below.
+- [x] Score the two eras separately:
+      - `--until 2022-11-23` (IFS-era: ~7 effective rules, no BLH / soil
+        moisture) — **n=1,968, accuracy 43%**
+      - `--since 2022-11-24` (ICON-era: all 13 rules) — **n=1,295, accuracy 37%**
+- [x] Export the ML dataset: `oracle calibrate --replayed --csv
+      data/replay_full.csv` (3,332 rows × 28 columns) + per-era splits
+      `data/replay_ifs_era.csv` and `data/replay_icon_era.csv` for
+      GH issue #12 (ML classifier, was waiting for n≥50).
+- [x] Save the three report outputs (recorded in the dated section
+      below) — they are the baseline every threshold tune is compared
+      against.
 
 Interpretation cautions:
 - **Storm quarantine is blind pre-2021** (no lifted index in the
