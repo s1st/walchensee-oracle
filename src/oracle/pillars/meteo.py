@@ -18,6 +18,7 @@ Backend: Open-Meteo `forecast` endpoint, hourly variables in local time
 """
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
@@ -175,6 +176,64 @@ async def fetch_snapshot(
     return _parse(payload, day)
 
 
+async def fetch_hourly_range(
+    start: date,
+    end: date,
+    client: httpx.AsyncClient | None = None,
+    *,
+    host: str | None = None,
+    models: str | None = None,
+) -> dict:
+    """Pull the raw hourly payload for a whole date range in one request.
+
+    Spans [start-1, end] — the extra leading day feeds the first target's
+    overnight-cloud and yesterday-rain windows. Used by batch replay to
+    avoid one request per day; slice per-day snapshots out of the result
+    with `snapshot_from_range`. `models` pins a specific Open-Meteo model
+    (recommended for cross-era scoring runs; default is Best Match).
+    """
+    params: dict = {
+        "latitude": URFELD.lat,
+        "longitude": URFELD.lon,
+        "hourly": _HOURLY_VARS,
+        "wind_speed_unit": "kn",
+        "timezone": "Europe/Berlin",
+        "start_date": (start - timedelta(days=1)).isoformat(),
+        "end_date": end.isoformat(),
+    }
+    if models is not None:
+        params["models"] = models
+    async with client_scope(client) as client:
+        response = await client.get(host or OPEN_METEO_URL, params=params)
+        response.raise_for_status()
+        return response.json()
+
+
+def parse_times(payload: dict) -> list[datetime]:
+    """Parse the shared hourly time axis of a range payload once, so
+    `snapshot_from_range` can bisect instead of re-parsing per day."""
+    return [datetime.fromisoformat(t) for t in payload["hourly"]["time"]]
+
+
+def snapshot_from_range(payload: dict, times: list[datetime], target: date) -> MeteoSnapshot:
+    """Slice one day's snapshot out of a `fetch_hourly_range` payload.
+
+    Cuts the [target-1 00:00, target 23:00] window out of every hourly
+    array and hands the slice to the same `_parse` the single-day fetch
+    uses — windowing semantics stay identical by construction.
+    """
+    lo = bisect_left(times, datetime.combine(target - timedelta(days=1), time(0, 0)))
+    hi = bisect_right(times, datetime.combine(target, time(23, 0)))
+    if lo == hi:
+        raise RuntimeError(
+            f"Open-Meteo range payload does not cover {target.isoformat()} "
+            f"(times span {times[0]} → {times[-1]})"
+        )
+    hourly = payload["hourly"]
+    sliced = {"hourly": {key: values[lo:hi] for key, values in hourly.items()}}
+    return _parse(sliced, target)
+
+
 def _parse(payload: dict, target: date) -> MeteoSnapshot:
     hourly = payload["hourly"]
     times = [datetime.fromisoformat(t) for t in hourly["time"]]
@@ -250,7 +309,19 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
     # `post_rain_moisture` emit MAYBE rather than raising. Same for BLH.
     soil_moisture = _value_at(times, hourly["soil_moisture_0_to_1cm"], morning_start)
 
-    spreads = [t - d for t, d in zip(morning_temp, morning_dew)]
+    # Pair temp/dew by hour index, not by zipping the None-filtered windows —
+    # archive responses can null one array but not the other, and a naive zip
+    # would then pair temperatures with dew points from different hours.
+    spreads = [
+        float(t) - float(d)
+        for ts, t, d in zip(times, hourly["temperature_2m"], hourly["dew_point_2m"], strict=True)
+        if morning_start <= ts <= morning_end and t is not None and d is not None
+    ]
+    if not spreads:
+        raise RuntimeError(
+            f"Open-Meteo returned no paired temperature/dew-point hours in the "
+            f"morning window for {target.isoformat()}"
+        )
     yesterday_mm = sum(yesterday_rain)
     mean_morning_air_temp = sum(morning_temp) / len(morning_temp) if morning_temp else None
 

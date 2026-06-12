@@ -121,42 +121,85 @@ async def _fetch_replay(
     """Replay-mode pressure fetch: hourly timeseries for the target day,
     morning reading. Works against both the historical-forecast and
     archive hosts — query schema is identical to the live one."""
-    # Pick the hour the live job samples: 08:00 local (Europe/Berlin), the
-    # `oracle-forecast` Cloud Run schedule. The thermik/Föhn deltas evolve
-    # over the morning, and MIN_THERMIK_DELTA_HPA was fitted against 08:00
-    # samples — a different replay hour would make the deltas incomparable.
-    target_hour = datetime.combine(target_day, time(8, 0))
+    series = await fetch_hourly_range(target_day, target_day, client=client, host=host)
+    return snapshot_at_morning(series, target_day)
 
+
+# Replay sampling hour: 08:00 local (Europe/Berlin), the `oracle-forecast`
+# Cloud Run schedule. The thermik/Föhn deltas evolve over the morning, and
+# MIN_THERMIK_DELTA_HPA was fitted against 08:00 samples — a different
+# replay hour would make the deltas incomparable.
+REPLAY_PRESSURE_LOCAL_TIME = time(8, 0)
+
+
+@dataclass(frozen=True)
+class PressureHourlyRange:
+    """Hourly `pressure_msl` timeseries for the three stations over a date
+    range, on a shared local-time (Europe/Berlin) axis. Produced by
+    `fetch_hourly_range`; consumed per-day by `snapshot_at_morning`."""
+    times: list[datetime]
+    values_by_station: dict[str, list[float | None]]
+
+
+async def fetch_hourly_range(
+    start: date,
+    end: date,
+    client: httpx.AsyncClient | None = None,
+    *,
+    host: str | None = None,
+    models: str | None = None,
+) -> PressureHourlyRange:
+    """Pull the three stations' hourly pressure for a whole date range in
+    one batched request. Used by replay (single day and batch); `models`
+    pins a specific Open-Meteo model for cross-era scoring runs."""
+    params: dict = {
+        "latitude": ",".join(f"{s.lat}" for s in _STATIONS),
+        "longitude": ",".join(f"{s.lon}" for s in _STATIONS),
+        "hourly": "pressure_msl",
+        "timezone": "Europe/Berlin",
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+    }
+    if models is not None:
+        params["models"] = models
     async with client_scope(client) as client:
-        response = await client.get(
-            host,
-            params={
-                "latitude": ",".join(f"{s.lat}" for s in _STATIONS),
-                "longitude": ",".join(f"{s.lon}" for s in _STATIONS),
-                "hourly": "pressure_msl",
-                "timezone": "Europe/Berlin",
-                "start_date": target_day.isoformat(),
-                "end_date": target_day.isoformat(),
-            },
-        )
+        response = await client.get(host or OPEN_METEO_URL, params=params)
         response.raise_for_status()
         payload = response.json()
 
     locations = payload if isinstance(payload, list) else [payload]
-    readings = []
+    times: list[datetime] | None = None
+    values_by_station: dict[str, list[float | None]] = {}
     for station, loc in zip(_STATIONS, locations, strict=True):
         hourly = loc["hourly"]
-        times = [datetime.fromisoformat(t) for t in hourly["time"]]
-        values = hourly["pressure_msl"]
-        try:
-            idx = times.index(target_hour)
-        except ValueError:
+        station_times = [datetime.fromisoformat(t) for t in hourly["time"]]
+        if times is None:
+            times = station_times
+        elif station_times != times:
             raise RuntimeError(
-                f"Replay: pressure hour {target_hour.isoformat()} not in hourly timeseries "
-                f"for {station.name} (times span {times[0]} → {times[-1]}). "
-                "This day is probably outside the archive coverage."
+                f"Replay: hourly time axis for {station.name} differs from the "
+                "other stations — refusing to mix misaligned series"
             )
-        value = values[idx]
+        values_by_station[station.name] = hourly["pressure_msl"]
+    assert times is not None
+    return PressureHourlyRange(times=times, values_by_station=values_by_station)
+
+
+def snapshot_at_morning(series: PressureHourlyRange, target_day: date) -> PressureSnapshot:
+    """Pick the 08:00-local reading of `target_day` for each station out of
+    a `fetch_hourly_range` series — the hour the live job samples."""
+    target_hour = datetime.combine(target_day, REPLAY_PRESSURE_LOCAL_TIME)
+    try:
+        idx = series.times.index(target_hour)
+    except ValueError:
+        raise RuntimeError(
+            f"Replay: pressure hour {target_hour.isoformat()} not in hourly timeseries "
+            f"(times span {series.times[0]} → {series.times[-1]}). "
+            "This day is probably outside the archive coverage."
+        )
+    readings = []
+    for station in _STATIONS:
+        value = series.values_by_station[station.name][idx]
         if value is None:
             raise RuntimeError(
                 f"Replay: pressure at {target_hour.isoformat()} is null for {station.name}"

@@ -154,6 +154,13 @@ forecast looks like at lead time 0).
 
 ### Code change to support replay
 
+> **Shipped 2026-06-12**: `oracle replay --day <date>` (single day, scrapes
+> the buoy live) and `oracle replay --from <date> --to <date>` (batch —
+> two archive requests per year via `src/oracle/replay.py`, buoy curve
+> reconstructed from the stored ground truth, per-day holes skipped and
+> reported). `--models` pins a model for cross-era scoring runs. Replay
+> pressure samples 08:00 Europe/Berlin, the live job's sampling hour.
+
 Swap the host in `pillars/pressure.py` and `pillars/meteo.py`:
 
 ```python

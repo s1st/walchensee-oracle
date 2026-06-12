@@ -66,24 +66,69 @@ def forecast(
 
 @app.command()
 def replay(
-    day: str = typer.Option(..., help="ISO date to replay against the archive (e.g. 2017-06-15)."),
+    day: str = typer.Option(None, help="ISO date to replay against the archive (e.g. 2017-06-15)."),
+    from_: str = typer.Option(None, "--from", help="Batch mode: first ISO date of the range (inclusive). Requires --to."),
+    to: str = typer.Option(None, "--to", help="Batch mode: last ISO date of the range (inclusive). Requires --from."),
     source: str = typer.Option(
         "historical-forecast",
         help="Which Open-Meteo archive to use: 'historical-forecast' (IFS HRES 2017+, DWD ICON 2022+) or 'reanalysis' (ERA5 1940+).",
     ),
+    models: str = typer.Option(
+        None,
+        help="Batch mode: pin Open-Meteo model(s) (e.g. 'ecmwf_ifs') instead of Best Match. "
+             "Recommended for scoring runs spanning model-coverage eras.",
+    ),
     log: bool = typer.Option(True, "--log/--no-log", help="Write the replay to runs/replay/<day>.json."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON to stdout instead of tables."),
 ) -> None:
-    """Re-run the rules against the historical forecast (or reanalysis) for `day`.
+    """Re-run the rules against the historical forecast (or reanalysis).
 
-    Pairs the Open-Meteo archive pillars with the historical Urfeld buoy
-    day-curve. Writes a replay record to `runs/replay/<day>.json` so the
-    calibrate loop and the dashboard don't mistake it for a live forecast.
+    Single-day mode (--day): pairs the Open-Meteo archive pillars with the
+    historical Urfeld buoy day-curve, scraped live.
 
-    See docs/historical_forecasts.md for model coverage and caveats.
+    Batch mode (--from/--to): replays every stored ground-truth day in the
+    range. Archive data is fetched once per year (two requests) instead of
+    per day, and the buoy curve is reconstructed from the stored ground
+    truth — no re-scraping. This is the path for calibration passes over
+    the historical backfill.
+
+    Replay records land in `runs/replay/<day>.json` so the calibrate loop
+    and the dashboard don't mistake them for live forecasts. See
+    docs/historical_forecasts.md for model coverage and caveats.
     """
     if source not in ("historical-forecast", "reanalysis"):
         raise typer.BadParameter("--source must be 'historical-forecast' or 'reanalysis'")
+    batch = from_ is not None or to is not None
+    if batch and (day is not None or from_ is None or to is None):
+        raise typer.BadParameter("batch mode needs both --from and --to, and no --day")
+    if not batch and day is None:
+        raise typer.BadParameter("pass --day for a single replay, or --from/--to for a batch")
+
+    if batch:
+        if not log:
+            raise typer.BadParameter("--no-log makes no sense in batch mode — its whole point is the written records")
+        from oracle.replay import run_replay_batch
+
+        summary = asyncio.run(run_replay_batch(
+            date.fromisoformat(from_), date.fromisoformat(to),
+            source=source, models=models,  # type: ignore[arg-type]
+            progress=lambda msg: console.print(f"[dim]{msg}[/dim]"),
+        ))
+        if json_output:
+            sys.stdout.write(json.dumps(
+                {"replayed": summary.replayed, "skipped": summary.skipped},
+                ensure_ascii=False,
+            ) + "\n")
+            return
+        console.print(f"[bold]replayed {len(summary.replayed)} days[/bold]")
+        if summary.skipped:
+            console.print(f"[yellow]skipped {len(summary.skipped)}:[/yellow]")
+            for iso, reason in summary.skipped[:10]:
+                console.print(f"  {iso}: {reason}")
+            if len(summary.skipped) > 10:
+                console.print(f"  … and {len(summary.skipped) - 10} more")
+        return
+
     target = date.fromisoformat(day)
     result = asyncio.run(run_replay(target, source=source))  # type: ignore[arg-type]
     if log:

@@ -234,10 +234,10 @@ def _write_replay(store: RunStore, iso: str, record: dict) -> str:
     store. Implemented for the two concrete store backends; the protocol
     itself is replay-agnostic."""
     if isinstance(store, GCSRunStore):
-        from google.cloud import storage  # local import; same lazy-load as GCSRunStore  # type: ignore[attr-defined]
-        client = storage.Client()
-        bucket = client.bucket(store.bucket_name)
-        blob = bucket.blob(f"runs/replay/{iso}.json")
+        # Reuse the store's client/bucket — a fresh storage.Client() per
+        # write means a credential lookup each time, which a 3,000-day
+        # batch replay would pay 3,000 times.
+        blob = store._bucket.blob(f"runs/replay/{iso}.json")
         blob.upload_from_string(
             json.dumps(record, ensure_ascii=False, indent=2),
             content_type="application/json",
