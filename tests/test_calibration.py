@@ -340,3 +340,86 @@ def test_format_text_report_shows_offenders(tmp_path: Path):
     assert "solar_radiation" in text
     assert "FP-veto" in text
     assert "Confusion matrix" in text
+
+
+# --- replay scoring (the join) ---------------------------------------------
+# Replay records carry verdicts + inputs; the matching main record (for the
+# historical backfill, a stub) carries the buoy ground truth. `replayed=True`
+# joins the two.
+
+
+def _seed_replay_pair(store: LocalRunStore, iso: str, *, peak: float = 14.0,
+                      overall: str = "no_go") -> None:
+    store.write(iso, {
+        "day": iso,
+        "ground_truth": {"machine": {"peak_avg_knots": peak}, "human": None},
+    })
+    store.write_replay(iso, {
+        "day": iso,
+        "overall": overall,
+        "verdicts": [_verdict("thermik", overall)],
+        "inputs": _full_inputs(day=iso),
+        "ground_truth": {"machine": None, "human": None},
+        "replay_day": iso,
+        "replay_source": "historical-forecast",
+    })
+
+
+def test_compile_report_replayed_joins_verdicts_with_stub_ground_truth(tmp_path: Path):
+    store = LocalRunStore(tmp_path)
+    _seed_replay_pair(store, "2021-06-15", peak=14.0, overall="no_go")
+
+    report = compile_report(store=store, replayed=True)
+    assert report.replayed is True
+    assert report.sample_size == 1
+    # Replay said no_go, the lake actually fired → counted as the miss it is.
+    assert report.confusion["no_go"]["go"] == 1
+    assert report.rule_stats["thermik"].false_positive_vetos == 1
+
+    # The default (live) view must not see replay records: the stub has no
+    # verdicts, so the sample stays empty.
+    assert compile_report(store=store).sample_size == 0
+
+
+def test_compile_report_replayed_skips_replay_without_main_record(tmp_path: Path):
+    store = LocalRunStore(tmp_path)
+    store.write_replay("2021-06-15", {
+        "day": "2021-06-15", "overall": "go",
+        "verdicts": [_verdict("thermik", "go")],
+        "ground_truth": {"machine": None, "human": None},
+    })
+    report = compile_report(store=store, replayed=True)
+    assert report.sample_size == 0
+
+
+def test_rescore_all_replayed_writes_to_replay_record_only(tmp_path: Path):
+    store = LocalRunStore(tmp_path)
+    _seed_replay_pair(store, "2021-06-15")
+
+    summary = rescore_all(store=store, replayed=True)
+    assert summary["rewritten"] == ["2021-06-15"]
+
+    replay = store.read_replay("2021-06-15")
+    assert "overall_resimulated" in replay
+    assert "verdicts_resimulated" in replay
+    # The main (stub) record is untouched.
+    assert "overall_resimulated" not in store.read("2021-06-15")
+
+    # The rescored replay layer is scoreable: replayed + resimulated combine.
+    report = compile_report(store=store, replayed=True, resimulated=True)
+    assert report.sample_size == 1
+    assert report.resimulated is True and report.replayed is True
+
+
+def test_export_csv_replayed_emits_joined_rows(tmp_path: Path):
+    store = LocalRunStore(tmp_path)
+    _seed_replay_pair(store, "2021-06-15", peak=13.5)
+    out = tmp_path / "replay.csv"
+
+    n = export_csv(out, store=store, replayed=True)
+    assert n == 1
+    with out.open() as f:
+        rows = list(csv.DictReader(f))
+    assert rows[0]["day"] == "2021-06-15"
+    assert rows[0]["peak_avg_knots"] == "13.5"
+    assert rows[0]["forecast_overall"] == "no_go"

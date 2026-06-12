@@ -253,3 +253,19 @@ def test_list_days_skips_replay_subdir_in_gcs(monkeypatch):
     store._bucket = None
     assert store.list_days() == ["2026-04-22", "2026-04-23"]
     assert store.list_replays() == ["2020-07-01", "2021-06-15"]
+
+
+def test_local_store_replay_namespace_round_trip(tmp_path: Path):
+    """read_replay/write_replay/list_replays operate on the replay/ subdir
+    and never leak into the main namespace."""
+    store = LocalRunStore(tmp_path)
+    assert store.list_replays() == []
+    assert store.read_replay("2021-06-15") is None
+
+    location = store.write_replay("2021-06-15", {"overall": "go"})
+    assert location.endswith("replay/2021-06-15.json")
+    assert store.read_replay("2021-06-15") == {"overall": "go"}
+    assert store.list_replays() == ["2021-06-15"]
+    # Main namespace unaffected.
+    assert store.list_days() == []
+    assert store.read("2021-06-15") is None

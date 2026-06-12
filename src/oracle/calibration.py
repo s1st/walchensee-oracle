@@ -21,7 +21,7 @@ from __future__ import annotations
 import csv
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 
 from oracle import config
@@ -117,6 +117,7 @@ class Report:
     rule_stats: dict[str, RuleStats] = field(default_factory=dict)
     label_mode: str = "peak"
     resimulated: bool = False
+    replayed: bool = False  # scored replay records joined with main-record ground truth
     quarantined_days: list[str] = field(default_factory=list)  # storm-suspected, excluded
 
     @property
@@ -183,20 +184,45 @@ def _ignition_minute_of_day(iso_ts: str | None) -> int | None:
 
 
 def _iter_window_days(
-    store: RunStore, since: date | None, until: date | None
+    store: RunStore, since: date | None, until: date | None,
+    replayed: bool = False,
 ) -> Iterator[str]:
     """Yield logged ISO days that fall within [since, until] (inclusive ends).
 
     Single source of the date-window filter shared by `rescore_all`,
-    `compile_report` and `export_csv`.
+    `compile_report` and `export_csv`. With `replayed=True`, walk the
+    replay namespace (`runs/replay/`) instead of the main records.
     """
-    for iso in store.list_days():
+    days = store.list_replays() if replayed else store.list_days()
+    for iso in days:
         d = date.fromisoformat(iso)
         if since and d < since:
             continue
         if until and d > until:
             continue
         yield iso
+
+
+def _merged_replay_record(store: RunStore, iso: str) -> dict | None:
+    """Join one replay record with the main record's ground truth.
+
+    Replay records carry verdicts + inputs but an empty `ground_truth`
+    (the buoy outcome lives in the main record — for the historical
+    backfill, a stub with ground truth and no verdicts). Overlaying the
+    main record's `ground_truth` onto the replay record yields a dict
+    with the exact shape of a live record, so every record-level helper
+    (`_label_record`, `storm_suspected`, `_row_for`, the verdict-key
+    selection) works on it unchanged.
+
+    Caveat: `storm_suspected` reads the lifted index from the *replay*
+    inputs. Pre-2021 archive data has no LI, so the storm quarantine
+    never fires for that era — gust-front days there stay in the matrix.
+    """
+    replay = store.read_replay(iso)
+    main = store.read(iso)
+    if replay is None or main is None:
+        return None
+    return {**replay, "ground_truth": main.get("ground_truth") or {"machine": None, "human": None}}
 
 
 # --- record re-scoring ----------------------------------------------------
@@ -206,12 +232,17 @@ def _iter_window_days(
 # upstream APIs, which would return today's data anyway.
 
 
-def rescore_record(record: dict) -> tuple[str, list[Verdict]] | None:
+def rescore_record(record: dict, *, now: datetime | None = None) -> tuple[str, list[Verdict]] | None:
     """Re-run the rule layer against a record's stored inputs.
 
     Returns (overall, verdicts) under the current aggregator, or None if the
     record's inputs are too incomplete to reconstruct (older log schema —
     common for records written before later meteo fields shipped).
+
+    `now` anchors time-sensitive rules (air_lake_delta staleness). Replay
+    rescoring passes the record's own day so a decade-old buoy reading
+    isn't flagged stale against the wall clock; live records leave it None
+    (their readings are recent relative to any rescore run).
     """
     inputs = record.get("inputs") or {}
     p = inputs.get("pressure")
@@ -230,7 +261,7 @@ def rescore_record(record: dict) -> tuple[str, list[Verdict]] | None:
     except (KeyError, ValueError, TypeError):
         return None
 
-    verdicts = apply_rules(snapshot, meteo_snap, winds, lake_temp)
+    verdicts = apply_rules(snapshot, meteo_snap, winds, lake_temp, now=now)
     return aggregate(verdicts).value, verdicts
 
 
@@ -239,6 +270,7 @@ def rescore_all(
     since: date | None = None,
     until: date | None = None,
     dry_run: bool = False,
+    replayed: bool = False,
 ) -> dict:
     """Walk every logged record, re-score it, and persist the result.
 
@@ -250,6 +282,11 @@ def rescore_all(
       - `verdicts_resimulated`
 
     Returns a small report: counts + list of skipped days.
+
+    With `replayed=True`, walk the replay records instead — this is the
+    fast inner loop of the historical calibration: tune a threshold, then
+    re-score ~3,300 replay days from their stored inputs without touching
+    the Open-Meteo archive again.
 
     Since 2026-06-12 the bucket also contains ~3,600 historical buoy
     stub records (2016-2026, no `inputs` block). `rescore_record` returns
@@ -263,11 +300,14 @@ def rescore_all(
     skipped: list[str] = []
     flipped: list[tuple[str, str, str]] = []  # (iso, old_overall, new_overall)
 
-    for iso in _iter_window_days(store, since, until):
-        record = store.read(iso)
+    for iso in _iter_window_days(store, since, until, replayed=replayed):
+        record = store.read_replay(iso) if replayed else store.read(iso)
         if record is None:
             continue
-        result = rescore_record(record)
+        # Anchor time-sensitive rules to the replay day's noon, mirroring
+        # engine.run_replay; live records keep wall-clock semantics.
+        now = datetime.combine(date.fromisoformat(iso), time(12, 0)) if replayed else None
+        result = rescore_record(record, now=now)
         if result is None:
             skipped.append(iso)
             continue
@@ -278,13 +318,17 @@ def rescore_all(
         if old_overall != new_overall:
             flipped.append((iso, old_overall, new_overall))
         if not dry_run:
-            store.write(iso, record)
+            if replayed:
+                store.write_replay(iso, record)
+            else:
+                store.write(iso, record)
             rewritten.append(iso)
         else:
             unchanged.append(iso)
 
     return {
         "rewritten": rewritten,
+        "unchanged": unchanged,
         "skipped": skipped,
         "flipped": flipped,
         "dry_run": dry_run,
@@ -297,6 +341,7 @@ def compile_report(
     until: date | None = None,
     label: str = "peak",
     resimulated: bool = False,
+    replayed: bool = False,
 ) -> Report:
     """Walk every logged record and aggregate forecast-vs-actual metrics.
 
@@ -319,6 +364,13 @@ def compile_report(
     reflect whatever thresholds were in force when each record was written, so
     they go stale immediately after any threshold tune. Records lacking the
     resimulated fields are skipped (run `oracle rescore` to populate them).
+
+    `replayed`: when True, score the replay records (`runs/replay/`) against
+    the ground truth stored in the matching main records — the join that
+    makes the historical backfill usable for calibration. Orthogonal to
+    `resimulated`: replay verdicts go stale after a threshold tune like any
+    others, so the loop is `oracle rescore --replayed` then
+    `compile_report(replayed=True, resimulated=True)`.
     """
     overall_key = "overall_resimulated" if resimulated else "overall"
     verdicts_key = "verdicts_resimulated" if resimulated else "verdicts"
@@ -329,8 +381,8 @@ def compile_report(
     sample_days: list[str] = []
     quarantined: list[str] = []
 
-    for iso in _iter_window_days(store, since, until):
-        record = store.read(iso)
+    for iso in _iter_window_days(store, since, until, replayed=replayed):
+        record = _merged_replay_record(store, iso) if replayed else store.read(iso)
         if record is None:
             continue
         actual = _label_record(record, label)
@@ -367,6 +419,7 @@ def compile_report(
         rule_stats=rule_stats,
         label_mode=label,
         resimulated=resimulated,
+        replayed=replayed,
         quarantined_days=quarantined,
     )
 
@@ -391,6 +444,8 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
     }.get(report.label_mode, report.label_mode)
 
     view = "resimulated (current rule layer)" if report.resimulated else "historical (verdicts as written)"
+    if report.replayed:
+        view = f"replay (archive forecasts), {view}"
     lines: list[str] = []
     lines.append(
         f"Calibration sample: {report.sample_size} days with ground truth "
@@ -525,12 +580,17 @@ def export_csv(
     store: RunStore | None = None,
     since: date | None = None,
     until: date | None = None,
+    replayed: bool = False,
 ) -> int:
-    """Write every ground-truthed record to `path` as a flat CSV. Returns row count."""
+    """Write every ground-truthed record to `path` as a flat CSV. Returns row count.
+
+    With `replayed=True`, export the replay records joined with the main
+    records' ground truth — the full historical feature/outcome dataset for
+    offline ML (see GH issue #12)."""
     store = store or default_store()
     rows: list[dict] = []
-    for iso in _iter_window_days(store, since, until):
-        record = store.read(iso)
+    for iso in _iter_window_days(store, since, until, replayed=replayed):
+        record = _merged_replay_record(store, iso) if replayed else store.read(iso)
         if record is None:
             continue
         row = _row_for(record)

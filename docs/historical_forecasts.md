@@ -160,6 +160,15 @@ forecast looks like at lead time 0).
 > reconstructed from the stored ground truth, per-day holes skipped and
 > reported). `--models` pins a model for cross-era scoring runs. Replay
 > pressure samples 08:00 Europe/Berlin, the live job's sampling hour.
+>
+> **Scoring (the join)**: `oracle calibrate --replayed` scores the replay
+> verdicts against the ground truth in the matching main records;
+> `--csv` exports the joined feature/outcome rows for offline ML. The
+> tuning loop after a threshold change is `oracle rescore --replayed`
+> (re-scores replay records from stored inputs, no API traffic) followed
+> by `oracle calibrate --replayed --resimulated`. Caveat: the storm
+> quarantine reads the lifted index from the replay inputs, which is
+> None pre-2021 — gust-front days in that era are not quarantined.
 
 Swap the host in `pillars/pressure.py` and `pillars/meteo.py`:
 
