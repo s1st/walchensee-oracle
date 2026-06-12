@@ -34,11 +34,14 @@ def apply_rules(
     snapshot: PressureSnapshot,
     meteo_snap: MeteoSnapshot,
     winds: list[WindReading],
+    lake_temp: LakeTempSnapshot | None,
 ) -> list[Verdict]:
-    """Pure function: pillar snapshots in, twelve verdicts out.
+    """Pure function: pillar snapshots in, thirteen verdicts out.
 
     Extracted so calibration tooling can re-run the rule layer against a
     record's stored `inputs` block without re-fetching the upstream APIs.
+    `lake_temp` may be None when the buoy is down or its latest usable row
+    lacked `wtemp`; the air_lake_delta rule handles that as MAYBE.
     """
     return [
         rules.thermik(snapshot),
@@ -53,6 +56,7 @@ def apply_rules(
         rules.upper_level_wind(meteo_snap),
         rules.synoptic_override(meteo_snap),
         rules.thermal_ignition(winds),
+        rules.air_lake_delta(lake_temp, meteo_snap),
     ]
 
 
@@ -64,7 +68,7 @@ async def run_forecast(day: date) -> Forecast:
             measurements.fetch_latest(client=client),
         )
     winds = latest.winds
-    verdicts = apply_rules(snapshot, meteo_snap, winds)
+    verdicts = apply_rules(snapshot, meteo_snap, winds, latest.lake_temp)
     return Forecast(
         overall=aggregate(verdicts),
         verdicts=verdicts,

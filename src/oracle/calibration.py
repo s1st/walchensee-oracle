@@ -28,7 +28,7 @@ from oracle import config
 from oracle.engine import aggregate, apply_rules
 from oracle.knowledge.rules import SIGNAL_ORDER, Signal, Verdict, is_storm_risk
 from oracle.logger import RunStore, default_store, verdict_to_dict
-from oracle.pillars.measurements import WindReading
+from oracle.pillars.measurements import LakeTempSnapshot, WindReading
 from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureSnapshot
 
@@ -217,16 +217,20 @@ def rescore_record(record: dict) -> tuple[str, list[Verdict]] | None:
     p = inputs.get("pressure")
     m = inputs.get("meteo")
     winds_raw = inputs.get("measurements") or []
+    lake_temp_raw = inputs.get("lake_temp")
     if not p or not m:
         return None
     try:
         snapshot = PressureSnapshot.from_dict(p)
         meteo_snap = MeteoSnapshot.from_dict(m)
         winds = [WindReading.from_dict(w) for w in winds_raw]
+        lake_temp = (
+            LakeTempSnapshot.from_dict(lake_temp_raw) if lake_temp_raw else None
+        )
     except (KeyError, ValueError, TypeError):
         return None
 
-    verdicts = apply_rules(snapshot, meteo_snap, winds)
+    verdicts = apply_rules(snapshot, meteo_snap, winds, lake_temp)
     return aggregate(verdicts).value, verdicts
 
 

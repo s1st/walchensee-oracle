@@ -5,6 +5,7 @@ from oracle.engine import apply_rules
 from oracle.knowledge.rules import (
     Severity,
     Signal,
+    air_lake_delta,
     atmospheric_stability,
     boundary_layer_height,
     daytime_clouds,
@@ -19,7 +20,7 @@ from oracle.knowledge.rules import (
     thermik,
     upper_level_wind,
 )
-from oracle.pillars.measurements import WindReading
+from oracle.pillars.measurements import LakeTempSnapshot, WindReading
 from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureReading, PressureSnapshot
 
@@ -66,6 +67,7 @@ def _meteo(
     daytime_low_cloud: float = 20.0,
     wind_850_dir: float = 30.0,
     wind_700: float = 10.0,
+    air_temp: float | None = 15.0,
 ) -> MeteoSnapshot:
     return MeteoSnapshot(
         day=datetime.now().date(),
@@ -83,6 +85,7 @@ def _meteo(
         max_daytime_low_cloud_pct=daytime_low_cloud,
         wind_850_direction_at_peak_deg=wind_850_dir,
         max_wind_700_knots=wind_700,
+        morning_air_temp_c=air_temp,
     )
 
 
@@ -325,6 +328,90 @@ def test_every_rule_emits_non_empty_reasons_on_all_branches():
     for p in pressure_cases:
         for m in meteo_cases:
             for w in winds_cases:
-                for v in apply_rules(p, m, w):
+                for v in apply_rules(p, m, w, lake_temp=None):
                     assert v.reason_en.strip(), f"{v.rule} emitted an empty reason_en"
                     assert v.reason_de.strip(), f"{v.rule} emitted an empty reason_de"
+
+
+# --- air_lake_delta ------------------------------------------------------
+
+
+def _lake(surface_temp_c: float, age_hours: float = 0.0) -> LakeTempSnapshot:
+    from datetime import timedelta
+    return LakeTempSnapshot(
+        surface_temp_c=surface_temp_c,
+        measured_at=datetime.now() - timedelta(hours=age_hours),
+        source_station="Urfeld",
+    )
+
+
+def test_air_lake_delta_cold_lake_fires_soft_no_go():
+    """Air warmer than lake by more than the threshold → cold-lake veto."""
+    v = air_lake_delta(_lake(surface_temp_c=8.0), _meteo(air_temp=20.0))
+    assert v.signal is Signal.NO_GO
+    assert v.severity is Severity.SOFT
+    assert "+12.0" in v.reason_en  # delta displayed with sign
+
+
+def test_air_lake_delta_warm_lake_is_go():
+    """Lake warmer than air → no veto, plain GO."""
+    v = air_lake_delta(_lake(surface_temp_c=22.0), _meteo(air_temp=15.0))
+    assert v.signal is Signal.GO
+    assert v.severity is Severity.NONE
+    assert "-7.0" in v.reason_en
+
+
+def test_air_lake_delta_neutral_band_is_go():
+    """Within the warm/cold band, no veto — plain GO with neutral reason."""
+    v = air_lake_delta(_lake(surface_temp_c=18.0), _meteo(air_temp=20.0))
+    assert v.signal is Signal.GO
+    assert v.severity is Severity.NONE
+
+
+def test_air_lake_delta_missing_lake_temp_is_maybe():
+    """Buoy down or no wtemp on latest row → MAYBE, not a guess."""
+    v = air_lake_delta(lake_temp=None, meteo=_meteo(air_temp=20.0))
+    assert v.signal is Signal.MAYBE
+    assert v.severity is Severity.NONE
+
+
+def test_air_lake_delta_stale_buoy_reading_is_maybe():
+    """Reading older than the max-age gate → MAYBE, not a stale veto."""
+    v = air_lake_delta(_lake(surface_temp_c=8.0, age_hours=200.0), _meteo(air_temp=20.0))
+    assert v.signal is Signal.MAYBE
+    assert "200" in v.reason_en or "stale" in v.reason_en.lower() or "old" in v.reason_en.lower()
+
+
+def test_air_lake_delta_missing_forecast_air_temp_is_maybe():
+    """Old record without morning_air_temp_c → MAYBE."""
+    v = air_lake_delta(_lake(surface_temp_c=12.0), _meteo(air_temp=None))
+    assert v.signal is Signal.MAYBE
+
+
+def test_air_lake_delta_bilingual_reasons_non_empty():
+    """Sanity: every branch emits a non-empty reason in both languages."""
+    cases = [
+        (_lake(8.0), _meteo(air_temp=20.0)),   # cold
+        (_lake(22.0), _meteo(air_temp=15.0)),  # warm
+        (_lake(18.0), _meteo(air_temp=20.0)),  # neutral
+        (None, _meteo(air_temp=20.0)),         # missing
+        (_lake(8.0, age_hours=200.0), _meteo(air_temp=20.0)),  # stale
+        (_lake(12.0), _meteo(air_temp=None)),  # missing air
+    ]
+    for lake, meteo in cases:
+        v = air_lake_delta(lake, meteo)
+        assert v.reason_en.strip(), f"empty reason_en for {v.signal}"
+        assert v.reason_de.strip(), f"empty reason_de for {v.signal}"
+
+
+def test_apply_rules_includes_air_lake_delta_verdict():
+    """apply_rules emits 13 verdicts and air_lake_delta is in the list."""
+    verdicts = apply_rules(
+        _snapshot(3.0),
+        _meteo(air_temp=20.0),
+        [],
+        lake_temp=_lake(surface_temp_c=8.0),
+    )
+    rules = {v.rule for v in verdicts}
+    assert "air_lake_delta" in rules
+    assert len(verdicts) == 13

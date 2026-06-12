@@ -9,10 +9,11 @@ named, and individually testable.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 from oracle import config
-from oracle.pillars.measurements import WindReading
+from oracle.pillars.measurements import LakeTempSnapshot, WindReading
 from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureSnapshot
 
@@ -296,4 +297,76 @@ def thermal_ignition(readings: list[WindReading]) -> Verdict:
         "thermal_ignition", Signal.MAYBE,
         reason_en="no station has ignited yet",
         reason_de="noch keine Station gezündet",
+    )
+
+
+def air_lake_delta(
+    lake_temp: LakeTempSnapshot | None,
+    meteo: MeteoSnapshot,
+    *,
+    now: datetime | None = None,
+) -> Verdict:
+    """Air minus water temperature: cold lake opposes the thermal, warm lake helps.
+
+    Walchensee is 192 m deep — surface temperature lags air by weeks. In spring
+    the lake sits 6–10 °C below the warming air, creating a cold-surface dome
+    that opposes the incoming thermal flow. In late summer the gap closes and
+    the lake is neutral-to-helpful.
+
+    Sign convention: `air − water` is positive when the lake is colder than the
+    air. Above `COLD_LAKE_DELTA_C` we fire a SOFT NO_GO; below `-COLD_LAKE_DELTA_C`
+    (warm lake) we boost with a plain GO. In between is a neutral band — the
+    lake neither helps nor hurts.
+
+    Tolerant on missing data: if the buoy is down (`lake_temp is None`) or its
+    reading is older than `MAX_LAKE_TEMP_AGE_HOURS`, we return MAYBE rather than
+    guessing. The forecast air-temp field is None for records written before
+    this rule shipped; same treatment.
+    """
+    now = now or datetime.now()
+
+    if lake_temp is None or lake_temp.surface_temp_c is None:
+        return Verdict(
+            "air_lake_delta", Signal.MAYBE,
+            reason_en="no lake-temp reading from the buoy",
+            reason_de="keine Wassertemperatur von der Boje",
+        )
+    if lake_temp.measured_at is None:
+        return Verdict(
+            "air_lake_delta", Signal.MAYBE,
+            reason_en="lake-temp reading missing a timestamp",
+            reason_de="Wassertemperatur ohne Zeitstempel",
+        )
+    age_h = (now - lake_temp.measured_at).total_seconds() / 3600.0
+    if age_h > config.MAX_LAKE_TEMP_AGE_HOURS:
+        return Verdict(
+            "air_lake_delta", Signal.MAYBE,
+            reason_en=f"buoy water-temp reading is {age_h:.0f} h old",
+            reason_de=f"Bojen-Wassertemperatur ist {age_h:.0f} h alt",
+        )
+    if meteo.morning_air_temp_c is None:
+        return Verdict(
+            "air_lake_delta", Signal.MAYBE,
+            reason_en="no forecast air-temp reading",
+            reason_de="keine Lufttemperatur-Prognose",
+        )
+
+    delta = meteo.morning_air_temp_c - lake_temp.surface_temp_c
+    if delta > config.COLD_LAKE_DELTA_C:
+        return Verdict(
+            "air_lake_delta", Signal.NO_GO,
+            reason_en=f"air−water Δ={delta:+.1f}°C — cold lake opposes the thermal",
+            reason_de=f"Luft−Wasser Δ={delta:+.1f}°C — kalter See bremst die Thermik",
+            severity=Severity.SOFT,
+        )
+    if delta < -config.COLD_LAKE_DELTA_C:
+        return Verdict(
+            "air_lake_delta", Signal.GO,
+            reason_en=f"air−water Δ={delta:+.1f}°C — warm lake aids the thermal",
+            reason_de=f"Luft−Wasser Δ={delta:+.1f}°C — warmer See unterstützt die Thermik",
+        )
+    return Verdict(
+        "air_lake_delta", Signal.GO,
+        reason_en=f"air−water Δ={delta:+.1f}°C — lake-air delta in neutral band",
+        reason_de=f"Luft−Wasser Δ={delta:+.1f}°C — See-Luft im neutralen Bereich",
     )
