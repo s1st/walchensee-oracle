@@ -212,6 +212,12 @@ async def backfill_run(
 # --- internals -------------------------------------------------------------
 
 
+def _round_or_none(value: float | None) -> float | None:
+    """Round to 2 dp for the per-sample ground-truth record; preserve None
+    so a missing buoy field stays distinguishable from a literal 0.0."""
+    return round(value, 2) if value is not None else None
+
+
 def _machine_ground_truth(samples: list[UrfeldSample]) -> dict:
     if not samples:
         return {"source": "addicted-sports-urfeld", "samples": [], "notes": "no samples"}
@@ -243,9 +249,12 @@ def _machine_ground_truth(samples: list[UrfeldSample]) -> dict:
                 "t": s.measured_at.isoformat(),
                 "avg_kt": round(s.avg_knots, 2),
                 "gust_kt": round(s.gust_knots, 2),
-                "water_temp_c": (
-                    round(s.water_temp_c, 2) if s.water_temp_c is not None else None
-                ),
+                "water_temp_c": _round_or_none(s.water_temp_c),
+                "air_temp_c": _round_or_none(s.air_temp_c),
+                "dew_point_c": _round_or_none(s.dew_point_c),
+                "rel_humidity_pct": _round_or_none(s.rel_humidity_pct),
+                "pressure_hpa": _round_or_none(s.pressure_hpa),
+                "rain_mm": _round_or_none(s.rain_mm),
             }
             for s in samples
         ],

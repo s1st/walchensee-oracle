@@ -42,11 +42,13 @@ _URFELD_JSON = {
     "measurment": {
         "417 2026-04-19 16:01:00": {
             "temp": "9.4", "wtemp": "12.8", "wsavg": "1.08", "wsmax": "1.62",
+            "dp": "4.1", "rh": "65", "rp": "913.2", "rain": "0.0",
             "tsdatetime": "2026-04-19 16:01:00",
             "utctstamp": "1776607260",
         },
         "417 2026-04-19 14:58:00": {
             "temp": "11.3", "wtemp": "12.5", "wsavg": "12.78", "wsmax": "17.28",
+            "dp": "5.2", "rh": "58", "rp": "912.9", "rain": "0.0",
             "tsdatetime": "2026-04-19 14:58:00",
             "utctstamp": "1776603480",
         },
@@ -101,6 +103,14 @@ async def test_fetch_latest_returns_readings_from_both_sources():
     assert urfeld.direction_deg is None
     # Water temp came from the same latest row.
     assert urfeld.water_temp_c == pytest.approx(12.8)
+    # All buoy-side fields are captured too — round-trip fodder for future
+    # rules per docs/future-buoy-signals.md. The latest row is the one
+    # with utctstamp=1776607260.
+    assert urfeld.air_temp_c == pytest.approx(9.4)
+    assert urfeld.dew_point_c == pytest.approx(4.1)
+    assert urfeld.rel_humidity_pct == pytest.approx(65.0)
+    assert urfeld.pressure_hpa == pytest.approx(913.2)
+    assert urfeld.rain_mm == pytest.approx(0.0)
     # And the engine-visible envelope has it projected into a LakeTempSnapshot.
     assert latest.lake_temp is not None
     assert latest.lake_temp.surface_temp_c == pytest.approx(12.8)
@@ -276,3 +286,44 @@ async def test_fetch_latest_returns_no_lake_temp_when_latest_row_lacks_wtemp():
     assert urfeld.avg_knots == pytest.approx(1.08)
     assert urfeld.water_temp_c is None
     assert latest.lake_temp is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_latest_captures_all_buoy_fields_when_partial():
+    """The buoy sometimes posts wind + wtemp but no aux fields (sensor
+    offline, server partial update). Wind and lake_temp must still come
+    through; the aux fields stay None instead of crashing the parse."""
+    payload = {
+        "measurment": {
+            "417 2026-04-19 16:01:00": {
+                "wsavg": "1.08", "wsmax": "1.62", "wtemp": "12.8",
+                "tsdatetime": "2026-04-19 16:01:00", "utctstamp": "1776607260",
+            },
+        }
+    }
+
+    def bright_sky(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_BRIGHT_SKY_PAYLOAD)
+
+    def urfeld_html(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_URFELD_HTML)
+
+    def urfeld_json(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
+    async with httpx.AsyncClient(transport=transport) as client:
+        latest = await fetch_latest(client=client)
+
+    urfeld = {r.role: r for r in latest.winds}[StationRole.SHORE]
+    assert urfeld.avg_knots == pytest.approx(1.08)
+    assert urfeld.water_temp_c == pytest.approx(12.8)
+    # Aux fields are None, not crashed.
+    assert urfeld.air_temp_c is None
+    assert urfeld.dew_point_c is None
+    assert urfeld.rel_humidity_pct is None
+    assert urfeld.pressure_hpa is None
+    assert urfeld.rain_mm is None
+    # Lake-temp projection still works.
+    assert latest.lake_temp is not None
+    assert latest.lake_temp.surface_temp_c == pytest.approx(12.8)

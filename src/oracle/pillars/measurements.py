@@ -11,9 +11,14 @@
 
 Both sources are called in parallel; one failing does not take out the
 other. `fetch_latest` raises only if *all* sources fail. The Addicted-Sports
-JSON also carries `wtemp` (lake surface temperature) on each row; we surface
-that as an optional `water_temp_c` on the per-row types and a small
-`LakeTempSnapshot` for the engine.
+JSON exposes a richer sensor set than the rules layer currently uses: each
+row carries `temp` (air), `wtemp` (water), `dp` (dew point), `rh` (humidity),
+`rp` (local pressure, not MSL) and `rain` (last-interval rain). We surface
+all of them as optional fields on `WindReading` and `UrfeldSample` and
+round-trip them through the calibration log, so future rules can be fit
+against buoy-side data without re-fetching — see
+`docs/future-buoy-signals.md` for what's queued. `LakeTempSnapshot` is the
+one field the engine uses today (the `air_lake_delta` rule).
 """
 from __future__ import annotations
 
@@ -49,8 +54,26 @@ class WindReading:
     direction_deg: float | None
     measured_at: datetime
     # Populated only for the Addicted-Sports Urfeld reading. Bright Sky's DWD
-    # station does not report lake temperature, so this stays None there.
+    # station does not report any of the buoy-side fields below, so they
+    # stay None there. The buoy payload exposes a richer sensor set than
+    # the oracle currently uses for rules — the extra fields are captured
+    # anyway, as raw inputs preserved for replay (see
+    # docs/future-buoy-signals.md). All optional, all tolerantly skipped
+    # if the row is metadata-only or the server omits the field.
     water_temp_c: float | None = None
+    air_temp_c: float | None = None
+    dew_point_c: float | None = None
+    rel_humidity_pct: float | None = None
+    # Local station pressure as posted. NOT MSL-reduced — the buoy sits at
+    # ~830 m, so this is ~100 hPa below the cross-station pressure pillar's
+    # Open-Meteo anchors. Stored as-is for replay; do not compare across
+    # stations without altitude correction.
+    pressure_hpa: float | None = None
+    # Last-interval rain amount (mm) as posted by the on-site gauge. The
+    # cadence is whatever the server uses between samples (~10 min). Kept
+    # for replay; the current `post_rain_moisture` rule uses Open-Meteo
+    # grid precipitation.
+    rain_mm: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -59,9 +82,12 @@ class WindReading:
             "avg_knots": round(self.avg_knots, 2),
             "gust_knots": round(self.gust_knots, 2),
             "direction_deg": self.direction_deg,
-            "water_temp_c": (
-                round(self.water_temp_c, 2) if self.water_temp_c is not None else None
-            ),
+            "water_temp_c": _round_or_none(self.water_temp_c),
+            "air_temp_c": _round_or_none(self.air_temp_c),
+            "dew_point_c": _round_or_none(self.dew_point_c),
+            "rel_humidity_pct": _round_or_none(self.rel_humidity_pct),
+            "pressure_hpa": _round_or_none(self.pressure_hpa),
+            "rain_mm": _round_or_none(self.rain_mm),
             "measured_at": self.measured_at.isoformat(),
         }
 
@@ -73,9 +99,12 @@ class WindReading:
             avg_knots=float(w["avg_knots"]),
             gust_knots=float(w["gust_knots"]),
             direction_deg=w.get("direction_deg"),
-            water_temp_c=(
-                float(w["water_temp_c"]) if w.get("water_temp_c") is not None else None
-            ),
+            water_temp_c=_float_or_none(w.get("water_temp_c")),
+            air_temp_c=_float_or_none(w.get("air_temp_c")),
+            dew_point_c=_float_or_none(w.get("dew_point_c")),
+            rel_humidity_pct=_float_or_none(w.get("rel_humidity_pct")),
+            pressure_hpa=_float_or_none(w.get("pressure_hpa")),
+            rain_mm=_float_or_none(w.get("rain_mm")),
             measured_at=datetime.fromisoformat(w["measured_at"]),
         )
 
@@ -194,14 +223,21 @@ async def _fetch_bright_sky(client: httpx.AsyncClient) -> WindReading:
 
 @dataclass
 class UrfeldSample:
-    """One row from the Addicted-Sports graph endpoint."""
+    """One row from the Addicted-Sports graph endpoint.
+
+    All buoy-side fields beyond the wind pair are optional and tolerated
+    as missing (metadata-only row, server temporarily omitting the field,
+    or sensor offline). See `WindReading` for the per-field docstrings.
+    """
     measured_at: datetime
     avg_knots: float
     gust_knots: float
-    # `None` if the row had no `wtemp` field (metadata-only row, or the
-    # server stopped reporting lake temperature). Tolerated — same as the
-    # wsavg/wsmax skip, no single row is allowed to take out the backfill.
     water_temp_c: float | None = None
+    air_temp_c: float | None = None
+    dew_point_c: float | None = None
+    rel_humidity_pct: float | None = None
+    pressure_hpa: float | None = None
+    rain_mm: float | None = None
 
 
 async def _fetch_urfeld_entries(
@@ -262,14 +298,18 @@ async def _fetch_urfeld(client: httpx.AsyncClient) -> WindReading:
     if not usable:
         raise RuntimeError("Addicted-Sports returned no entries with wind values")
     latest = max(usable, key=lambda e: int(e["utctstamp"]))
-    water_temp = float(latest["wtemp"]) if "wtemp" in latest else None
     return WindReading(
         station="Urfeld",
         role=StationRole.SHORE,
         avg_knots=float(latest["wsavg"]),
         gust_knots=float(latest["wsmax"]),
         direction_deg=None,
-        water_temp_c=water_temp,
+        water_temp_c=_buoy_field(latest, "wtemp"),
+        air_temp_c=_buoy_field(latest, "temp"),
+        dew_point_c=_buoy_field(latest, "dp"),
+        rel_humidity_pct=_buoy_field(latest, "rh"),
+        pressure_hpa=_buoy_field(latest, "rp"),
+        rain_mm=_buoy_field(latest, "rain"),
         measured_at=datetime.fromisoformat(latest["tsdatetime"].replace(" ", "T")),
     )
 
@@ -294,13 +334,17 @@ async def fetch_urfeld_day_curve(
         # them instead of aborting the whole fetch.
         if "wsavg" not in entry or "wsmax" not in entry:
             continue
-        water_temp = float(entry["wtemp"]) if "wtemp" in entry else None
         samples.append(
             UrfeldSample(
                 measured_at=measured_at,
                 avg_knots=float(entry["wsavg"]),
                 gust_knots=float(entry["wsmax"]),
-                water_temp_c=water_temp,
+                water_temp_c=_buoy_field(entry, "wtemp"),
+                air_temp_c=_buoy_field(entry, "temp"),
+                dew_point_c=_buoy_field(entry, "dp"),
+                rel_humidity_pct=_buoy_field(entry, "rh"),
+                pressure_hpa=_buoy_field(entry, "rp"),
+                rain_mm=_buoy_field(entry, "rain"),
             )
         )
     samples.sort(key=lambda s: s.measured_at)
@@ -312,3 +356,37 @@ def _required(weather: dict, key: str) -> float:
     if value is None:
         raise RuntimeError(f"Bright Sky response missing required field: {key}")
     return float(value)
+
+
+def _round_or_none(value: float | None) -> float | None:
+    """Round to 2 dp for the JSON log; preserve None so missing fields stay
+    distinguishable from a literal 0.0 in the stored record."""
+    return round(value, 2) if value is not None else None
+
+
+def _float_or_none(value) -> float | None:
+    """Tolerate the buoy payload quirks: missing key, JSON null, or empty
+    string. The scraper stringifies most buoy fields, so we coerce through
+    `float()` only when there's something numeric to coerce."""
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _buoy_field(entry: dict, *keys: str) -> float | None:
+    """First non-null value across a set of buoy field-name candidates.
+
+    The same physical quantity has been exposed under different field names
+    on the Addicted-Sports endpoint over the years. We accept any of them
+    rather than fail on a rename — the union keeps historical rows
+    readable if a backfill ever needs to be re-run.
+    """
+    for key in keys:
+        if key in entry:
+            parsed = _float_or_none(entry[key])
+            if parsed is not None:
+                return parsed
+    return None
