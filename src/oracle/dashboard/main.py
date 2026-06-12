@@ -856,10 +856,12 @@ def _samples_from_record(record: dict | None) -> list[UrfeldSample]:
     out: list[UrfeldSample] = []
     for s in raw_samples:
         try:
+            wt = s.get("water_temp_c")
             out.append(UrfeldSample(
                 measured_at=datetime.fromisoformat(s["t"]),
                 avg_knots=float(s["avg_kt"]),
                 gust_knots=float(s["gust_kt"]),
+                water_temp_c=float(wt) if wt is not None else None,
             ))
         except (KeyError, ValueError, TypeError):
             continue

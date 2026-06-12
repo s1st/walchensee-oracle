@@ -151,6 +151,9 @@ def forecast_to_dict(result: Forecast, target_day: date) -> dict:
             "pressure": result.pressure.to_dict(),
             "meteo": result.meteo.to_dict(),
             "measurements": [w.to_dict() for w in result.winds],
+            "lake_temp": (
+                result.lake_temp.to_dict() if result.lake_temp is not None else None
+            ),
         },
     }
 
@@ -217,6 +220,8 @@ def _machine_ground_truth(samples: list[UrfeldSample]) -> dict:
     peak_gust = max(samples, key=lambda s: s.gust_knots)
     above_ignition = [s for s in samples if s.avg_knots >= _IGNITION_KT]
     above_session = [s for s in samples if s.avg_knots >= _SESSION_KT]
+    water_temps = [s.water_temp_c for s in samples if s.water_temp_c is not None]
+    mean_water_temp = sum(water_temps) / len(water_temps) if water_temps else None
 
     return {
         "source": "addicted-sports-urfeld",
@@ -230,11 +235,17 @@ def _machine_ground_truth(samples: list[UrfeldSample]) -> dict:
         ),
         "samples_above_8kt": len(above_ignition),
         "samples_above_12kt": len(above_session),
+        "mean_water_temp_c": (
+            round(mean_water_temp, 2) if mean_water_temp is not None else None
+        ),
         "samples": [
             {
                 "t": s.measured_at.isoformat(),
                 "avg_kt": round(s.avg_knots, 2),
                 "gust_kt": round(s.gust_knots, 2),
+                "water_temp_c": (
+                    round(s.water_temp_c, 2) if s.water_temp_c is not None else None
+                ),
             }
             for s in samples
         ],

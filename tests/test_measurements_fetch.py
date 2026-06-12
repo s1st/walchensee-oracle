@@ -13,7 +13,10 @@ import httpx
 import pytest
 
 from oracle.config import ADDICTED_SPORTS_BASE_URL, BRIGHT_SKY_CURRENT_URL, StationRole
-from oracle.pillars.measurements import fetch_latest, fetch_urfeld_day_curve
+from oracle.pillars.measurements import (
+    fetch_latest,
+    fetch_urfeld_day_curve,
+)
 
 
 _BRIGHT_SKY_PAYLOAD = {
@@ -38,12 +41,12 @@ _URFELD_HTML = """<html><head>
 _URFELD_JSON = {
     "measurment": {
         "417 2026-04-19 16:01:00": {
-            "temp": "9.4", "wsavg": "1.08", "wsmax": "1.62",
+            "temp": "9.4", "wtemp": "12.8", "wsavg": "1.08", "wsmax": "1.62",
             "tsdatetime": "2026-04-19 16:01:00",
             "utctstamp": "1776607260",
         },
         "417 2026-04-19 14:58:00": {
-            "temp": "11.3", "wsavg": "12.78", "wsmax": "17.28",
+            "temp": "11.3", "wtemp": "12.5", "wsavg": "12.78", "wsmax": "17.28",
             "tsdatetime": "2026-04-19 14:58:00",
             "utctstamp": "1776603480",
         },
@@ -83,10 +86,10 @@ async def test_fetch_latest_returns_readings_from_both_sources():
 
     transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
     async with httpx.AsyncClient(transport=transport) as client:
-        readings = await fetch_latest(client=client)
+        latest = await fetch_latest(client=client)
 
     assert seen_urfeld_token["csrf"] == "TESTTOKEN12345"  # case-sensitive header carried through
-    by_role = {r.role: r for r in readings}
+    by_role = {r.role: r for r in latest.winds}
     assert StationRole.IGNITION_REFERENCE in by_role
     assert StationRole.SHORE in by_role
     assert by_role[StationRole.IGNITION_REFERENCE].station == "Mittenwald/Obb."
@@ -96,6 +99,12 @@ async def test_fetch_latest_returns_readings_from_both_sources():
     assert urfeld.avg_knots == pytest.approx(1.08)
     assert urfeld.gust_knots == pytest.approx(1.62)
     assert urfeld.direction_deg is None
+    # Water temp came from the same latest row.
+    assert urfeld.water_temp_c == pytest.approx(12.8)
+    # And the engine-visible envelope has it projected into a LakeTempSnapshot.
+    assert latest.lake_temp is not None
+    assert latest.lake_temp.surface_temp_c == pytest.approx(12.8)
+    assert latest.lake_temp.source_station == "Urfeld"
 
 
 @pytest.mark.asyncio
@@ -111,10 +120,12 @@ async def test_fetch_latest_tolerates_urfeld_failure():
 
     transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
     async with httpx.AsyncClient(transport=transport) as client:
-        readings = await fetch_latest(client=client)
+        latest = await fetch_latest(client=client)
 
-    assert len(readings) == 1
-    assert readings[0].role is StationRole.IGNITION_REFERENCE
+    assert len(latest.winds) == 1
+    assert latest.winds[0].role is StationRole.IGNITION_REFERENCE
+    # No Urfeld reading → no lake-temp signal, but the call still succeeded.
+    assert latest.lake_temp is None
 
 
 @pytest.mark.asyncio
@@ -156,11 +167,12 @@ async def test_fetch_latest_rejects_urfeld_csrf_error_response():
 
     transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
     async with httpx.AsyncClient(transport=transport) as client:
-        readings = await fetch_latest(client=client)
+        latest = await fetch_latest(client=client)
 
     # Bright Sky still returns; Urfeld source is dropped for this run.
-    assert len(readings) == 1
-    assert readings[0].role is StationRole.IGNITION_REFERENCE
+    assert len(latest.winds) == 1
+    assert latest.winds[0].role is StationRole.IGNITION_REFERENCE
+    assert latest.lake_temp is None
 
 
 @pytest.mark.asyncio
@@ -191,10 +203,13 @@ async def test_fetch_latest_skips_urfeld_metadata_only_rows():
 
     transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
     async with httpx.AsyncClient(transport=transport) as client:
-        readings = await fetch_latest(client=client)
+        latest = await fetch_latest(client=client)
 
-    urfeld = {r.role: r for r in readings}[StationRole.SHORE]
+    urfeld = {r.role: r for r in latest.winds}[StationRole.SHORE]
     assert urfeld.avg_knots == pytest.approx(1.08)  # the metadata-only newer row was skipped
+    # Metadata-only row also had no wtemp — lake_temp should be None.
+    assert urfeld.water_temp_c is None
+    assert latest.lake_temp is None
 
 
 @pytest.mark.asyncio
@@ -205,7 +220,7 @@ async def test_fetch_urfeld_day_curve_skips_metadata_only_rows():
     payload = {
         "measurment": {
             "417 2026-04-19 10:00:00": {
-                "wsavg": "5.0", "wsmax": "8.0",
+                "wtemp": "12.3", "wsavg": "5.0", "wsmax": "8.0",
                 "tsdatetime": "2026-04-19 10:00:00", "utctstamp": "1",
             },
             "417 2026-04-19 10:10:00": {  # metadata-only → skipped, not fatal
@@ -228,3 +243,36 @@ async def test_fetch_urfeld_day_curve_skips_metadata_only_rows():
 
     assert len(samples) == 1
     assert samples[0].avg_knots == pytest.approx(5.0)
+    assert samples[0].water_temp_c == pytest.approx(12.3)
+
+
+@pytest.mark.asyncio
+async def test_fetch_latest_returns_no_lake_temp_when_latest_row_lacks_wtemp():
+    """A row with wind but no wtemp must still report wind — lake_temp just
+    stays None. The rule layer treats that as 'no signal'."""
+    payload = {
+        "measurment": {
+            "417 2026-04-19 16:01:00": {
+                "wsavg": "1.08", "wsmax": "1.62",  # no wtemp
+                "tsdatetime": "2026-04-19 16:01:00", "utctstamp": "1776607260",
+            },
+        }
+    }
+
+    def bright_sky(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_BRIGHT_SKY_PAYLOAD)
+
+    def urfeld_html(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_URFELD_HTML)
+
+    def urfeld_json(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
+    async with httpx.AsyncClient(transport=transport) as client:
+        latest = await fetch_latest(client=client)
+
+    urfeld = {r.role: r for r in latest.winds}[StationRole.SHORE]
+    assert urfeld.avg_knots == pytest.approx(1.08)
+    assert urfeld.water_temp_c is None
+    assert latest.lake_temp is None

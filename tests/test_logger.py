@@ -49,6 +49,7 @@ def _forecast() -> Forecast:
             max_wind_700_knots=10.0,
         ),
         winds=[WindReading("Urfeld", StationRole.SHORE, 2.1, 4.5, None, now)],
+        lake_temp=None,
     )
 
 
@@ -91,11 +92,11 @@ async def test_backfill_merges_machine_ground_truth(tmp_path: Path):
     _URFELD_JSON = {
         "measurment": {
             "417 2026-04-22 11:05:00": {
-                "wsavg": "8.5", "wsmax": "12.1",
+                "wtemp": "12.4", "wsavg": "8.5", "wsmax": "12.1",
                 "tsdatetime": "2026-04-22 11:05:00", "utctstamp": "1",
             },
             "417 2026-04-22 13:40:00": {
-                "wsavg": "13.2", "wsmax": "18.9",
+                "wtemp": "13.1", "wsavg": "13.2", "wsmax": "18.9",
                 "tsdatetime": "2026-04-22 13:40:00", "utctstamp": "2",
             },
             "417 2026-04-23 00:05:00": {
@@ -125,6 +126,9 @@ async def test_backfill_merges_machine_ground_truth(tmp_path: Path):
     assert machine["samples_above_8kt"] == 2
     assert machine["samples_above_12kt"] == 1
     assert machine["first_ignition_at"] == "2026-04-22T11:05:00"
+    # Water-temp ground truth: mean of 12.4 and 13.1, captured per-sample too.
+    assert machine["mean_water_temp_c"] == pytest.approx(12.75)
+    assert all(s["water_temp_c"] is not None for s in machine["samples"])
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,7 @@ import httpx
 from oracle.knowledge import rules
 from oracle.knowledge.rules import Severity, Signal, Verdict
 from oracle.pillars import measurements, meteo, pressure
-from oracle.pillars.measurements import WindReading
+from oracle.pillars.measurements import LakeTempSnapshot, WindReading
 from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureSnapshot
 
@@ -24,6 +24,10 @@ class Forecast:
     pressure: PressureSnapshot
     meteo: MeteoSnapshot
     winds: list[WindReading]
+    # Lake surface temperature from the most recent buoy reading. None when
+    # the buoy is down or its latest usable row didn't carry `wtemp` —
+    # tolerated, the air_lake_delta rule simply won't fire.
+    lake_temp: LakeTempSnapshot | None
 
 
 def apply_rules(
@@ -54,11 +58,12 @@ def apply_rules(
 
 async def run_forecast(day: date) -> Forecast:
     async with httpx.AsyncClient(timeout=10.0) as client:
-        snapshot, meteo_snap, winds = await asyncio.gather(
+        snapshot, meteo_snap, latest = await asyncio.gather(
             pressure.fetch_snapshot(client=client),
             meteo.fetch_snapshot(day, client=client),
             measurements.fetch_latest(client=client),
         )
+    winds = latest.winds
     verdicts = apply_rules(snapshot, meteo_snap, winds)
     return Forecast(
         overall=aggregate(verdicts),
@@ -66,6 +71,7 @@ async def run_forecast(day: date) -> Forecast:
         pressure=snapshot,
         meteo=meteo_snap,
         winds=winds,
+        lake_temp=latest.lake_temp,
     )
 
 
