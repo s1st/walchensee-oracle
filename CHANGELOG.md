@@ -37,6 +37,7 @@ One threshold per commit, so each effect is isolated in the rescore strip.
 - 30-day strip split into **forecast vs. actual** rows (`d18e266`)
 - **`oracle calibrate`** — confusion matrix scoring forecasts against Urfeld peak truth (`0602b85`)
 - **Third row** — forecasts re-scored under the *current* aggregator ("Neu berechnet") (`5ef2f23`)
+- **Full buoy payload + 9 years of historical ground truth** — `WindReading` / `UrfeldSample` now carry the buoy's full sensor set (air temp, dew point, humidity, raw pressure, rain) on top of wind + water temp, so future buoy-side rules have data to fit against. The calibration bucket also holds ~3,600 historical buoy stub records pulled from the Addicted-Sports archive (2016-01 → 2026-04, ~70% in-season coverage), giving the rule layer a multi-year in-season corpus for hypothesis testing. Historical records have no forecast verdicts — they show up on the `actual` side of `oracle calibrate` but not the forecast side. Pass `--since 2026-04-22` to score the project's own days only. (`6c83c95`, `2a498d5`)
 
 ### From peak to duration
 The shift in *what counts as a session*.
