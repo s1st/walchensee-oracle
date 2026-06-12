@@ -75,7 +75,19 @@ MAX_OVERNIGHT_CLOUD_COVER_PCT = 95.0  # 22:00→06:00 average; above this, weak 
                                       # fired at up to 94% cloud cover; only the 97.1% day
                                       # was a true NO_GO. Alpine mountain effects dominate
                                       # radiative cooling at this proximity to the ridge.
-MIN_MORNING_SOLAR_WM2 = 600.0    # max hourly shortwave radiation 09:00–13:00
+MIN_MORNING_SOLAR_WM2 = 380.0    # max hourly shortwave radiation 09:00–13:00
+                                 # Was 600.0 (research-analogue guess); refitted from
+                                 # n=3,263 replay baseline (2026-06-12, branch
+                                 # threshold-tuning, plan Phase 3). Sweep on the
+                                 # duration-label report: N_C (rule caught a
+                                 # didn't-fire day) − N_T (rule wrongly vetoed a
+                                 # fired day) peaks at +287 around X=380 W/m²;
+                                 # at 600 was +223. 564 days with solar<380 fired
+                                 # anyway (the source of the FP-veto
+                                 # noise — see 2020-10-03 with peak 30.45 kt and
+                                 # solar 481 W/m²) is still larger than at 600
+                                 # but the rule's net contribution to the
+                                 # model is ~+64 days better.
 MIN_DEW_POINT_SPREAD_C = 2.5     # min(T − Td) in morning; below = moisture-suppressed.
                                  # Was 5.0; lowered after n=22 calibration showed full
                                  # sessions at spread 2.8–3.1. The only true NO_GO catch
