@@ -9,7 +9,7 @@ kiter heuristics) awaiting enough ground truth to fit. Treat any threshold
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import time
+from datetime import date, time
 from enum import Enum
 
 
@@ -112,6 +112,12 @@ MAX_LAKE_TEMP_AGE_HOURS = 168.0      # 7 days; buoy readings older than this
 
 # Classic Urfeld ignition window 10:30–11:30; propagation done by ~15:00.
 IGNITION_WINDOW_LOCAL: tuple[time, time] = (time(10, 30), time(15, 0))
+
+# First day the oracle logged a forecast. The runs bucket also holds ~3,600
+# historical buoy stub records (2016–2026, ground truth only, no verdicts);
+# pass this as `since=` to calibrate/rescore/stats walks that should cover
+# only the project's own forecast days.
+PROJECT_FIRST_DAY = date(2026, 4, 22)
 
 # --- External endpoints ---------------------------------------------------
 # Production: live forecast. Replay uses one of the archive hosts below —

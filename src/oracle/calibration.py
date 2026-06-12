@@ -255,7 +255,7 @@ def rescore_all(
     stub records (2016-2026, no `inputs` block). `rescore_record` returns
     None for those, so they land in `skipped` — no harm, but a no-arg
     rescore is slow because every stub is read from GCS and discarded.
-    Pass `since=date(2026, 4, 22)` to rescore only the project's days.
+    Pass `since=config.PROJECT_FIRST_DAY` to rescore only the project's days.
     """
     store = store or default_store()
     rewritten: list[str] = []
@@ -305,7 +305,7 @@ def compile_report(
     the `actual` (ground truth) side of the confusion matrix — useful
     for hypothesis testing at scale — but the per-record forecast lookup
     is None, so they don't pollute the verdict scoring. Pass
-    `since=date(2026, 4, 22)` to restrict to the project's own days when
+    `since=config.PROJECT_FIRST_DAY` to restrict to the project's own days when
     you only want the project's own forecast accuracy.
 
     `label` picks the ground-truth scale:
