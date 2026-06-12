@@ -12,6 +12,7 @@ Reading order for someone picking this up cold:
 2. `docs/replay-calibration-plan.md` (the "what we planned to do")
 3. `docs/findings/2026-06-12-historical-baseline.md` (the "what the data says" raw notes)
 4. `docs/findings/threshold-solar-radiation.md` (the first threshold tune, in detail)
+5. `docs/findings/threshold-daytime-clouds.md` (the second threshold tune, in detail)
 5. `docs/findings/release-notes-draft.md` (the blog post brainstorm)
 
 ## Headline
@@ -70,6 +71,14 @@ ac0c212 replay: batch mode for calibration passes over the historical backfill
 6f61053 config: retune MIN_MORNING_SOLAR_WM2 600 → 380 W/m² (n=3,263)
    First threshold tune (Phase 3 of the plan). Detailed in
    docs/findings/threshold-solar-radiation.md.
+
+<NEXT-COMMIT> config: retune MAX_DAYTIME_LOW_CLOUD_PCT 60 → 75% (n=3,263)
+   Second threshold tune (Phase 3 of the plan). The 60% value
+   was a research-analogue guess; data-fit peak is at 75% with
+   N_C − N_T = +139 (vs +131 at 60). Modest +8-day net improvement
+   — the cloud distribution is bimodal, the rule was already
+   close to optimal. FP-veto count dropped 13% (968 → 845).
+   Detailed in docs/findings/threshold-daytime-clouds.md.
 ```
 
 ## Key data findings
@@ -338,6 +347,7 @@ docs/
 └── findings/
     ├── 2026-06-12-historical-baseline.md   # Phase 2 baseline data exploration
     ├── threshold-solar-radiation.md        # first threshold tune, in detail
+    ├── threshold-daytime-clouds.md         # second threshold tune, in detail
     └── release-notes-draft.md              # blog post brainstorm
 
 CHANGELOG.md                                # (pre-existing) 2026-06-12 milestone pending
@@ -350,8 +360,9 @@ CHANGELOG.md                                # (pre-existing) 2026-06-12 mileston
 | Total replay days in bucket | 3,331 |
 | Storm-quarantined days | 68 |
 | Days in duration-label report | 3,263 |
-| Headline accuracy (before) | 40.8% |
+| Headline accuracy (before any tune) | 40.8% |
 | Headline accuracy (after first threshold tune) | 41.3% |
+| Headline accuracy (after both threshold tunes) | 42.0% |
 | Hard errors (before) | 6.2% |
 | Hard errors (after) | 5.0% |
 | Live-era accuracy (before) | 34% |

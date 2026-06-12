@@ -102,7 +102,8 @@ def test_solar_radiation_bright_morning_go():
 
 
 def test_solar_radiation_dim_morning_no_go():
-    assert solar_radiation(_meteo(solar=400)).signal is Signal.NO_GO
+    # 300 W/m² is well below the data-fitted 380 W/m² threshold.
+    assert solar_radiation(_meteo(solar=300)).signal is Signal.NO_GO
 
 
 def test_synoptic_override_kills_thermal():
@@ -251,7 +252,7 @@ def test_overnight_cooling_no_go_is_soft():
 
 
 def test_solar_radiation_no_go_is_soft():
-    assert solar_radiation(_meteo(solar=400)).severity is Severity.SOFT
+    assert solar_radiation(_meteo(solar=300)).severity is Severity.SOFT
 
 
 def test_dew_point_spread_no_go_is_soft():

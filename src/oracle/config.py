@@ -105,7 +105,21 @@ MAX_LIFTED_INDEX = 10.0          # above = atmosphere too stable, thermal capped
                                  # sessions at li_max up to 8.9 (and rideable up to 12.3).
                                  # Spring surface heating overpowers a "textbook" cap here.
 MIN_LIFTED_INDEX = -2.0          # below = thunderstorm risk, thermal destroyed
-MAX_DAYTIME_LOW_CLOUD_PCT = 60.0 # max cloud_cover_low 09:00–13:00; above = slopes shaded
+MAX_DAYTIME_LOW_CLOUD_PCT = 75.0 # max cloud_cover_low 09:00–13:00; above = slopes shaded
+                                 # Was 60.0 (research-analogue guess); refitted from
+                                 # n=3,263 replay baseline (2026-06-12, branch
+                                 # threshold-tuning, plan Phase 3, second tune).
+                                 # Sweep on the duration-label report:
+                                 # N_C (rule caught a didn't-fire day) − N_T
+                                 # (rule wrongly vetoed a fired day) peaks at
+                                 # +139 around X=75%; at 60 was +131. Modest
+                                 # +8-day improvement — the cloud distribution
+                                 # is bimodal (1,138 days with cloud<10%,
+                                 # 744 days with cloud=100%, sparse middle)
+                                 # so the rule's contribution in the 30-90%
+                                 # borderline band is small either way. The
+                                 # raise to 75% is the clean read of the data;
+                                 # 66-69% are tied at +138 within noise.
 GOOD_DAYTIME_LOW_CLOUD_PCT = 30.0 # below this = unobstructed sun
 SYNOPTIC_OPPOSING_DEG = (150, 210)  # 850 hPa wind from SSE counters the N→S thermal
 SYNOPTIC_OPPOSING_MIN_KNOTS = 12.0  # SSE direction only vetoes at meaningful 850 speed.
