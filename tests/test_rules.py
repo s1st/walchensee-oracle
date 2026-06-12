@@ -44,7 +44,9 @@ def test_thermik_no_go():
 
 
 def test_foehn_override_flags_southerly_pressure():
-    assert foehn_override(_snapshot(3.0, foehn_delta=5.0)).signal is Signal.NO_GO
+    # 12 hPa is well above the data-fitted 10 hPa threshold (essentially
+    # "rule never fires in 3,331 days, kept as a safety net").
+    assert foehn_override(_snapshot(3.0, foehn_delta=12.0)).signal is Signal.NO_GO
 
 
 def test_foehn_override_clear_when_pressure_balanced():
@@ -245,7 +247,7 @@ def test_thermik_no_go_is_soft():
 
 
 def test_foehn_override_is_hard():
-    assert foehn_override(_snapshot(3.0, foehn_delta=5.0)).severity is Severity.HARD
+    assert foehn_override(_snapshot(3.0, foehn_delta=12.0)).severity is Severity.HARD
 
 
 def test_overnight_cooling_no_go_is_soft():

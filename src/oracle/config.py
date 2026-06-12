@@ -67,7 +67,34 @@ MIN_THERMIK_DELTA_HPA = -1.0  # Munich − Innsbruck. Below this the synoptic fl
                               # GO days (peak ≥12 kt) had Δ ∈ [-0.8, +2.6]; the cross-Alps
                               # delta is a *background* condition for Walchi, not a trigger —
                               # local slope-vs-lake T-gradient is the real driver.
-FOEHN_TRIGGER_DELTA_HPA = 4.0    # Bolzano − Innsbruck positive ≥ this => Föhn risk
+FOEHN_TRIGGER_DELTA_HPA = 10.0   # Bolzano − Innsbruck positive ≥ this => Föhn risk
+                                 # Was 4.0 (research-analogue guess); refitted from
+                                 # n=3,331 replay baseline (2026-06-12, branch
+                                 # threshold-tuning, plan Phase 3, fifth tune).
+                                 # The rule's premise — "Föhn suppresses
+                                 # thermals" — is *contradicted* by the data.
+                                 # Fire rate by Bolzano−Innsbruck Δ bucket:
+                                 #   Δ 0-2:    52% fire   (no Föhn)
+                                 #   Δ 2-4:    54% fire   (weak Föhn)
+                                 #   Δ 4-6:    64% fire   (Föhn — current trigger)
+                                 #   Δ 6-8:   100% fire   (strong Föhn)
+                                 #   Δ 8-10:   67% fire   (very strong Föhn)
+                                 # Föhn days fire *more* often than non-Föhn
+                                 # days, not less. The rule is net-negative at
+                                 # every threshold from -5 to +9 hPa (N_C − N_T
+                                 # ranges from -1 to -104; the best is -1 at
+                                 # X=-5 and 0 at X≥10). At the current 4 the
+                                 # rule fires on 136 days: 41 correct vetoes,
+                                 # 95 wrong vetoes. Raising to 10 essentially
+                                 # disables the rule (no day in the sample has
+                                 # Δ ≥ 10). The "right" fix would be to flip
+                                 # the sign or to remove the rule entirely —
+                                 # both are bigger changes than a threshold
+                                 # tweak. 10 is the clean "safety net"
+                                 # value; a follow-up commit should consider
+                                 # replacing this rule with a feature input
+                                 # to the thermik or foehn-aware boundary
+                                 # logic.
 SYNOPTIC_OVERRIDE_KNOTS = 25.0   # ≥ 3 Bft base wind deforms the thermal cell
                                  # Was 15.0 (research-analogue guess); refitted from
                                  # n=648 ICON-era replay sample (2026-06-12, branch
@@ -149,6 +176,28 @@ SYNOPTIC_OPPOSING_MIN_KNOTS = 12.0  # SSE direction only vetoes at meaningful 85
                                     # never stopped a session (peaks 10.8–14.0 kt); the
                                     # direction-only veto was 0/4 with no correct catch.
 MAX_UPPER_CROSSFLOW_KNOTS = 25.0    # 700 hPa above this decouples valley-wind system
+                                 # (Reverted: data-fit sweep suggested 15 kt was
+                                 # better at the rule level — N_C − N_T = +29
+                                 # there vs +3 at 25 — but the verdict-level
+                                 # aggregator shifted −1pp on the full 3,263
+                                 # day sample when the rule fired on 160 more
+                                 # days. Each new fire is a SOFT veto that can
+                                 # push a go-day down to maybe/no_go via the
+                                 # 2-soft-veto downgrade bar. The rule-level
+                                 # N_C − N_T analysis didn't capture that
+                                 # interaction. 25 is "barely-active safety
+                                 # net" — the clean read is that the rule's
+                                 # value is dominated by the aggregator, not
+                                 # by the simple veto accuracy. Parked: an
+                                 # aggregator-aware tuner (or changing the
+                                 # rule's severity to NONE so it doesn't
+                                 # shift verdicts at all) is the right fix
+                                 # if this rule is ever to earn more.)
+                                 # Was originally 25.0 (research-analogue
+                                 # guess, plan flagged for re-fit). See
+                                 # docs/findings/threshold-upper-level-wind.md
+                                 # for the full data and the alternative
+                                 # that did worse on the aggregator.
 
 # Lake-temperature rule (air_lake_delta) thresholds.
 # TODO(calibrate): no n= yet — docs/future-factors.md sketches air−water > 10 C
