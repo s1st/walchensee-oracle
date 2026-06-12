@@ -137,6 +137,13 @@ _RULE_I18N: dict[str, RuleI18n] = {
             "en": "Live readings from the Urfeld buoy + nearest DWD station. ≥ 8 kt mean wind = thermal ignited.",
         },
     ),
+    "air_lake_delta": RuleI18n(
+        label={"de": "See-/Lufttemperatur", "en": "Lake / air temperature"},
+        description={
+            "de": "Luft−Wasser-Temperaturdifferenz. Kalter See (Luft wärmer als Wasser um > 10 °C) bremst die Frühjahrs-Thermik; warmer See unterstützt sie. Bojen-Wassertemperatur + Open-Meteo-Lufttemperatur.",
+            "en": "Air−water temperature delta. Cold lake (air warmer than water by > 10 °C) opposes the spring thermal; warm lake aids it. Buoy water temperature + Open-Meteo air temperature.",
+        },
+    ),
 }
 
 
@@ -158,6 +165,7 @@ _UI: dict[str, dict[str, str]] = {
         "live_header": "Aktuell in Urfeld",
         "live_now": "jetzt",
         "live_gust_label": "Böe",
+        "live_water_label": "Wasser",
         "live_last_hour": "Ø letzte Stunde",
         "live_trend_up": "steigend",
         "live_trend_down": "fallend",
@@ -179,7 +187,7 @@ _UI: dict[str, dict[str, str]] = {
         "last_30_days": "Letzte 30 Tage",
         "no_data": "Keine Daten — warte auf die nächste Vorhersage (ca. 08:00 Ortszeit).",
         "no_data_headline": "—",
-        "advanced_label": "Details — alle 12 Regeln",
+        "advanced_label": "Details — alle 13 Regeln",
         "view_label_original": "wie damals geschrieben",
         "col_rule": "Regel",
         "col_signal": "Signal",
@@ -226,6 +234,7 @@ _UI: dict[str, dict[str, str]] = {
         "live_header": "Live at Urfeld",
         "live_now": "now",
         "live_gust_label": "gust",
+        "live_water_label": "water",
         "live_last_hour": "last-hour average",
         "live_trend_up": "rising",
         "live_trend_down": "dropping",
@@ -247,7 +256,7 @@ _UI: dict[str, dict[str, str]] = {
         "last_30_days": "Last 30 days",
         "no_data": "No data yet — next scheduled forecast runs at 08:00 CET.",
         "no_data_headline": "—",
-        "advanced_label": "Advanced — all 12 rules",
+        "advanced_label": "Advanced — all 13 rules",
         "view_label_original": "as written at the time",
         "col_rule": "Rule",
         "col_signal": "Signal",
@@ -458,6 +467,9 @@ async def _fetch_urfeld_live() -> dict:
         "available": True,
         "latest_avg_kt": round(latest.avg_knots, 1),
         "latest_gust_kt": round(latest.gust_knots, 1),
+        "latest_water_temp_c": (
+            round(latest.water_temp_c, 1) if latest.water_temp_c is not None else None
+        ),
         "latest_at": latest.measured_at.isoformat(),
         "last_hour_avg": round(last_hour_avg, 1),
         "prev_hour_avg": round(prev_hour_avg, 1) if prev_hour_avg is not None else None,
