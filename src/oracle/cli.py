@@ -137,6 +137,13 @@ def calibrate(
     (rules that said NO_GO on days the lake actually fired). Reads from the
     same RunStore the forecast/backfill jobs write — local in dev, GCS in
     prod when $RUNS_BUCKET is set.
+
+    Since 2026-06-12 the bucket also contains ~3,600 historical buoy
+    stub records (2016-2026, no forecast). They contribute to the
+    `actual` (ground truth) side of the confusion matrix — useful for
+    hypothesis testing at scale — but have no forecast to score. A
+    no-arg run walks all 3,700 files (~10-20 min over GCS); pass
+    `--since 2026-04-22` to restrict to the project's own days.
     """
     from oracle.calibration import compile_report, export_csv, format_text_report
 
