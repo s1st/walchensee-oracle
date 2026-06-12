@@ -142,7 +142,28 @@ MIN_DEW_POINT_SPREAD_C = 2.5     # min(T − Td) in morning; below = moisture-su
                                  # sessions at spread 2.8–3.1. The only true NO_GO catch
                                  # sat at spread 2.0 — moisture-cap only bites below ~2.5.
 COMFORTABLE_DEW_POINT_SPREAD_C = 8.0  # above this = confidently dry air
-MIN_BOUNDARY_LAYER_HEIGHT_M = 600.0   # max BLH in morning; below = capped thermal
+MIN_BOUNDARY_LAYER_HEIGHT_M = 400.0   # max BLH in morning; below = capped thermal
+                                 # Was 600.0 (research-analogue guess); refitted
+                                 # from n=629 ICON-era replay sample (2026-06-12,
+                                 # branch threshold-tuning, plan Phase 3, sixth
+                                 # tune). The pre-2021 IFS-HRES archive doesn't
+                                 # expose BLH so the tune is ICON-era only —
+                                 # same caveat as the synoptic / foehn tunes.
+                                 # Sweep on the duration-label report: N_C
+                                 # (rule caught a didn't-fire day) − N_T (rule
+                                 # wrongly vetoed a fired day) peaks at +57
+                                 # around X=400m; at the current 600 was
+                                 # +53. Modest +4-day improvement — the rule's
+                                 # net value plateaus at +50 to +60 across the
+                                 # 200-3000m range; the data has ~145 days with
+                                 # BLH<300m and that's where most of the
+                                 # discriminating signal is. The "absolute"
+                                 # optimum is at X=3000m (rule fires on
+                                 # essentially all days, +63) but that's
+                                 # "rule does nothing different from baseline"
+                                 # and loses the BLH-specific veto semantics.
+                                 # 400 keeps the intent: catch clearly-shallow
+                                 # mornings as a thermal cap.
 GOOD_BOUNDARY_LAYER_HEIGHT_M = 1000.0 # above this = deep mixing, strong thermal potential
 WET_SOIL_MOISTURE_M3M3 = 0.35    # soil_moisture_0_to_1cm above this = ground still wet
 RAINED_YESTERDAY_MM = 2.0        # threshold for the logged `rained_yesterday` flag.

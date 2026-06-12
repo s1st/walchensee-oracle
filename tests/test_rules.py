@@ -138,7 +138,8 @@ def test_boundary_layer_shallow_maybe():
 
 
 def test_boundary_layer_capped_no_go():
-    assert boundary_layer_height(_meteo(blh=400.0)).signal is Signal.NO_GO
+    # 300 m is well below the data-fitted 400 m threshold.
+    assert boundary_layer_height(_meteo(blh=300.0)).signal is Signal.NO_GO
 
 
 def test_post_rain_yesterday_alone_does_not_block():
@@ -263,7 +264,7 @@ def test_dew_point_spread_no_go_is_soft():
 
 
 def test_boundary_layer_no_go_is_soft():
-    assert boundary_layer_height(_meteo(blh=400.0)).severity is Severity.SOFT
+    assert boundary_layer_height(_meteo(blh=300.0)).severity is Severity.SOFT
 
 
 def test_post_rain_no_go_is_soft():
