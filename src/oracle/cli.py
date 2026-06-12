@@ -170,6 +170,7 @@ def rescore(
     since: str = typer.Option(None, help="ISO date — only re-score days from this date forward."),
     until: str = typer.Option(None, help="ISO date — only re-score days up to this date."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Don't write; just report what would change."),
+    replayed: bool = typer.Option(False, "--replayed", help="Re-score the replay records (runs/replay/) instead of the live forecasts — the no-API inner loop of historical calibration."),
 ) -> None:
     """Re-run the rule layer on each logged record under the current aggregator.
 
@@ -177,12 +178,16 @@ def rescore(
     touching the historical `overall` / `verdicts` (kept as evidence of what
     the aggregator said at write time). The dashboard reads the resimulated
     field for the 'Re-scored' strip row when present.
+
+    With --replayed: same, but over the replay records, from their stored
+    inputs — no Open-Meteo traffic. After tuning a threshold, run this and
+    then `oracle calibrate --replayed --resimulated` to see the effect.
     """
     from oracle.calibration import rescore_all
 
     since_d = date.fromisoformat(since) if since else None
     until_d = date.fromisoformat(until) if until else None
-    summary = rescore_all(since=since_d, until=until_d, dry_run=dry_run)
+    summary = rescore_all(since=since_d, until=until_d, dry_run=dry_run, replayed=replayed)
     if dry_run:
         console.print(f"would rewrite {len(summary['unchanged'])} records")
     else:
@@ -206,6 +211,7 @@ def calibrate(
     rule: str = typer.Option(None, help="Restrict per-rule table to a single rule (e.g. post_rain_moisture)."),
     label: str = typer.Option("peak", help="Ground-truth scale: 'peak' (max avg knots) or 'duration' (sustained samples)."),
     resimulated: bool = typer.Option(False, "--resimulated/--historical", help="Score the current rule layer (`verdicts_resimulated`) instead of the historical verdicts. Requires `oracle rescore` to have populated those fields."),
+    replayed: bool = typer.Option(False, "--replayed", help="Score the replay records (runs/replay/) against the ground truth in the matching main records. Combine with --resimulated after a threshold tune + `oracle rescore --replayed`."),
     csv: str = typer.Option(None, help="Path to write a flat one-row-per-day CSV (features + ground truth) for offline ML."),
 ) -> None:
     """Score logged forecasts against Urfeld ground truth.
@@ -221,6 +227,12 @@ def calibrate(
     hypothesis testing at scale — but have no forecast to score. A
     no-arg run walks all 3,700 files (~10-20 min over GCS); pass
     `--since 2026-04-22` to restrict to the project's own days.
+
+    With --replayed: score the archive-replayed verdicts (written by
+    `oracle replay --from/--to`) against the same stored ground truth.
+    Reads two records per day over GCS — for repeated runs, mirror the
+    bucket locally (`gcloud storage cp -r gs://<bucket>/runs data/`) and
+    run without $RUNS_BUCKET.
     """
     from oracle.calibration import compile_report, export_csv, format_text_report
 
@@ -228,10 +240,13 @@ def calibrate(
         raise typer.BadParameter("--label must be 'peak' or 'duration'")
     since_d = date.fromisoformat(since) if since else None
     until_d = date.fromisoformat(until) if until else None
-    report = compile_report(since=since_d, until=until_d, label=label, resimulated=resimulated)
+    report = compile_report(
+        since=since_d, until=until_d, label=label,
+        resimulated=resimulated, replayed=replayed,
+    )
     console.print(format_text_report(report, rule_filter=rule))
     if csv:
-        n = export_csv(csv, since=since_d, until=until_d)
+        n = export_csv(csv, since=since_d, until=until_d, replayed=replayed)
         console.print(f"\n[dim]Wrote {n} rows to {csv}[/dim]")
 
 

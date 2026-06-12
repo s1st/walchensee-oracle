@@ -38,9 +38,17 @@ _SESSION_KT = 12.0
 
 
 class RunStore(Protocol):
+    """Day-keyed JSON storage with two namespaces: the main records
+    (forecasts + ground truth) and the replay records (verdicts re-run
+    against the historical archives, kept separate so the calibrate loop
+    only sees replays when explicitly asked)."""
+
     def read(self, iso_day: str) -> dict | None: ...
     def write(self, iso_day: str, data: dict) -> str: ...
     def list_days(self) -> list[str]: ...
+    def read_replay(self, iso_day: str) -> dict | None: ...
+    def write_replay(self, iso_day: str, data: dict) -> str: ...
+    def list_replays(self) -> list[str]: ...
 
 
 @dataclass
@@ -51,13 +59,7 @@ class LocalRunStore:
         self.directory.mkdir(parents=True, exist_ok=True)
 
     def read(self, iso_day: str) -> dict | None:
-        path = self.directory / f"{iso_day}.json"
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return None
-        except json.JSONDecodeError:
-            return None
+        return self._read_path(self.directory / f"{iso_day}.json")
 
     def write(self, iso_day: str, data: dict) -> str:
         path = self.directory / f"{iso_day}.json"
@@ -66,6 +68,28 @@ class LocalRunStore:
 
     def list_days(self) -> list[str]:
         return sorted(p.stem for p in self.directory.glob("*.json"))
+
+    def read_replay(self, iso_day: str) -> dict | None:
+        return self._read_path(self.directory / "replay" / f"{iso_day}.json")
+
+    def write_replay(self, iso_day: str, data: dict) -> str:
+        replay_dir = self.directory / "replay"
+        replay_dir.mkdir(parents=True, exist_ok=True)
+        path = replay_dir / f"{iso_day}.json"
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(path)
+
+    def list_replays(self) -> list[str]:
+        return sorted(p.stem for p in (self.directory / "replay").glob("*.json"))
+
+    @staticmethod
+    def _read_path(path: Path) -> dict | None:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except json.JSONDecodeError:
+            return None
 
 
 @dataclass
@@ -82,24 +106,39 @@ class GCSRunStore:
     def _blob(self, iso_day: str):
         return self._bucket.blob(f"runs/{iso_day}.json")
 
+    def _replay_blob(self, iso_day: str):
+        return self._bucket.blob(f"runs/replay/{iso_day}.json")
+
     def read(self, iso_day: str) -> dict | None:
+        return self._read_blob(self._blob(iso_day))
+
+    def write(self, iso_day: str, data: dict) -> str:
+        self._blob(iso_day).upload_from_string(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            content_type="application/json",
+        )
+        return f"gs://{self.bucket_name}/runs/{iso_day}.json"
+
+    def read_replay(self, iso_day: str) -> dict | None:
+        return self._read_blob(self._replay_blob(iso_day))
+
+    def write_replay(self, iso_day: str, data: dict) -> str:
+        self._replay_blob(iso_day).upload_from_string(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            content_type="application/json",
+        )
+        return f"gs://{self.bucket_name}/runs/replay/{iso_day}.json"
+
+    @staticmethod
+    def _read_blob(blob) -> dict | None:
         from google.cloud.exceptions import NotFound
 
-        blob = self._blob(iso_day)
         try:
             return json.loads(blob.download_as_text())
         except NotFound:
             return None
         except json.JSONDecodeError:
             return None
-
-    def write(self, iso_day: str, data: dict) -> str:
-        blob = self._blob(iso_day)
-        blob.upload_from_string(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            content_type="application/json",
-        )
-        return f"gs://{self.bucket_name}/runs/{iso_day}.json"
 
     def list_days(self) -> list[str]:
         # Blob names look like "runs/2026-04-22.json"; strip prefix + suffix.
@@ -118,9 +157,8 @@ class GCSRunStore:
 
     def list_replays(self) -> list[str]:
         """List the days that have a replay record. Replays live under
-        `runs/replay/<date>.json` so the calibrate loop naturally ignores
-        them. Used by the `oracle replay` CLI to avoid overwriting
-        previous replays of the same day without --force."""
+        `runs/replay/<date>.json` so the calibrate loop only sees them
+        when explicitly asked (`compile_report(replayed=True)`)."""
         days: list[str] = []
         for blob in self._client.list_blobs(self._bucket, prefix="runs/replay/"):
             name = blob.name
@@ -203,7 +241,7 @@ def write_run(
     iso = target_day.isoformat()
 
     if result.replay_day is not None:
-        # Replay path: write to the replay/ sub-prefix; no ground-truth
+        # Replay path: write to the replay/ namespace; no ground-truth
         # merge because the target day is in the past and ground truth
         # for it is already in the project root (separate concern).
         record = {
@@ -211,10 +249,7 @@ def write_run(
             **forecast_to_dict(result, target_day),
             "ground_truth": {"machine": None, "human": None},
         }
-        # Use the same store, but route through a replay-specific blob path.
-        # GCSRunStore and LocalRunStore both accept the same write API; we
-        # need a sub-prefixed path so we delegate to _replay_store.
-        return _write_replay(store, iso, record)
+        return store.write_replay(iso, record)
 
     ground_truth = {"machine": None, "human": None}
     existing = store.read(iso)
@@ -227,29 +262,6 @@ def write_run(
         "ground_truth": ground_truth,
     }
     return store.write(iso, record)
-
-
-def _write_replay(store: RunStore, iso: str, record: dict) -> str:
-    """Write a replay record to the `replay/` sub-prefix of the underlying
-    store. Implemented for the two concrete store backends; the protocol
-    itself is replay-agnostic."""
-    if isinstance(store, GCSRunStore):
-        # Reuse the store's client/bucket — a fresh storage.Client() per
-        # write means a credential lookup each time, which a 3,000-day
-        # batch replay would pay 3,000 times.
-        blob = store._bucket.blob(f"runs/replay/{iso}.json")
-        blob.upload_from_string(
-            json.dumps(record, ensure_ascii=False, indent=2),
-            content_type="application/json",
-        )
-        return f"gs://{store.bucket_name}/runs/replay/{iso}.json"
-    if isinstance(store, LocalRunStore):
-        replay_dir = store.directory / "replay"
-        replay_dir.mkdir(parents=True, exist_ok=True)
-        path = replay_dir / f"{iso}.json"
-        path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
-        return str(path)
-    raise TypeError(f"replay writes are only supported for GCSRunStore and LocalRunStore, got {type(store).__name__}")
 
 
 def load_run(target_day: date, store: RunStore | None = None) -> dict:
