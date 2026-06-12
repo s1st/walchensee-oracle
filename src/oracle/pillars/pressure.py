@@ -9,14 +9,15 @@ Two pairs matter at Walchensee:
 2. **Föhn** (Bolzano − Innsbruck) — south-minus-north; a positive delta signals
    Föhn risk, which suppresses the local thermal.
 
-Backend: Open-Meteo `forecast` endpoint. All three stations fetched in one
-batched request using MSL-reduced pressure (so elevation differences between
-Munich, Innsbruck and Bolzano don't swamp the signal).
+Backend: Open-Meteo `forecast` endpoint (live) or `historical-forecast-api`
+(archive replay). All three stations fetched in one batched request using
+MSL-reduced pressure (so elevation differences between Munich, Innsbruck
+and Bolzano don't swamp the signal).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, time
 
 import httpx
 
@@ -68,10 +69,30 @@ class PressureSnapshot:
 _STATIONS: tuple[Station, ...] = (MUNICH, INNSBRUCK_N, BOLZANO)
 
 
-async def fetch_snapshot(client: httpx.AsyncClient | None = None) -> PressureSnapshot:
+async def fetch_snapshot(
+    client: httpx.AsyncClient | None = None,
+    *,
+    host: str | None = None,
+    target_day: date | None = None,
+) -> PressureSnapshot:
+    """Pull the three pressure anchors as a `PressureSnapshot`.
+
+    Live mode (default): hits the live forecast host with `current=pressure_msl`.
+    Replay mode (`target_day` set): uses hourly timeseries for the target day
+    and picks the 09:00 UTC reading — same morning window the meteo pillar
+    uses, so the two pillars stay aligned in a replay run.
+    """
+    if target_day is None:
+        return await _fetch_live(client, host or OPEN_METEO_URL)
+    return await _fetch_replay(client, host or OPEN_METEO_URL, target_day)
+
+
+async def _fetch_live(
+    client: httpx.AsyncClient | None, host: str
+) -> PressureSnapshot:
     async with client_scope(client) as client:
         response = await client.get(
-            OPEN_METEO_URL,
+            host,
             params={
                 "latitude": ",".join(f"{s.lat}" for s in _STATIONS),
                 "longitude": ",".join(f"{s.lon}" for s in _STATIONS),
@@ -85,6 +106,65 @@ async def fetch_snapshot(client: httpx.AsyncClient | None = None) -> PressureSna
     # Open-Meteo returns a list when multiple locations are requested.
     locations = payload if isinstance(payload, list) else [payload]
     readings = [_to_reading(station, loc) for station, loc in zip(_STATIONS, locations, strict=True)]
+    munich, innsbruck, bolzano = readings
+    return PressureSnapshot(
+        thermik_north=munich,
+        thermik_south=innsbruck,
+        foehn_south=bolzano,
+    )
+
+
+async def _fetch_replay(
+    client: httpx.AsyncClient | None, host: str, target_day: date
+) -> PressureSnapshot:
+    """Replay-mode pressure fetch: hourly timeseries for the target day,
+    morning reading. Works against both the historical-forecast and
+    archive hosts — query schema is identical to the live one."""
+    # We need the 09:00 UTC reading of the target day, with one UTC day
+    # of headroom in case the model run boundaries straddle midnight.
+    start = target_day
+    end = target_day
+    target_hour = datetime.combine(target_day, time(9, 0))
+
+    async with client_scope(client) as client:
+        response = await client.get(
+            host,
+            params={
+                "latitude": ",".join(f"{s.lat}" for s in _STATIONS),
+                "longitude": ",".join(f"{s.lon}" for s in _STATIONS),
+                "hourly": "pressure_msl",
+                "timezone": "UTC",
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+
+    locations = payload if isinstance(payload, list) else [payload]
+    readings = []
+    for station, loc in zip(_STATIONS, locations, strict=True):
+        hourly = loc["hourly"]
+        times = [datetime.fromisoformat(t) for t in hourly["time"]]
+        values = hourly["pressure_msl"]
+        try:
+            idx = times.index(target_hour)
+        except ValueError:
+            raise RuntimeError(
+                f"Replay: pressure hour {target_hour.isoformat()} not in hourly timeseries "
+                f"for {station.name} (times span {times[0]} → {times[-1]}). "
+                "This day is probably outside the archive coverage."
+            )
+        value = values[idx]
+        if value is None:
+            raise RuntimeError(
+                f"Replay: pressure at {target_hour.isoformat()} is null for {station.name}"
+            )
+        readings.append(PressureReading(
+            station=station.name,
+            hpa=float(value),
+            measured_at=target_hour,
+        ))
     munich, innsbruck, bolzano = readings
     return PressureSnapshot(
         thermik_north=munich,

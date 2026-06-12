@@ -114,6 +114,18 @@ MAX_LAKE_TEMP_AGE_HOURS = 168.0      # 7 days; buoy readings older than this
 IGNITION_WINDOW_LOCAL: tuple[time, time] = (time(10, 30), time(15, 0))
 
 # --- External endpoints ---------------------------------------------------
+# Production: live forecast. Replay uses one of the archive hosts below —
+# see docs/historical_forecasts.md for model coverage and caveats. The query
+# schema is identical across all three; only the host differs.
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+# IFS HRES archive from 2017-01-01, ICON family from 2022-11-24. "First
+# hours of each model run" stitched into a continuous hourly timeseries —
+# this is the closest faithful replay of "what the oracle would have
+# predicted" for a past day, per the doc.
+OPEN_METEO_HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+# Reanalysis (ERA5 / ERA5-Land / IFS analysis). "What really happened",
+# not "what was predicted". The Walchi rules are not lead-time sensitive,
+# so reanalysis is a fine input for threshold re-fitting.
+OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/forecast"
 BRIGHT_SKY_CURRENT_URL = "https://api.brightsky.dev/current_weather"
 ADDICTED_SPORTS_BASE_URL = "https://www.addicted-sports.com"

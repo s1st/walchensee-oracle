@@ -145,3 +145,111 @@ async def test_backfill_merges_machine_ground_truth(tmp_path: Path):
 async def test_backfill_raises_when_no_forecast_logged(tmp_path: Path):
     with pytest.raises(FileNotFoundError, match="run `oracle forecast` first"):
         await backfill_run(date(2026, 4, 22), store=LocalRunStore(tmp_path))
+
+
+# --- replay record routing --------------------------------------------
+
+
+def _replay_forecast() -> Forecast:
+    """Build a minimal replay Forecast — pressure/meteo are filled in just
+    enough for `forecast_to_dict` to serialise without errors. The replay
+    path doesn't re-fetch; this is for the logger test only."""
+    now = datetime(2021, 6, 15, 9, 0)
+    from oracle.pillars.pressure import PressureReading, PressureSnapshot
+    from oracle.pillars.meteo import MeteoSnapshot
+    from oracle.pillars.measurements import LakeTempSnapshot
+    return Forecast(
+        overall=Signal.GO,
+        verdicts=[Verdict("thermik", Signal.GO,
+                          reason_en="Δ favourable", reason_de="Δ günstig")],
+        pressure=PressureSnapshot(
+            thermik_north=PressureReading("Munich", 1018.4, now),
+            thermik_south=PressureReading("Innsbruck", 1016.0, now),
+            foehn_south=PressureReading("Bolzano", 1020.5, now),
+        ),
+        meteo=MeteoSnapshot(
+            day=date(2021, 6, 15),
+            overnight_cloud_cover_pct=20.0,
+            morning_solar_radiation_wm2=750.0,
+            synoptic_wind_knots=5.0,
+            min_dew_point_spread_c=9.0,
+            max_boundary_layer_height_m=1200.0,
+            soil_moisture_m3m3=0.20,
+            rained_yesterday=False,
+            yesterday_precipitation_mm=0.0,
+            max_lifted_index=2.0,
+            min_lifted_index=2.0,
+            max_cape_j_kg=0.0,
+            max_daytime_low_cloud_pct=25.0,
+            wind_850_direction_at_peak_deg=20.0,
+            max_wind_700_knots=15.0,
+            morning_air_temp_c=14.0,
+        ),
+        winds=[WindReading("Urfeld", StationRole.SHORE, 8.0, 12.0, None, now,
+                           water_temp_c=18.5)],
+        lake_temp=LakeTempSnapshot(18.5, now, "Urfeld"),
+        replay_day=date(2021, 6, 15),
+        replay_source="historical-forecast",
+    )
+
+
+def test_write_run_replay_routes_to_replay_subdir(tmp_path: Path):
+    """A replay Forecast must land in `runs/replay/<date>.json`, not the
+    project root, and must NOT pollute the calibrate loop's view of days."""
+    target = date(2021, 6, 15)
+    location = write_run(_replay_forecast(), target, store=LocalRunStore(tmp_path))
+
+    # Path is under the replay/ subdir.
+    assert location.endswith("replay/2021-06-15.json")
+    assert (tmp_path / "replay" / "2021-06-15.json").exists()
+    # The project root has no file for this day.
+    assert not (tmp_path / "2021-06-15.json").exists()
+
+    # list_days() must skip the replay/ subdir.
+    assert LocalRunStore(tmp_path).list_days() == []
+
+    # The replay record itself carries replay metadata.
+    data = json.loads((tmp_path / "replay" / "2021-06-15.json").read_text())
+    assert data["replay_day"] == "2021-06-15"
+    assert data["replay_source"] == "historical-forecast"
+    # And lacks the live-forecast-only fields.
+    assert "verdicts_resimulated" not in data
+    assert data["ground_truth"] == {"machine": None, "human": None}
+
+
+def test_forecast_to_dict_carries_replay_metadata():
+    """`replay_day` + `replay_source` round-trip through the canonical
+    serialiser so the JSON dump (--json stdout, written record) is
+    self-describing."""
+    d = forecast_to_dict(_replay_forecast(), date(2021, 6, 15))
+    assert d["replay_day"] == "2021-06-15"
+    assert d["replay_source"] == "historical-forecast"
+    # Live forecasts omit these keys entirely.
+    live = _forecast()
+    live_d = forecast_to_dict(live, date(2026, 4, 22))
+    assert "replay_day" not in live_d
+    assert "replay_source" not in live_d
+
+
+def test_list_days_skips_replay_subdir_in_gcs(monkeypatch):
+    """GCSRunStore.list_days must skip the replay/ sub-prefix; replay
+    records live under runs/replay/ and the project loop only sees the
+    top-level files. We can't hit GCS from unit tests, so we mock
+    list_blobs to return a mix of forecast + replay paths and check the
+    filter logic in isolation."""
+    from oracle.logger import GCSRunStore
+    all_blobs = [
+        type("B", (), {"name": "runs/2026-04-22.json"}),
+        type("B", (), {"name": "runs/2026-04-23.json"}),
+        type("B", (), {"name": "runs/replay/2021-06-15.json"}),
+        type("B", (), {"name": "runs/replay/2020-07-01.json"}),
+        type("B", (), {"name": "runs/something/2025-01-01.json"}),  # any other sub-prefix
+    ]
+    # Real GCS list_blobs filters by prefix server-side; mirror that.
+    def fake_list_blobs(self, bucket, prefix):
+        return iter(b for b in all_blobs if b.name.startswith(prefix))
+    store = GCSRunStore.__new__(GCSRunStore)  # bypass __post_init__ (no GCS creds in unit test)
+    store._client = type("C", (), {"list_blobs": fake_list_blobs})()
+    store._bucket = None
+    assert store.list_days() == ["2026-04-22", "2026-04-23"]
+    assert store.list_replays() == ["2020-07-01", "2021-06-15"]

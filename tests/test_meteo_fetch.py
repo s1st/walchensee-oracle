@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 import httpx
 import pytest
 
-from oracle.config import OPEN_METEO_URL
+from oracle.config import OPEN_METEO_HISTORICAL_FORECAST_URL, OPEN_METEO_URL
 from oracle.pillars.meteo import fetch_snapshot
 
 
@@ -134,3 +134,24 @@ async def test_fetch_snapshot_raises_when_window_empty():
     async with httpx.AsyncClient(transport=transport) as client:
         with pytest.raises(RuntimeError, match="did not return expected hourly windows"):
             await fetch_snapshot(target, client=client)
+
+
+@pytest.mark.asyncio
+async def test_fetch_snapshot_host_param_routes_to_archive():
+    """Replay mode swaps the Open-Meteo host via the `host` parameter.
+    Query schema is otherwise identical — no other call changes."""
+    target = date(2021, 6, 15)
+    captured: dict[str, httpx.Request] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["req"] = request
+        return httpx.Response(200, json=_hourly_payload(target))
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        await fetch_snapshot(target, client=client, host=OPEN_METEO_HISTORICAL_FORECAST_URL)
+
+    assert str(captured["req"].url).startswith(OPEN_METEO_HISTORICAL_FORECAST_URL)
+    # Date range is the same shape as the live call.
+    assert captured["req"].url.params["start_date"] == "2021-06-14"
+    assert captured["req"].url.params["end_date"] == "2021-06-15"

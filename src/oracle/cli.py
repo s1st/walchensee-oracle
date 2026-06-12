@@ -13,6 +13,7 @@ from rich.table import Table
 
 from oracle.engine import Forecast, run_forecast
 from oracle.logger import backfill_run, forecast_to_dict, load_run, write_run
+from oracle.engine import run_replay
 
 load_dotenv()
 
@@ -62,6 +63,38 @@ def forecast(
                 console.print(f"{target.isoformat()}: {result.overall.value}")
 
     asyncio.run(run_all())
+
+
+@app.command()
+def replay(
+    day: str = typer.Option(..., help="ISO date to replay against the archive (e.g. 2017-06-15)."),
+    source: str = typer.Option(
+        "historical-forecast",
+        help="Which Open-Meteo archive to use: 'historical-forecast' (IFS HRES 2017+, DWD ICON 2022+) or 'reanalysis' (ERA5 1940+).",
+    ),
+    log: bool = typer.Option(True, "--log/--no-log", help="Write the replay to runs/replay/<day>.json."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON to stdout instead of tables."),
+) -> None:
+    """Re-run the rules against the historical forecast (or reanalysis) for `day`.
+
+    Pairs the Open-Meteo archive pillars with the historical Urfeld buoy
+    day-curve. Writes a replay record to `runs/replay/<day>.json` so the
+    calibrate loop and the dashboard don't mistake it for a live forecast.
+
+    See docs/historical_forecasts.md for model coverage and caveats.
+    """
+    if source not in ("historical-forecast", "reanalysis"):
+        raise typer.BadParameter("--source must be 'historical-forecast' or 'reanalysis'")
+    target = date.fromisoformat(day)
+    result = asyncio.run(run_replay(target, source=source))  # type: ignore[arg-type]
+    if log:
+        location = write_run(result, target)
+        if not json_output:
+            console.print(f"[dim]replay logged to {location}[/dim]")
+    if json_output:
+        sys.stdout.write(json.dumps(forecast_to_dict(result, target), ensure_ascii=False) + "\n")
+        return
+    _render_tables(result, target)
 
 
 @app.command()

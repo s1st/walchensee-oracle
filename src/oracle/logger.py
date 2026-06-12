@@ -17,7 +17,7 @@ import os
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
@@ -103,11 +103,31 @@ class GCSRunStore:
 
     def list_days(self) -> list[str]:
         # Blob names look like "runs/2026-04-22.json"; strip prefix + suffix.
+        # Skip any nested sub-prefixes (e.g. `runs/replay/...`) — the
+        # forecast list is the project files, replays live separately.
         days: list[str] = []
         for blob in self._client.list_blobs(self._bucket, prefix="runs/"):
             name = blob.name
-            if name.endswith(".json") and name.startswith("runs/"):
-                days.append(name[len("runs/"):-len(".json")])
+            if not name.endswith(".json") or not name.startswith("runs/"):
+                continue
+            stem = name[len("runs/"):-len(".json")]
+            if "/" in stem:  # sub-prefix, e.g. "replay/2021-06-15"
+                continue
+            days.append(stem)
+        return sorted(days)
+
+    def list_replays(self) -> list[str]:
+        """List the days that have a replay record. Replays live under
+        `runs/replay/<date>.json` so the calibrate loop naturally ignores
+        them. Used by the `oracle replay` CLI to avoid overwriting
+        previous replays of the same day without --force."""
+        days: list[str] = []
+        for blob in self._client.list_blobs(self._bucket, prefix="runs/replay/"):
+            name = blob.name
+            if not name.endswith(".json"):
+                continue
+            stem = name[len("runs/replay/"):-len(".json")]
+            days.append(stem)
         return sorted(days)
 
 
@@ -141,9 +161,13 @@ def verdict_to_dict(v: Verdict, *, legacy_reason: bool = False) -> dict:
     return d
 
 
-def forecast_to_dict(result: Forecast, target_day: date) -> dict:
-    """Canonical serialisation used by both `--json` output and the log writer."""
-    return {
+def forecast_to_dict(result: Forecast, target_day: date) -> dict[str, Any]:
+    """Canonical serialisation used by both `--json` output and the log writer.
+
+    Replay records carry `replay_day` + `replay_source` so the calibrate
+    loop and the dashboard can distinguish them from live forecasts.
+    """
+    d: dict[str, Any] = {
         "day": target_day.isoformat(),
         "overall": result.overall.value,
         "verdicts": [verdict_to_dict(v, legacy_reason=True) for v in result.verdicts],
@@ -156,6 +180,10 @@ def forecast_to_dict(result: Forecast, target_day: date) -> dict:
             ),
         },
     }
+    if result.replay_day is not None:
+        d["replay_day"] = result.replay_day.isoformat()
+        d["replay_source"] = result.replay_source
+    return d
 
 
 def write_run(
@@ -163,9 +191,30 @@ def write_run(
     target_day: date,
     store: RunStore | None = None,
 ) -> str:
-    """Write forecast as <iso>.json, preserving any pre-existing ground_truth."""
+    """Write forecast as <iso>.json, preserving any pre-existing ground_truth.
+
+    Replay records (when `result.replay_day` is set) are written to
+    `runs/replay/<iso>.json` instead of the project root, so the
+    calibrate loop walks only live forecasts by default. The replay
+    record is keyed by `target_day` (the day being replayed) and carries
+    a `replay_day` / `replay_source` pair in its body.
+    """
     store = store or default_store()
     iso = target_day.isoformat()
+
+    if result.replay_day is not None:
+        # Replay path: write to the replay/ sub-prefix; no ground-truth
+        # merge because the target day is in the past and ground truth
+        # for it is already in the project root (separate concern).
+        record = {
+            "run_at": datetime.now(timezone.utc).isoformat(),
+            **forecast_to_dict(result, target_day),
+            "ground_truth": {"machine": None, "human": None},
+        }
+        # Use the same store, but route through a replay-specific blob path.
+        # GCSRunStore and LocalRunStore both accept the same write API; we
+        # need a sub-prefixed path so we delegate to _replay_store.
+        return _write_replay(store, iso, record)
 
     ground_truth = {"machine": None, "human": None}
     existing = store.read(iso)
@@ -178,6 +227,29 @@ def write_run(
         "ground_truth": ground_truth,
     }
     return store.write(iso, record)
+
+
+def _write_replay(store: RunStore, iso: str, record: dict) -> str:
+    """Write a replay record to the `replay/` sub-prefix of the underlying
+    store. Implemented for the two concrete store backends; the protocol
+    itself is replay-agnostic."""
+    if isinstance(store, GCSRunStore):
+        from google.cloud import storage  # local import; same lazy-load as GCSRunStore  # type: ignore[attr-defined]
+        client = storage.Client()
+        bucket = client.bucket(store.bucket_name)
+        blob = bucket.blob(f"runs/replay/{iso}.json")
+        blob.upload_from_string(
+            json.dumps(record, ensure_ascii=False, indent=2),
+            content_type="application/json",
+        )
+        return f"gs://{store.bucket_name}/runs/replay/{iso}.json"
+    if isinstance(store, LocalRunStore):
+        replay_dir = store.directory / "replay"
+        replay_dir.mkdir(parents=True, exist_ok=True)
+        path = replay_dir / f"{iso}.json"
+        path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(path)
+    raise TypeError(f"replay writes are only supported for GCSRunStore and LocalRunStore, got {type(store).__name__}")
 
 
 def load_run(target_day: date, store: RunStore | None = None) -> dict:

@@ -32,19 +32,22 @@ class MeteoSnapshot:
     day: date
     overnight_cloud_cover_pct: float    # 22:00 prev → 06:00 target, mean
     morning_solar_radiation_wm2: float  # 09:00–13:00 target, hourly max
-    synoptic_wind_knots: float          # 09:00–13:00 target, hourly max at 850 hPa
+    synoptic_wind_knots: float | None  # 09:00–13:00 target, hourly max at 850 hPa
     min_dew_point_spread_c: float       # 09:00–13:00 target, hourly min(T − Td)
-    max_boundary_layer_height_m: float  # 09:00–13:00 target, hourly max
-    soil_moisture_m3m3: float           # target day 09:00 soil_moisture_0_to_1cm
+    max_boundary_layer_height_m: float | None  # 09:00–13:00 target, hourly max
+    soil_moisture_m3m3: float | None  # target day 09:00 soil_moisture_0_to_1cm
     rained_yesterday: bool              # target-1 day total precipitation ≥ threshold
     yesterday_precipitation_mm: float   # raw value for the log
     # Medium-priority signals (added from docs/future-factors.md):
-    max_lifted_index: float             # 09:00–13:00; > +6 = too stable
-    min_lifted_index: float             # 09:00–13:00; < −2 = storm risk
-    max_cape_j_kg: float                # 09:00–13:00; captured for future calibration
+    # All Optional — the historical-forecast API (IFS HRES) doesn't model
+    # surface soil moisture, BLH, or the pressure-level fields for
+    # pre-2021 days. Rules that need these emit MAYBE when None.
+    max_lifted_index: float | None      # 09:00–13:00; > +6 = too stable
+    min_lifted_index: float | None      # 09:00–13:00; < −2 = storm risk
+    max_cape_j_kg: float | None         # 09:00–13:00; captured for future calibration
     max_daytime_low_cloud_pct: float    # 09:00–13:00; low clouds shade slopes
-    wind_850_direction_at_peak_deg: float  # direction at the morning 850 hPa speed peak
-    max_wind_700_knots: float           # 09:00–13:00; 700 hPa crossflow aloft
+    wind_850_direction_at_peak_deg: float | None  # direction at the morning 850 hPa speed peak
+    max_wind_700_knots: float | None    # 09:00–13:00; 700 hPa crossflow aloft
     # Mean of 09:00–13:00 2 m air temperatures — paired with the buoy's water
     # temperature for the air_lake_delta rule. `None` for records written before
     # this field shipped; the rule treats that as "no signal" (MAYBE).
@@ -82,16 +85,33 @@ class MeteoSnapshot:
             morning_solar_radiation_wm2=float(m["morning_solar_radiation_wm2"]),
             synoptic_wind_knots=float(m["synoptic_wind_knots"]),
             min_dew_point_spread_c=float(m["min_dew_point_spread_c"]),
-            max_boundary_layer_height_m=float(m["max_boundary_layer_height_m"]),
-            soil_moisture_m3m3=float(m["soil_moisture_m3m3"]),
+            max_boundary_layer_height_m=(
+                float(m["max_boundary_layer_height_m"])
+                if m.get("max_boundary_layer_height_m") is not None else None
+            ),
+            soil_moisture_m3m3=(
+                float(m["soil_moisture_m3m3"])
+                if m.get("soil_moisture_m3m3") is not None else None
+            ),
             rained_yesterday=bool(m["rained_yesterday"]),
             yesterday_precipitation_mm=float(m["yesterday_precipitation_mm"]),
-            max_lifted_index=float(m["max_lifted_index"]),
-            min_lifted_index=float(m["min_lifted_index"]),
-            max_cape_j_kg=float(m["max_cape_j_kg"]),
+            max_lifted_index=(
+                float(m["max_lifted_index"]) if m.get("max_lifted_index") is not None else None
+            ),
+            min_lifted_index=(
+                float(m["min_lifted_index"]) if m.get("min_lifted_index") is not None else None
+            ),
+            max_cape_j_kg=(
+                float(m["max_cape_j_kg"]) if m.get("max_cape_j_kg") is not None else None
+            ),
             max_daytime_low_cloud_pct=float(m["max_daytime_low_cloud_pct"]),
-            wind_850_direction_at_peak_deg=float(m["wind_850_direction_at_peak_deg"]),
-            max_wind_700_knots=float(m["max_wind_700_knots"]),
+            wind_850_direction_at_peak_deg=(
+                float(m["wind_850_direction_at_peak_deg"])
+                if m.get("wind_850_direction_at_peak_deg") is not None else None
+            ),
+            max_wind_700_knots=(
+                float(m["max_wind_700_knots"]) if m.get("max_wind_700_knots") is not None else None
+            ),
             morning_air_temp_c=(
                 float(m["morning_air_temp_c"])
                 if m.get("morning_air_temp_c") is not None
@@ -120,13 +140,22 @@ _HOURLY_VARS = ",".join([
 ])
 
 
-async def fetch_snapshot(day: date, client: httpx.AsyncClient | None = None) -> MeteoSnapshot:
+async def fetch_snapshot(
+    day: date,
+    client: httpx.AsyncClient | None = None,
+    *,
+    host: str | None = None,
+) -> MeteoSnapshot:
+    """Pull the meteo pillar for `day`. `host` defaults to the live forecast
+    URL; pass `OPEN_METEO_HISTORICAL_FORECAST_URL` or `OPEN_METEO_ARCHIVE_URL`
+    to replay against an archive. Query schema is identical across hosts.
+    """
     # Span day-1 (overnight window) back through day-3 (for yesterday's rain
     # check + headroom on soil moisture). Single request.
     start = day - timedelta(days=1)
     async with client_scope(client) as client:
         response = await client.get(
-            OPEN_METEO_URL,
+            host or OPEN_METEO_URL,
             params={
                 "latitude": URFELD.lat,
                 "longitude": URFELD.lon,
@@ -188,13 +217,9 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
     required_windows = {
         "cloud_cover": overnight_clouds,
         "shortwave_radiation": morning_radiation,
-        "wind_speed_850hPa": morning_wind,
         "temperature_2m": morning_temp,
         "dew_point_2m": morning_dew,
-        "boundary_layer_height": morning_blh,
-        "lifted_index": morning_li,
         "cloud_cover_low": morning_low_clouds,
-        "wind_speed_700hPa": morning_wind_700,
     }
     missing = [name for name, window in required_windows.items() if not window]
     if missing:
@@ -205,15 +230,22 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
 
     # Direction at the morning's peak 850 hPa wind — captures the dominant
     # upper-level flow without the circular-mean headaches of averaging angles.
-    peak_hour_idx = _argmax_in_window(
-        times, hourly["wind_speed_850hPa"], morning_start, morning_end
-    )
-    wind_850_dir = float(hourly["wind_direction_850hPa"][peak_hour_idx])
+    # Historical-forecast (IFS HRES) may not expose wind_speed_850hPa for
+    # older years; tolerate the missing window and let the rule emit MAYBE.
+    wind_850_dir: float | None
+    if morning_wind:
+        peak_hour_idx = _argmax_in_window(
+            times, hourly["wind_speed_850hPa"], morning_start, morning_end
+        )
+        wind_850_dir = float(hourly["wind_direction_850hPa"][peak_hour_idx])
+    else:
+        wind_850_dir = None
 
-    # Soil moisture sampled at morning_start (09:00 target day).
+    # Soil moisture sampled at morning_start (09:00 target day). The
+    # historical-forecast API (IFS HRES) does not model surface soil
+    # moisture — the value is always None there. We tolerate that and let
+    # `post_rain_moisture` emit MAYBE rather than raising. Same for BLH.
     soil_moisture = _value_at(times, hourly["soil_moisture_0_to_1cm"], morning_start)
-    if soil_moisture is None:
-        raise RuntimeError("Open-Meteo did not return soil moisture at morning start")
 
     spreads = [t - d for t, d in zip(morning_temp, morning_dew)]
     yesterday_mm = sum(yesterday_rain)
@@ -223,18 +255,18 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
         day=target,
         overnight_cloud_cover_pct=sum(overnight_clouds) / len(overnight_clouds),
         morning_solar_radiation_wm2=max(morning_radiation),
-        synoptic_wind_knots=max(morning_wind),
+        synoptic_wind_knots=max(morning_wind) if morning_wind else None,
         min_dew_point_spread_c=min(spreads),
-        max_boundary_layer_height_m=max(morning_blh),
+        max_boundary_layer_height_m=max(morning_blh) if morning_blh else None,
         soil_moisture_m3m3=soil_moisture,
         rained_yesterday=yesterday_mm >= RAINED_YESTERDAY_MM,
         yesterday_precipitation_mm=round(yesterday_mm, 2),
-        max_lifted_index=max(morning_li),
-        min_lifted_index=min(morning_li),
-        max_cape_j_kg=max(morning_cape) if morning_cape else 0.0,
+        max_lifted_index=max(morning_li) if morning_li else None,
+        min_lifted_index=min(morning_li) if morning_li else None,
+        max_cape_j_kg=max(morning_cape) if morning_cape else None,
         max_daytime_low_cloud_pct=max(morning_low_clouds),
         wind_850_direction_at_peak_deg=wind_850_dir,
-        max_wind_700_knots=max(morning_wind_700),
+        max_wind_700_knots=max(morning_wind_700) if morning_wind_700 else None,
         morning_air_temp_c=mean_morning_air_temp,
     )
 

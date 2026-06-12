@@ -144,6 +144,15 @@ def dew_point_spread(meteo: MeteoSnapshot) -> Verdict:
 
 def boundary_layer_height(meteo: MeteoSnapshot) -> Verdict:
     h = meteo.max_boundary_layer_height_m
+    if h is None:
+        # Replay against the historical-forecast API: IFS HRES doesn't
+        # model BLH, so the field comes back as None. Treat as "no
+        # signal" rather than fabricating a number.
+        return Verdict(
+            "boundary_layer_height", Signal.MAYBE,
+            reason_en="boundary layer height unavailable — no signal",
+            reason_de="Grenzschichthöhe nicht verfügbar — kein Signal",
+        )
     if h < config.MIN_BOUNDARY_LAYER_HEIGHT_M:
         return Verdict(
             "boundary_layer_height", Signal.NO_GO,
@@ -169,6 +178,17 @@ def post_rain_moisture(meteo: MeteoSnapshot) -> Verdict:
     # 13 FP: post-frontal days at Walchensee fire fine once the sun is out;
     # genuinely washed-out days are caught by soil/cloud/solar instead).
     sm = meteo.soil_moisture_m3m3
+    if sm is None:
+        # Replay against the historical-forecast API: IFS HRES doesn't
+        # model surface soil moisture. Treat as "no signal" — the rule
+        # has no way to know whether the ground is wet, and the
+        # aggregator will accumulate SOFT NO_GOs from other rules if
+        # there are real concerns.
+        return Verdict(
+            "post_rain_moisture", Signal.MAYBE,
+            reason_en="soil moisture unavailable — no signal",
+            reason_de="Bodenfeuchte nicht verfügbar — kein Signal",
+        )
     if sm > config.WET_SOIL_MOISTURE_M3M3:
         return Verdict(
             "post_rain_moisture", Signal.NO_GO,
@@ -199,6 +219,15 @@ def is_storm_risk(min_lifted_index: float) -> bool:
 
 def atmospheric_stability(meteo: MeteoSnapshot) -> Verdict:
     lo, hi = meteo.min_lifted_index, meteo.max_lifted_index
+    if lo is None or hi is None:
+        # Replay against historical-forecast API: IFS HRES doesn't expose
+        # lifted_index for older years. Without LI we can't see if the
+        # atmosphere is too stable (high LI) or storm-prone (low LI).
+        return Verdict(
+            "atmospheric_stability", Signal.MAYBE,
+            reason_en="lifted index unavailable — no signal",
+            reason_de="Lifted Index nicht verfügbar — kein Signal",
+        )
     if hi >= config.MAX_LIFTED_INDEX:
         return Verdict(
             "atmospheric_stability", Signal.NO_GO,
@@ -246,6 +275,15 @@ def upper_level_wind(meteo: MeteoSnapshot) -> Verdict:
     direction = meteo.wind_850_direction_at_peak_deg
     speed_850 = meteo.synoptic_wind_knots
     crossflow = meteo.max_wind_700_knots
+    if direction is None or speed_850 is None or crossflow is None:
+        # Replay against historical-forecast API: IFS HRES doesn't expose
+        # pressure-level vars for the pre-2021 era. Without the 850/700 hPa
+        # data we can't tell if upper flow opposes the thermal.
+        return Verdict(
+            "upper_level_wind", Signal.MAYBE,
+            reason_en="upper-level wind data unavailable — no signal",
+            reason_de="Höhenwind-Daten nicht verfügbar — kein Signal",
+        )
     lo, hi = config.SYNOPTIC_OPPOSING_DEG
     if lo <= direction <= hi and speed_850 >= config.SYNOPTIC_OPPOSING_MIN_KNOTS:
         return Verdict(
@@ -270,6 +308,16 @@ def upper_level_wind(meteo: MeteoSnapshot) -> Verdict:
 
 def synoptic_override(meteo: MeteoSnapshot) -> Verdict:
     speed = meteo.synoptic_wind_knots
+    if speed is None:
+        # Replay against historical-forecast API for pre-2021 days: 850 hPa
+        # wind isn't in the archive. Without it we can't rule out a
+        # synoptic override; let the upper_level_wind rule carry the
+        # NO_GO if it has data, otherwise treat as no signal.
+        return Verdict(
+            "synoptic_override", Signal.MAYBE,
+            reason_en="synoptic wind data unavailable — no signal",
+            reason_de="Höhenwind-Daten nicht verfügbar — kein Signal",
+        )
     if speed >= config.SYNOPTIC_OVERRIDE_KNOTS:
         return Verdict(
             "synoptic_override", Signal.NO_GO,

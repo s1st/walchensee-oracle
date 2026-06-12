@@ -3,16 +3,35 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, time
+from typing import Literal
 
 import httpx
 
+from oracle.config import (
+    OPEN_METEO_ARCHIVE_URL,
+    OPEN_METEO_HISTORICAL_FORECAST_URL,
+    StationRole,
+)
 from oracle.knowledge import rules
 from oracle.knowledge.rules import Severity, Signal, Verdict
 from oracle.pillars import measurements, meteo, pressure
-from oracle.pillars.measurements import LakeTempSnapshot, WindReading
+from oracle.pillars.measurements import (
+    LakeTempSnapshot,
+    UrfeldSample,
+    WindReading,
+    fetch_urfeld_day_curve,
+)
 from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureSnapshot
+
+
+ReplaySource = Literal["historical-forecast", "reanalysis"]
+
+_REPLAY_HOSTS = {
+    "historical-forecast": OPEN_METEO_HISTORICAL_FORECAST_URL,
+    "reanalysis": OPEN_METEO_ARCHIVE_URL,
+}
 
 
 @dataclass
@@ -28,6 +47,11 @@ class Forecast:
     # the buoy is down or its latest usable row didn't carry `wtemp` —
     # tolerated, the air_lake_delta rule simply won't fire.
     lake_temp: LakeTempSnapshot | None
+    # Replay metadata. `replay_day` is the day the rules were re-run for;
+    # `replay_source` is which archive fed the pressure/meteo pillars.
+    # Both None on live forecasts.
+    replay_day: date | None = None
+    replay_source: ReplaySource | None = None
 
 
 def apply_rules(
@@ -35,6 +59,8 @@ def apply_rules(
     meteo_snap: MeteoSnapshot,
     winds: list[WindReading],
     lake_temp: LakeTempSnapshot | None,
+    *,
+    now: datetime | None = None,
 ) -> list[Verdict]:
     """Pure function: pillar snapshots in, thirteen verdicts out.
 
@@ -42,6 +68,11 @@ def apply_rules(
     record's stored `inputs` block without re-fetching the upstream APIs.
     `lake_temp` may be None when the buoy is down or its latest usable row
     lacked `wtemp`; the air_lake_delta rule handles that as MAYBE.
+
+    `now` is the timestamp the air_lake_delta rule uses to check the
+    buoy reading's staleness. Pass the replay day's noon for replay runs
+    so a 4-year-old buoy reading isn't flagged as "stale" relative to
+    the wall clock. Live runs leave it None to default to datetime.now().
     """
     return [
         rules.thermik(snapshot),
@@ -56,7 +87,7 @@ def apply_rules(
         rules.upper_level_wind(meteo_snap),
         rules.synoptic_override(meteo_snap),
         rules.thermal_ignition(winds),
-        rules.air_lake_delta(lake_temp, meteo_snap),
+        rules.air_lake_delta(lake_temp, meteo_snap, now=now),
     ]
 
 
@@ -77,6 +108,88 @@ async def run_forecast(day: date) -> Forecast:
         winds=winds,
         lake_temp=latest.lake_temp,
     )
+
+
+async def run_replay(
+    day: date,
+    *,
+    source: ReplaySource = "historical-forecast",
+) -> Forecast:
+    """Re-run the rules against the historical forecast (or reanalysis)
+    for `day`, paired with the historical Urfeld buoy day-curve.
+
+    Differences from `run_forecast`:
+    - Pressure + meteo pull from the archive host, not the live forecast.
+    - The buoy is the *last* reading of the target day (mimics "the most
+      recent reading at the time the user checks the dashboard in the
+      evening") instead of the live current reading. Bright Sky's DWD
+      data is not on the public archive, so the `winds` list contains
+      only the Urfeld reading — `thermal_ignition` is happy with that.
+    - The result is tagged `replay_day` + `replay_source` so the logger
+      can route it to `runs/replay/<date>.json`.
+    """
+    host = _REPLAY_HOSTS[source]
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        snapshot, meteo_snap, samples = await asyncio.gather(
+            pressure.fetch_snapshot(client=client, host=host, target_day=day),
+            meteo.fetch_snapshot(day, client=client, host=host),
+            fetch_urfeld_day_curve(day, client=client),
+        )
+
+    winds, lake_temp = _project_buoy_day_curve(samples)
+    # For replay, anchor `now` to noon on the target day so the
+    # air_lake_delta staleness check measures against the replay day, not
+    # the wall clock. A 4-year-old historical buoy reading is "current"
+    # in the context of a 4-year-old replay.
+    now = datetime.combine(day, time(12, 0))
+    verdicts = apply_rules(snapshot, meteo_snap, winds, lake_temp, now=now)
+    return Forecast(
+        overall=aggregate(verdicts),
+        verdicts=verdicts,
+        pressure=snapshot,
+        meteo=meteo_snap,
+        winds=winds,
+        lake_temp=lake_temp,
+        replay_day=day,
+        replay_source=source,
+    )
+
+
+def _project_buoy_day_curve(samples: list[UrfeldSample]) -> tuple[list[WindReading], LakeTempSnapshot | None]:
+    """Project the buoy's day-curve into the engine-visible shapes.
+
+    The last sample of the day is treated as "the latest known reading at
+    the end of the day" — same proxy for liveness that the production
+    code uses, just anchored to the target day. Returns ([WindReading],
+    LakeTempSnapshot|None); the snapshot is None when the curve had no
+    usable samples or no `wtemp` on the last one (same tolerance as the
+    live path).
+    """
+    if not samples:
+        return [], None
+    latest = samples[-1]
+    reading = WindReading(
+        station="Urfeld",
+        role=StationRole.SHORE,
+        avg_knots=latest.avg_knots,
+        gust_knots=latest.gust_knots,
+        direction_deg=None,
+        water_temp_c=latest.water_temp_c,
+        air_temp_c=latest.air_temp_c,
+        dew_point_c=latest.dew_point_c,
+        rel_humidity_pct=latest.rel_humidity_pct,
+        pressure_hpa=latest.pressure_hpa,
+        rain_mm=latest.rain_mm,
+        measured_at=latest.measured_at,
+    )
+    lake_temp: LakeTempSnapshot | None = None
+    if latest.water_temp_c is not None:
+        lake_temp = LakeTempSnapshot(
+            surface_temp_c=latest.water_temp_c,
+            measured_at=latest.measured_at,
+            source_station="Urfeld",
+        )
+    return [reading], lake_temp
 
 
 def aggregate(verdicts: list[Verdict]) -> Signal:
