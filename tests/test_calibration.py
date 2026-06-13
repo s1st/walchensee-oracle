@@ -6,6 +6,7 @@ import csv
 from oracle.calibration import (
     actual_verdict,
     actual_verdict_duration,
+    actual_verdict_thermal,
     compile_report,
     constant_baselines,
     export_csv,
@@ -118,6 +119,59 @@ def test_constant_baselines_track_marginals():
     assert abs(b["go"]["accuracy"] - 0.30) < 1e-9
     assert abs(b["maybe"]["accuracy"] - 0.50) < 1e-9
     assert abs(b["no_go"]["accuracy"] - 0.20) < 1e-9
+
+
+def _timed_curve(start: str, avgs: list[float], gust_factor: float = 1.6) -> list[dict]:
+    """Sample curve starting at `start` (HH:MM), one sample every 10 min."""
+    h, m = map(int, start.split(":"))
+    out = []
+    for i, a in enumerate(avgs):
+        total = h * 60 + m + 10 * i
+        out.append({
+            "t": f"2023-06-15T{total // 60:02d}:{total % 60:02d}:00",
+            "avg_kt": a,
+            "gust_kt": round(a * gust_factor, 2),
+        })
+    return out
+
+
+def test_thermal_label_accepts_clean_midday_thermal():
+    machine = {"samples_above_8kt": 6, "samples": _timed_curve("11:00", [12] * 6, gust_factor=1.6)}
+    assert actual_verdict_duration(machine) == "go"   # qualifies on wind alone
+    assert actual_verdict_thermal(machine) == "go"    # ...and looks thermal
+
+
+def test_thermal_label_rejects_early_onset_foehn():
+    # Same strong sustained wind, but it was already blowing at 06:00 → synoptic/foehn.
+    machine = {"samples_above_8kt": 6, "samples": _timed_curve("06:00", [12] * 6, gust_factor=1.4)}
+    assert actual_verdict_duration(machine) == "go"
+    assert actual_verdict_thermal(machine) == "no_go"
+
+
+def test_thermal_label_rejects_ragged_frontal_gusts():
+    # Mid-day onset but a wild gust factor (3.0) → gust front / frontal squall.
+    machine = {"samples_above_8kt": 6, "samples": _timed_curve("12:00", [12] * 6, gust_factor=3.0)}
+    assert actual_verdict_duration(machine) == "go"
+    assert actual_verdict_thermal(machine) == "no_go"
+
+
+def test_thermal_label_ignores_lone_early_blip():
+    # A single 8 kt blip at 06:00, then calm, then the real session at 11:00.
+    curve = (
+        _timed_curve("06:00", [8])
+        + _timed_curve("06:30", [2, 2, 2])
+        + _timed_curve("11:00", [12] * 6, gust_factor=1.6)
+    )
+    machine = {"samples_above_8kt": 7, "samples": curve}
+    assert actual_verdict_thermal(machine) == "go"  # onset is the sustained 11:00 run
+
+
+def test_thermal_label_passes_through_no_go_and_legacy():
+    # NO_GO base stays NO_GO.
+    assert actual_verdict_thermal({"samples_above_8kt": 2, "samples": _timed_curve("11:00", [12, 12])}) == "no_go"
+    # Legacy record without a raw curve can't be character-judged → keeps duration verdict.
+    assert actual_verdict_thermal({"samples_above_8kt": 9, "samples_above_12kt": 6}) == "go"
+    assert actual_verdict_thermal(None) is None
 
 
 def _record(*, day: str, overall: str, peak: float | None, verdicts: list[dict]) -> dict:

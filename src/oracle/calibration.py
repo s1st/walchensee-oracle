@@ -200,6 +200,100 @@ def actual_verdict_duration(machine: dict | None) -> str | None:
     return Signal.NO_GO.value
 
 
+# --- thermal-character gates for the `thermal` label ----------------------
+# The duration label asks "did rideable wind blow for ~an hour?". The thermal
+# label adds "...and did it look like a *thermal*, not foehn/frontal wind?".
+# We can't measure wind direction (the Urfeld buoy doesn't report it, and the
+# 2026-06-13 source probe + station survey found no lakeside station with
+# direction — see docs/fable_findings.md §1), so we gate on the two thermal
+# signatures we *can* read off the stored sample curve:
+#
+#   1. Onset timing — a solar thermal ignites mid-morning. Wind already blowing
+#      before the ignition window opens is synoptic/foehn, not a thermal.
+#      Reuses config.IGNITION_WINDOW_LOCAL — no new fitted constant.
+#   2. Gust coherence — thermals are comparatively smooth (gust factor ~1.5–1.7
+#      at Urfeld). A very ragged session is a gust front / frontal squall.
+#      (Foehn is laminar and passes this gate; it's caught by the onset gate.)
+#
+# These are LABEL-defining domain estimates, not forecaster thresholds: they
+# describe what counts as a ground-truth "thermal session", are set from
+# physics, and are deliberately *not* calibrated — you can't fit the target
+# against itself. Kept lenient so they reject only clear non-thermals.
+_THERMAL_ONSET_RUN = 3            # consecutive ≥8 kt samples (~30 min) that define onset
+_THERMAL_MAX_GUST_FACTOR = 2.2    # median gust/avg over ignited samples; above → ragged/frontal
+
+
+def _minute_of_day(iso_ts: str | None) -> int | None:
+    return _ignition_minute_of_day(iso_ts)  # shared parser; named for readability here
+
+
+def _sustained_onset_minute(samples: list[dict], threshold_kt: float, run: int) -> int | None:
+    """Minute-of-day at the start of the first run of `run` consecutive samples
+    with avg ≥ `threshold_kt`. Ignores lone early blips (a single 8 kt gust at
+    dawn won't count as onset). None if no such run exists."""
+    count = 0
+    start_idx: int | None = None
+    for i, s in enumerate(samples):
+        if (s.get("avg_kt") or 0.0) >= threshold_kt:
+            if count == 0:
+                start_idx = i
+            count += 1
+            if count >= run and start_idx is not None:
+                return _minute_of_day(samples[start_idx].get("t"))
+        else:
+            count = 0
+            start_idx = None
+    return None
+
+
+def _median_gust_factor(samples: list[dict], threshold_kt: float) -> float | None:
+    """Median gust/avg ratio over samples at or above `threshold_kt`. None if the
+    curve carries no ignited sample with a usable gust value."""
+    factors: list[float] = []
+    for s in samples:
+        avg = s.get("avg_kt") or 0.0
+        gust = s.get("gust_kt")
+        if avg >= threshold_kt and gust:
+            factors.append(gust / avg)
+    if not factors:
+        return None
+    factors.sort()
+    mid = len(factors) // 2
+    return factors[mid] if len(factors) % 2 else (factors[mid - 1] + factors[mid]) / 2.0
+
+
+def actual_verdict_thermal(machine: dict | None) -> str | None:
+    """Thermal-session label — the duration label, gated on thermal *character*.
+
+    A day that produced sustained rideable wind is labelled GO/MAYBE only if the
+    wind also looks thermal: it ignited at/after the daytime ignition window and
+    wasn't a ragged frontal squall. Otherwise NO_GO — the wind fired, but not as
+    a thermal. This de-contaminates the label so foehn/frontal days stop being
+    counted as thermal sessions (Fable review #1). Season is applied upstream by
+    the `--season` filter; convective days by the storm quarantine.
+
+    Records without the raw `samples` curve can't be character-assessed, so they
+    keep the duration verdict unchanged (no evidence to downgrade on).
+    """
+    base = actual_verdict_duration(machine)
+    if base is None or base == Signal.NO_GO.value:
+        return base
+    assert machine is not None  # base is None when machine is falsy
+    samples = machine.get("samples")
+    if not samples:
+        return base
+    # Gate 1 — onset at or after the thermal ignition window opens.
+    onset = _sustained_onset_minute(samples, _ACTUAL_MAYBE_KT, _THERMAL_ONSET_RUN)
+    window_start = config.IGNITION_WINDOW_LOCAL[0]
+    if onset is None or onset < window_start.hour * 60 + window_start.minute:
+        return Signal.NO_GO.value
+    # Gate 2 — gust coherence (only when the curve lets us judge it).
+    gust_factor = _median_gust_factor(samples, _ACTUAL_MAYBE_KT)
+    if gust_factor is not None and gust_factor > _THERMAL_MAX_GUST_FACTOR:
+        return Signal.NO_GO.value
+    return base
+
+
 @dataclass
 class RuleStats:
     rule: str
@@ -292,6 +386,8 @@ def storm_suspected(record: dict) -> bool:
 
 def _label_record(record: dict, mode: str) -> str | None:
     """Dispatch the configured labeller against one record's machine block."""
+    if mode == "thermal":
+        return actual_verdict_thermal(_machine_from(record))
     if mode == "duration":
         return actual_verdict_duration(_machine_from(record))
     return actual_verdict(_peak_from(record))
@@ -609,6 +705,7 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
     label_desc = {
         "peak": "peak avg ≥12 kt → GO, ≥8 kt → MAYBE",
         "duration": "≥6 samples (~1h) above 12 kt → GO, above 8 kt → MAYBE",
+        "thermal": "duration label, gated on thermal character (mid-day onset + coherent gusts)",
     }.get(report.label_mode, report.label_mode)
 
     view = "resimulated (current rule layer)" if report.resimulated else "historical (verdicts as written)"

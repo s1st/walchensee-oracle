@@ -228,7 +228,7 @@ def calibrate(
     since: str = typer.Option(None, help="ISO date — only consider days from this date forward."),
     until: str = typer.Option(None, help="ISO date — only consider days up to this date."),
     rule: str = typer.Option(None, help="Restrict per-rule table to a single rule (e.g. post_rain_moisture)."),
-    label: str = typer.Option("peak", help="Ground-truth scale: 'peak' (max avg knots) or 'duration' (sustained samples)."),
+    label: str = typer.Option("peak", help="Ground-truth scale: 'peak' (max avg knots), 'duration' (sustained samples), or 'thermal' (duration + thermal-character gates: mid-day onset & coherent gusts)."),
     resimulated: bool = typer.Option(False, "--resimulated/--historical", help="Score the current rule layer (`verdicts_resimulated`) instead of the historical verdicts. Requires `oracle rescore` to have populated those fields."),
     replayed: bool = typer.Option(False, "--replayed", help="Score the replay records (runs/replay/) against the ground truth in the matching main records. Combine with --resimulated after a threshold tune + `oracle rescore --replayed`."),
     season: bool = typer.Option(True, "--season/--all-year", help="Score only the active thermal season (Apr–Oct, the default — the window the product serves). --all-year includes Nov–Mar, which over-weights the winter negative class."),
@@ -262,8 +262,8 @@ def calibrate(
     """
     from oracle.calibration import compile_report, export_csv, format_text_report
 
-    if label not in ("peak", "duration"):
-        raise typer.BadParameter("--label must be 'peak' or 'duration'")
+    if label not in ("peak", "duration", "thermal"):
+        raise typer.BadParameter("--label must be 'peak', 'duration', or 'thermal'")
     since_d = date.fromisoformat(since) if since else None
     until_d = date.fromisoformat(until) if until else None
     months_set = _resolve_months(season, months)
