@@ -49,6 +49,106 @@ _DURATION_GO_SAMPLES = 6        # ~1 hour at Urfeld's ~10-min cadence
 _DURATION_MAYBE_SAMPLES_8KT = 6
 
 
+# --- skill scores & cost matrix -------------------------------------------
+# Raw 3-class accuracy (the diagonal sum) is a trap on this corpus: the
+# always-GO constant forecast scores ~49.5% (GO is the plurality class), which
+# *beats* the tuned system's 48.3%. Optimising accuracy therefore optimises
+# toward a constant. The skill scores below subtract off what a constant
+# forecast achieves by chance, so a constant scores exactly 0 and only genuine
+# discrimination shows up. Use these — not `overall_accuracy` — to compare tunes.
+#
+#   Heidke (HSS): (PC − E) / (1 − E),       E = Σ p(fc=i)·p(obs=i)
+#   Peirce (PSS): (PC − E) / (1 − E_obs),   E_obs = Σ p(obs=i)²
+#
+# PC is the proportion correct (= overall_accuracy). Both are 0 for any
+# constant forecast and 1 for a perfect one; PSS is unbiased to the base rate
+# (can't be hedged up by always predicting the common class).
+
+# The two user-facing errors are asymmetric. A *missed session* (we said
+# NO_GO/MAYBE but the lake fired GO) strands the rider at home on a rare good
+# day — the worst outcome for a forecast whose whole job is catching the
+# thermal. A *wasted drive* (we said GO, lake was dead) costs an hour each way.
+# We weight a missed GO as MISSED_SESSION_COST wasted drives. That ratio is the
+# one judgement call here — kept explicit so it can be argued with. MAYBE is the
+# hedge and carries half-credit on either side; the diagonal is free.
+WASTED_DRIVE_COST = 1.0
+MISSED_SESSION_COST = 2.0   # a missed GO day hurts ~2× a wasted drive
+
+# cost[forecast][actual]
+_COST: dict[str, dict[str, float]] = {
+    "go":    {"go": 0.0,                        "maybe": 0.5 * WASTED_DRIVE_COST,   "no_go": WASTED_DRIVE_COST},
+    "maybe": {"go": 0.5 * MISSED_SESSION_COST,  "maybe": 0.0,                       "no_go": 0.5 * WASTED_DRIVE_COST},
+    "no_go": {"go": MISSED_SESSION_COST,        "maybe": 0.5 * MISSED_SESSION_COST, "no_go": 0.0},
+}
+
+
+def _marginals(confusion: dict[str, dict[str, int]]) -> tuple[dict[str, int], dict[str, int], int]:
+    """(forecast totals, actual totals, grand total) from a confusion dict."""
+    fc = {s.value: sum(confusion[s.value].values()) for s in SIGNAL_ORDER}
+    ac = {s.value: sum(confusion[f.value][s.value] for f in SIGNAL_ORDER) for s in SIGNAL_ORDER}
+    return fc, ac, sum(fc.values())
+
+
+def _proportion_correct(confusion: dict[str, dict[str, int]], total: int) -> float:
+    if total == 0:
+        return 0.0
+    return sum(confusion[s.value][s.value] for s in SIGNAL_ORDER) / total
+
+
+def heidke_skill_score(confusion: dict[str, dict[str, int]]) -> float:
+    """Heidke skill score — accuracy relative to a random forecast that keeps
+    both marginals. 0 for any constant forecast, 1 for perfect."""
+    fc, ac, total = _marginals(confusion)
+    if total == 0:
+        return 0.0
+    pc = _proportion_correct(confusion, total)
+    e = sum((fc[s.value] / total) * (ac[s.value] / total) for s in SIGNAL_ORDER)
+    return 0.0 if e >= 1.0 else (pc - e) / (1.0 - e)
+
+
+def peirce_skill_score(confusion: dict[str, dict[str, int]]) -> float:
+    """Peirce (Hanssen–Kuipers) skill score — base-rate-unbiased: a forecast
+    can't inflate it by always calling the common class. 0 for any constant."""
+    fc, ac, total = _marginals(confusion)
+    if total == 0:
+        return 0.0
+    pc = _proportion_correct(confusion, total)
+    e = sum((fc[s.value] / total) * (ac[s.value] / total) for s in SIGNAL_ORDER)
+    e_obs = sum((ac[s.value] / total) ** 2 for s in SIGNAL_ORDER)
+    return 0.0 if e_obs >= 1.0 else (pc - e) / (1.0 - e_obs)
+
+
+def mean_cost(confusion: dict[str, dict[str, int]]) -> float:
+    """Average per-day cost under `_COST` (lower is better). Captures the
+    missed-session vs wasted-drive asymmetry that accuracy and skill ignore."""
+    _, _, total = _marginals(confusion)
+    if total == 0:
+        return 0.0
+    c = sum(
+        confusion[f.value][a.value] * _COST[f.value][a.value]
+        for f in SIGNAL_ORDER for a in SIGNAL_ORDER
+    )
+    return c / total
+
+
+def constant_baselines(confusion: dict[str, dict[str, int]]) -> dict[str, dict[str, float]]:
+    """Accuracy + mean-cost of each always-X constant forecast, derived from the
+    observed marginals. Skill scores are 0 by construction, so the system beats
+    a constant iff its skill > 0 — but the cost column still shows *which*
+    constant a cost-tuned system has to beat."""
+    _, ac, total = _marginals(confusion)
+    out: dict[str, dict[str, float]] = {}
+    for f in SIGNAL_ORDER:
+        if total == 0:
+            out[f.value] = {"accuracy": 0.0, "mean_cost": 0.0}
+            continue
+        out[f.value] = {
+            "accuracy": ac[f.value] / total,
+            "mean_cost": sum(ac[a.value] * _COST[f.value][a.value] for a in SIGNAL_ORDER) / total,
+        }
+    return out
+
+
 def actual_verdict(peak_avg_kt: float | None) -> str | None:
     """Categorise an Urfeld-peak ground-truth value onto the go/maybe/no_go scale.
 
@@ -122,11 +222,35 @@ class Report:
 
     @property
     def overall_accuracy(self) -> float:
-        """Diagonal sum / total. Approximate — same-bucket only."""
+        """Diagonal sum / total. Approximate — same-bucket only.
+
+        Beatable by a constant on this corpus — report `peirce_score` /
+        `heidke_score` / `mean_cost` alongside it, never alone (see the
+        module-level skill-score note for why).
+        """
         if self.sample_size == 0:
             return 0.0
         hits = sum(self.confusion.get(s.value, {}).get(s.value, 0) for s in SIGNAL_ORDER)
         return hits / self.sample_size
+
+    @property
+    def peirce_score(self) -> float:
+        """Peirce (Hanssen–Kuipers) skill score — base-rate-unbiased; 0 for any constant."""
+        return peirce_skill_score(self.confusion)
+
+    @property
+    def heidke_score(self) -> float:
+        """Heidke skill score — accuracy over chance; 0 for any constant."""
+        return heidke_skill_score(self.confusion)
+
+    @property
+    def mean_cost(self) -> float:
+        """Average per-day cost (lower is better) under the missed-session/wasted-drive matrix."""
+        return mean_cost(self.confusion)
+
+    def baselines(self) -> dict[str, dict[str, float]]:
+        """Accuracy + mean-cost of the three always-X constant forecasts."""
+        return constant_baselines(self.confusion)
 
     def worst_offenders(self, n: int = 5) -> list[RuleStats]:
         """Top-N rules by false-positive vetos — the ones killing real session days."""
@@ -463,7 +587,20 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
             "≥ 14 days before tuning thresholds from this report."
         )
     lines.append("")
-    lines.append(f"Overall accuracy (same-bucket): {report.overall_accuracy:.0%}")
+    baselines = report.baselines()
+    best_const = min(baselines, key=lambda k: baselines[k]["mean_cost"]) if report.sample_size else None
+    lines.append("Skill (constant forecasts score 0 — accuracy alone is misleading here):")
+    lines.append(f"  Peirce (HK) skill : {report.peirce_score:+.3f}")
+    lines.append(f"  Heidke skill      : {report.heidke_score:+.3f}")
+    lines.append(f"  mean cost / day   : {report.mean_cost:.3f}  (lower is better)")
+    lines.append(f"  overall accuracy  : {report.overall_accuracy:.1%}  (beatable by a constant — see below)")
+    lines.append("")
+    lines.append("Constant-forecast baselines (what a single fixed verdict would score):")
+    lines.append(f"  {'always':<8s}  {'accuracy':>8s}  {'mean cost':>9s}")
+    for sig in SIGNAL_ORDER:
+        b = baselines[sig.value]
+        marker = "  ← cheapest constant" if sig.value == best_const else ""
+        lines.append(f"  {sig.value:<8s}  {b['accuracy']:>7.1%}  {b['mean_cost']:>9.3f}{marker}")
     lines.append("")
     lines.append("Confusion matrix (rows=forecast, cols=actual):")
     headers = "  ".join(f"{s.value:>5s}" for s in SIGNAL_ORDER)

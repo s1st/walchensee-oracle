@@ -7,8 +7,12 @@ from oracle.calibration import (
     actual_verdict,
     actual_verdict_duration,
     compile_report,
+    constant_baselines,
     export_csv,
     format_text_report,
+    heidke_skill_score,
+    mean_cost,
+    peirce_skill_score,
     rescore_all,
     rescore_record,
     storm_suspected,
@@ -53,6 +57,65 @@ def test_actual_verdict_duration_legacy_fallback_without_samples():
     assert actual_verdict_duration({"samples_above_8kt": 9, "samples_above_12kt": 6}) == "go"
     assert actual_verdict_duration({"samples_above_8kt": 9, "samples_above_12kt": 1}) == "maybe"
     assert actual_verdict_duration(None) is None
+
+
+def _confusion(rows: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+    """Build a full 3×3 confusion dict (forecast → actual → count) from sparse rows."""
+    keys = ("go", "maybe", "no_go")
+    return {f: {a: rows.get(f, {}).get(a, 0) for a in keys} for f in keys}
+
+
+def test_skill_scores_zero_for_constant_forecast():
+    # Always-GO on a corpus that is the plurality-GO mix the review cites
+    # (go 1648 / maybe 1302 / no_go 381). A constant forecast must score 0 skill
+    # on both Peirce and Heidke, even though its raw accuracy (49.5%) is high.
+    always_go = _confusion({"go": {"go": 1648, "maybe": 1302, "no_go": 381}})
+    assert peirce_skill_score(always_go) == 0.0
+    assert heidke_skill_score(always_go) == 0.0
+    # raw accuracy is the GO base rate — the trap the skill score sidesteps
+    assert abs(1648 / 3331 - 0.495) < 0.001
+
+
+def test_skill_scores_perfect_forecast_is_one():
+    perfect = _confusion({"go": {"go": 100}, "maybe": {"maybe": 50}, "no_go": {"no_go": 25}})
+    assert abs(peirce_skill_score(perfect) - 1.0) < 1e-9
+    assert abs(heidke_skill_score(perfect) - 1.0) < 1e-9
+
+
+def test_skill_scores_positive_for_real_skill():
+    # Mostly-diagonal with some confusion → positive but < 1.
+    c = _confusion({
+        "go": {"go": 80, "maybe": 20},
+        "maybe": {"go": 10, "maybe": 60, "no_go": 10},
+        "no_go": {"maybe": 5, "no_go": 40},
+    })
+    assert 0.0 < peirce_skill_score(c) < 1.0
+    assert 0.0 < heidke_skill_score(c) < 1.0
+
+
+def test_skill_scores_empty_confusion():
+    empty = _confusion({})
+    assert peirce_skill_score(empty) == 0.0
+    assert heidke_skill_score(empty) == 0.0
+    assert mean_cost(empty) == 0.0
+
+
+def test_mean_cost_asymmetry_missed_session_costs_more():
+    # A missed session (forecast no_go, actual go) must cost more than the
+    # mirror wasted drive (forecast go, actual no_go) under the asymmetric matrix.
+    missed = _confusion({"no_go": {"go": 1}})
+    wasted = _confusion({"go": {"no_go": 1}})
+    assert mean_cost(missed) > mean_cost(wasted)
+    assert mean_cost(_confusion({"go": {"go": 1}})) == 0.0  # diagonal is free
+
+
+def test_constant_baselines_track_marginals():
+    c = _confusion({"go": {"go": 30, "maybe": 10}, "maybe": {"maybe": 40, "no_go": 20}})
+    # actual marginals: go 30, maybe 50, no_go 20, total 100
+    b = constant_baselines(c)
+    assert abs(b["go"]["accuracy"] - 0.30) < 1e-9
+    assert abs(b["maybe"]["accuracy"] - 0.50) < 1e-9
+    assert abs(b["no_go"]["accuracy"] - 0.20) < 1e-9
 
 
 def _record(*, day: str, overall: str, peak: float | None, verdicts: list[dict]) -> dict:
