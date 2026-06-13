@@ -491,8 +491,12 @@
     <dl class="stats-grid">
       <div><dt>{{ t.stats_sample_size }}</dt><dd>{{ stats.n if stats else t.stats_unavailable }}</dd></div>
       <div><dt>{{ t.stats_accuracy }}</dt><dd>{% if stats and stats.accuracy is not none %}{{ '%.0f%%'|format(stats.accuracy * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
+      {% if stats and stats.baseline_accuracy is not none %}
+      <div><dt>{{ t.stats_baseline }}</dt><dd>{{ t['verdict_' ~ stats.baseline_class] }} · {{ '%.0f%%'|format(stats.baseline_accuracy * 100) }}</dd></div>
+      {% endif %}
     </dl>
     <p class="advanced-note">{{ t.stats_accuracy_note }}{% if stats and stats.quarantined %} ({{ stats.quarantined }} {{ t.stats_quarantined_note }}.){% endif %}</p>
+    {% if stats and stats.baseline_accuracy is not none %}<p class="advanced-note">{{ t.stats_baseline_note }}</p>{% endif %}
 
     {% if stats and stats.n %}
     <input type="checkbox" id="stats-advanced" class="advanced-toggle">

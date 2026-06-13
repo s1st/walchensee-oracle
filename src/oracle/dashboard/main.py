@@ -195,7 +195,7 @@ _UI: dict[str, dict[str, str]] = {
         "last_30_days": "Letzte 30 Tage",
         "no_data": "Keine Daten — warte auf die nächste Vorhersage (ca. 08:00 Ortszeit).",
         "no_data_headline": "—",
-        "advanced_label": "Details — alle 13 Regeln",
+        "advanced_label": "Details — alle 14 Regeln",
         "view_label_original": "wie damals geschrieben",
         "col_rule": "Regel",
         "col_signal": "Signal",
@@ -209,6 +209,8 @@ _UI: dict[str, dict[str, str]] = {
         "stats_sample_size": "Bewertete Tage",
         "stats_accuracy": "Treffergenauigkeit",
         "stats_accuracy_note": "Anteil der Tage, an denen die Vorhersage genau die richtige Kategorie (Session / marginal / kein Wind) getroffen hat.",
+        "stats_baseline": "Naiver Vergleich",
+        "stats_baseline_note": "Was ein stumpfer „immer dasselbe\"-Tipp (die häufigste Kategorie) träfe. Die Vorhersage muss das schlagen, um nützlich zu sein.",
         "stats_quarantined_note": "Gewittertage aus der Wertung ausgenommen",
         "stats_advanced_label": "Erweiterte Statistik",
         "stats_confusion_header": "Konfusionsmatrix",
@@ -221,7 +223,7 @@ _UI: dict[str, dict[str, str]] = {
         "stats_specificity": "Spezifität",
         "stats_specificity_note": "Anteil der Flaute-Tage, die korrekt als FLAUTE vorhergesagt wurden — wie selten wir umsonst an den See schicken.",
         "stats_unavailable": "—",
-        "footer_outline": "Schwellwerte noch Schätzungen auf Basis von Gardasee-Analogien — Kalibrierung läuft.",
+        "footer_outline": "Schwellwerte gegen ~10 Jahre Urfeld-Historie (Apr–Okt) kalibriert; einzelne Seltenereignis-Regeln noch Schätzungen.",
         "footer_urfeld": "Urfeld-Wind: © Panoramahotel Karwendelblick, via",
         "footer_dwd": "DWD-Synoptik via",
         "footer_openmeteo": "Druck- & Wetterdaten via",
@@ -264,7 +266,7 @@ _UI: dict[str, dict[str, str]] = {
         "last_30_days": "Last 30 days",
         "no_data": "No data yet — next scheduled forecast runs at 08:00 CET.",
         "no_data_headline": "—",
-        "advanced_label": "Advanced — all 13 rules",
+        "advanced_label": "Advanced — all 14 rules",
         "view_label_original": "as written at the time",
         "col_rule": "Rule",
         "col_signal": "Signal",
@@ -278,6 +280,8 @@ _UI: dict[str, dict[str, str]] = {
         "stats_sample_size": "Days scored",
         "stats_accuracy": "Accuracy",
         "stats_accuracy_note": "Share of days where the forecast hit exactly the right bucket (session / marginal / no wind).",
+        "stats_baseline": "Naive baseline",
+        "stats_baseline_note": "What a blunt \"always the same\" guess (the most common outcome) would score. The forecast has to beat this to be useful.",
         "stats_quarantined_note": "thunderstorm days excluded from scoring",
         "stats_advanced_label": "Advanced statistics",
         "stats_confusion_header": "Confusion matrix",
@@ -290,7 +294,7 @@ _UI: dict[str, dict[str, str]] = {
         "stats_specificity": "Specificity",
         "stats_specificity_note": "Share of calm days correctly forecast as NO GO — how rarely we send you to the lake for nothing.",
         "stats_unavailable": "—",
-        "footer_outline": "Thresholds still guesses from Lake Garda analogues — calibration in progress.",
+        "footer_outline": "Thresholds calibrated against ~10 years of Urfeld history (Apr–Oct); some rare-event guardrails are still estimates.",
         "footer_urfeld": "Urfeld wind: © Panoramahotel Karwendelblick, via",
         "footer_dwd": "DWD synoptic via",
         "footer_openmeteo": "Pressure & meteorology via",
@@ -581,9 +585,16 @@ def _stats_payload(report: Report) -> dict:
         }
         for f in SIGNAL_ORDER
     ]
+    # Honesty companion to raw accuracy: the best "always the same verdict"
+    # guess. Accuracy alone is beatable by a constant on imbalanced classes; we
+    # show that constant's score so a visitor can see the forecast beats it.
+    baselines = report.baselines() if report.sample_size else {}
+    best_class = max(baselines, key=lambda k: baselines[k]["accuracy"]) if baselines else None
     return {
         "n": report.sample_size,
         "accuracy": report.overall_accuracy if report.sample_size else None,
+        "baseline_class": best_class,
+        "baseline_accuracy": baselines[best_class]["accuracy"] if best_class else None,
         "quarantined": len(report.quarantined_days),
         "matrix": matrix,
         "axis": [s.value for s in SIGNAL_ORDER],
