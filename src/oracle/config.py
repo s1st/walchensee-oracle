@@ -255,10 +255,9 @@ MAX_UPPER_CROSSFLOW_KNOTS = 25.0    # 700 hPa above this decouples valley-wind s
                                  # for the full data and the alternative
                                  # that did worse on the aggregator.
 
-# Lake-temperature rule (air_lake_delta) thresholds.
-# TODO(calibrate): no n= yet — docs/future-factors.md sketches air−water > 10 C
-# as the working number; lower if the cold-lake regime is over-firing on the
-# post-fit rescore-strip.
+# Lake-temperature rule (air_lake_delta) thresholds. Refitted n=3,314 (see the
+# inline note below) — the 999.0 sentinel disables the rule because its premise
+# is contradicted by the data, not because it is uncalibrated.
 COLD_LAKE_DELTA_C = 999.0            # air − water > this fires a SOFT NO_GO
                                  # air − water < -this fires a plain GO
                                  # (warm lake helps the thermal, per the rule's

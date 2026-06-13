@@ -61,16 +61,26 @@ the prior pass, this is a large, highly significant, out-of-era-stable gain — 
 - The thermal label has its own physics-set gates (gust 2.2, onset window); the
   cloud/solar separation is robust to those, foehn is not the lever regardless.
 
-## Recommendation
+## Shipped (2026-06-13, commit abd6948)
 
-1. **Implement a combined insolation veto** (`no_insolation`: heavy daytime
-   cloud + low morning solar → NO_GO). This is the single highest-leverage
-   change found in either pass. Pick its thresholds on a year-holdout against
-   the cost metric, decide HARD vs SOFT by the missed-session tradeoff, wire
-   into `engine.run_forecast`, test, and surface in the dashboard panel.
-2. **Pair it with reverting the bar toward 2–3** (restores MAYBE hedging; the
-   veto, not the bar, supplies NO_GO).
-3. **Don't pursue the per-threshold soft-veto sweep** — proven within-noise.
-4. **ML (GH #12):** cloud/solar/thermik-delta dominating a clean AUC ranking is
-   exactly the signal a shallow tree would find. The thermal label + this
-   feature ranking are the prerequisites; an ML pass is now well-motivated.
+1. **`no_insolation` HARD veto** implemented: `daytime_low_cloud ≥ 70% AND
+   morning_solar ≤ 400 W/m² → NO_GO`. Thresholds fit on a temporal holdout
+   (train ≤2022 / test ≥2023) by minimising cost; HARD because no-sun
+   physically precludes a thermal. Wired into `engine.apply_rules`, tested,
+   surfaced in the dashboard panel + tooltip.
+2. **`SOFT_VETO_BAR` reverted 5 → 2** (restores MAYBE hedging; the veto, not the
+   bar, supplies NO_GO).
+3. **End-to-end confirmation** (rescore + `calibrate --label thermal --replayed
+   --resimulated`, in-season n=1912): Peirce +0.006 → **+0.107**, cost 0.580 →
+   **0.491** (now below the cheapest constant, 0.495), era-stable
+   (IFS +0.132 / ICON +0.066), McNemar vs as-written **p≈0**. Matches the
+   holdout prediction.
+
+## Not pursued / next
+
+- **Per-threshold soft-veto sweep** — dropped: proven within-noise.
+- **ML (GH #12):** cloud/solar/thermik-delta dominating a clean AUC ranking is
+  exactly the signal a shallow tree would find. The thermal label + this feature
+  ranking are the prerequisites; an ML pass is now well-motivated.
+- **Soil/BLH rules** still need an ICON-only re-replay before any re-tune (the
+  IFS-pinned corpus nulls those fields — see soil-moisture-replay-nulls.md).

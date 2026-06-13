@@ -381,12 +381,16 @@ def air_lake_delta(
     *,
     now: datetime | None = None,
 ) -> Verdict:
-    """Air minus water temperature: cold lake opposes the thermal, warm lake helps.
+    """Air minus water temperature. NOTE: the rule is effectively disabled
+    (COLD_LAKE_DELTA_C = 999) because its original premise was *contradicted* by
+    the n=3,314 replay data — see config. The physical story below is the
+    hypothesis that didn't hold; kept for context pending a structural revisit.
 
-    Walchensee is 192 m deep — surface temperature lags air by weeks. In spring
-    the lake sits 6–10 °C below the warming air, creating a cold-surface dome
-    that opposes the incoming thermal flow. In late summer the gap closes and
-    the lake is neutral-to-helpful.
+    Hypothesised premise (not borne out): Walchensee is 192 m deep — surface
+    temperature lags air by weeks. In spring the lake sits 6–10 °C below the
+    warming air, creating a cold-surface dome that was expected to oppose the
+    thermal. In the data, warm-lake days actually fired *more*, so the rule was
+    disabled rather than shipped with an inverted sign.
 
     Sign convention: `air − water` is positive when the lake is colder than the
     air. Above `COLD_LAKE_DELTA_C` we fire a SOFT NO_GO; below `-COLD_LAKE_DELTA_C`

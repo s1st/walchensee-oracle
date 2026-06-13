@@ -1,5 +1,14 @@
 # Historical calibration — findings and state, 2026-06-12
 
+> **⚠ Superseded (2026-06-13).** The headline accuracy numbers below were
+> measured on a contaminated label (wind, not thermal) and a metric an always-GO
+> constant beats. They do not reflect real skill. See `docs/fable_findings.md`
+> (the external review) and `docs/findings/structural-insolation-veto.md` +
+> `aggregator-bar-recalibrated.md` for the corrected-methodology rework: a
+> thermal label, season restriction, skill/cost metrics with significance + era
+> splits, the bar reverted 5→2, and the actual fix (the `no_insolation` HARD
+> veto). Read those before trusting any number in this file.
+
 A summary of the work done on 2026-06-12: the replay feature,
 the historical buoy backfill, the baseline scoring of ~3,300
 days, the discovery of where the model is wrong, and the first
@@ -378,7 +387,7 @@ CHANGELOG.md                                # (pre-existing) 2026-06-12 mileston
 | Hard errors (after) | 5.0% |
 | Live-era accuracy (before) | 34% |
 | Live-era accuracy (after) | 57% |
-| Threshold tunes shipped | 1 |
-| Threshold tunes queued | 3+ (per the plan) |
+| Threshold tunes shipped | 8 + aggregator bar (see docs/findings/); most later shown within-noise under the corrected methodology |
+| Threshold tunes queued | superseded by the 2026-06-13 structural rework (see banner) |
 | Tests passing | 158 |
 | Commits on `threshold-tuning` | 1 (6f61053) |
