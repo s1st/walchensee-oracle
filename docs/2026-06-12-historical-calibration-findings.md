@@ -2,12 +2,12 @@
 
 > **⚠ Superseded (2026-06-13).** The headline accuracy numbers below were
 > measured on a contaminated label (wind, not thermal) and a metric an always-GO
-> constant beats. They do not reflect real skill. See `docs/fable_findings.md`
-> (the external review) and `docs/findings/structural-insolation-veto.md` +
-> `aggregator-bar-recalibrated.md` for the corrected-methodology rework: a
-> thermal label, season restriction, skill/cost metrics with significance + era
-> splits, the bar reverted 5→2, and the actual fix (the `no_insolation` HARD
-> veto). Read those before trusting any number in this file.
+> constant beats. They do not reflect real skill. **Read
+> `docs/2026-06-13-corrected-methodology-rework.md` first** — the umbrella
+> summary of the corrected rework (honest label, season restriction, skill/cost
+> metrics with significance + era splits, bar reverted 5→2, and the actual fix:
+> the `no_insolation` HARD veto). Background: `docs/fable_findings.md` (the
+> review) and the per-topic notes in `docs/findings/`.
 
 A summary of the work done on 2026-06-12: the replay feature,
 the historical buoy backfill, the baseline scoring of ~3,300

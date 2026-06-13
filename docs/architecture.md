@@ -56,7 +56,7 @@ Each pillar fetches one data source and returns a typed snapshot.
 
 ### Rules (`src/oracle/knowledge/rules.py`)
 
-Twelve heuristic rules turn pillar data into `Verdict{rule, signal, reason_en, reason_de}` records. Aggregation is strict: any `no_go` wins, all `go` required for `go`, everything else is `maybe`. Rule reasons are bilingual; see the dashboard for how each language is picked per visitor.
+Fourteen heuristic rules turn pillar data into `Verdict{rule, signal, severity, reason_en, reason_de}` records. Aggregation is **severity-tiered**, not flat: any **HARD** `no_go` (Föhn, synoptic/upper-level wind, thunderstorm-risk LI, and `no_insolation` — heavy cloud + low sun) forces overall `no_go`; otherwise `SOFT_VETO_BAR` (=2) or more **SOFT** `no_go`s downgrade to `maybe`; else `go`. A single soft veto no longer downgrades. Rule reasons are bilingual; see the dashboard for how each language is picked per visitor. (Rule set + aggregator were reworked 2026-06-13 — see `docs/2026-06-13-corrected-methodology-rework.md`.)
 
 ### Logger (`src/oracle/logger.py`)
 

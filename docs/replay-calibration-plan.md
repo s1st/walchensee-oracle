@@ -1,5 +1,11 @@
 # Historical calibration — execution plan
 
+> **Extended/superseded (2026-06-13).** This plan was executed, then its
+> methodology was found flawed by external review. The corrected rework (honest
+> label + metrics + significance, and the structural `no_insolation` fix) is in
+> `docs/2026-06-13-corrected-methodology-rework.md` + `docs/fable_findings.md`.
+> Read those for the current state; this file is the original plan of record.
+
 Status as of 2026-06-12: all tooling is in place (`replay-calibration`
 branch). The runs bucket holds ~3,600 in-season ground-truth days
 (2016–2026, full buoy payload); the batch replay + scoring join are
@@ -64,7 +70,7 @@ threshold-tuning questions.
 - [x] Score the two eras separately:
       - `--until 2022-11-23` (IFS-era: ~7 effective rules, no BLH / soil
         moisture) — **n=1,968, accuracy 43%**
-      - `--since 2022-11-24` (ICON-era: all 13 rules) — **n=1,295, accuracy 37%**
+      - `--since 2022-11-24` (ICON-era: all rules) — **n=1,295, accuracy 37%**
 - [x] Export the ML dataset: `oracle calibrate --replayed --csv
       data/replay_full.csv` (3,332 rows × 28 columns) + per-era splits
       `data/replay_ifs_era.csv` and `data/replay_icon_era.csv` for

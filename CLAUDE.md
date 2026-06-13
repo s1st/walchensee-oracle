@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Walchi Thermic Oracle — a Python CLI + FastAPI dashboard that forecasts thermal wind conditions at Lake Walchensee (Bavaria). Global NWP models don't resolve the local thermal, so this project fuses three data "pillars" (pressure, meteo, live measurements) through twelve heuristic rules into a `GO` / `MAYBE` / `NO_GO` verdict. Deployed on GCP (project `walchi-oracle-prod`); the same package runs unmodified locally.
+Walchi Thermic Oracle — a Python CLI + FastAPI dashboard that forecasts thermal wind conditions at Lake Walchensee (Bavaria). Global NWP models don't resolve the local thermal, so this project fuses three data "pillars" (pressure, meteo, live measurements) through fourteen heuristic rules into a `GO` / `MAYBE` / `NO_GO` verdict. Deployed on GCP (project `walchi-oracle-prod`); the same package runs unmodified locally.
 
 Read `docs/architecture.md` first for GCP layout, data flow, and component responsibilities. `docs/thermal-model.md` has the domain knowledge behind the rules.
 
@@ -48,7 +48,7 @@ Storage backend is selected by env: `RUNS_BUCKET` set → `GCSRunStore` (writes 
 
 ### Pipeline shape
 
-`engine.run_forecast(day)` fans out to the three pillars **concurrently** via `asyncio.gather`, applies all twelve rules to the snapshots, then aggregates verdicts with strict semantics: any `NO_GO` wins; all `GO` required for overall `GO`; otherwise `MAYBE`. Pressure and meteo are treated as critical; their failures propagate. Measurements are tolerant — Urfeld in particular is flaky.
+`engine.run_forecast(day)` fans out to the three pillars **concurrently** via `asyncio.gather`, applies all fourteen rules to the snapshots, then aggregates verdicts with **severity-tiered** semantics: any HARD `NO_GO` wins; otherwise `SOFT_VETO_BAR` (=2) or more SOFT `NO_GO`s downgrade to `MAYBE`; else `GO` (a single soft veto no longer downgrades). Pressure and meteo are treated as critical; their failures propagate. Measurements are tolerant — Urfeld in particular is flaky.
 
 Rules in `src/oracle/knowledge/rules.py` are pure functions: `pillar_snapshot → Verdict{rule, signal, reason_en, reason_de}`. Every rule emits **both** German and English reasons at evaluation time so the dashboard picks the language per visitor without post-hoc translation. When adding a rule: wire it in `engine.run_forecast`, add a test in `tests/test_rules.py`, and surface it in the dashboard's advanced panel + tooltip.
 
