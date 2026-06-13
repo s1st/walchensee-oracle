@@ -12,6 +12,7 @@ from oracle.knowledge.rules import (
     dew_point_spread,
     foehn_override,
     is_storm_risk,
+    no_insolation,
     overnight_cooling,
     post_rain_moisture,
     solar_radiation,
@@ -286,6 +287,27 @@ def test_daytime_clouds_no_go_is_soft():
     assert daytime_clouds(_meteo(daytime_low_cloud=80)).severity is Severity.SOFT
 
 
+def test_no_insolation_hard_veto_when_cloudy_and_dark():
+    # Heavy daytime cloud AND low morning solar → HARD NO_GO (no thermal possible).
+    v = no_insolation(_meteo(daytime_low_cloud=80, solar=300))
+    assert v.signal is Signal.NO_GO
+    assert v.severity is Severity.HARD
+
+
+def test_no_insolation_passes_when_either_signal_ok():
+    # Cloudy but still bright enough → no veto (either condition alone isn't decisive).
+    assert no_insolation(_meteo(daytime_low_cloud=90, solar=500)).signal is Signal.GO
+    # Dark but clear skies → no veto.
+    assert no_insolation(_meteo(daytime_low_cloud=20, solar=300)).signal is Signal.GO
+    # Sunny day → no veto.
+    assert no_insolation(_meteo(daytime_low_cloud=10, solar=800)).signal is Signal.GO
+
+
+def test_no_insolation_fires_at_threshold_boundary():
+    # cloud == 70 and solar == 400 both satisfy the (>=, <=) gate.
+    assert no_insolation(_meteo(daytime_low_cloud=70, solar=400)).signal is Signal.NO_GO
+
+
 def test_upper_level_wind_opposing_is_hard():
     assert upper_level_wind(_meteo(wind_850_dir=180, synoptic=15)).severity is Severity.HARD
 
@@ -419,7 +441,7 @@ def test_air_lake_delta_bilingual_reasons_non_empty():
 
 
 def test_apply_rules_includes_air_lake_delta_verdict():
-    """apply_rules emits 13 verdicts and air_lake_delta is in the list."""
+    """apply_rules emits 14 verdicts and air_lake_delta is in the list."""
     verdicts = apply_rules(
         _snapshot(3.0),
         _meteo(air_temp=20.0),
@@ -428,4 +450,5 @@ def test_apply_rules_includes_air_lake_delta_verdict():
     )
     rules = {v.rule for v in verdicts}
     assert "air_lake_delta" in rules
-    assert len(verdicts) == 13
+    assert "no_insolation" in rules
+    assert len(verdicts) == 14

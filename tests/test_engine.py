@@ -42,27 +42,19 @@ def test_single_soft_veto_does_not_downgrade():
     assert aggregate(verdicts) is Signal.GO
 
 
-def test_two_soft_vetos_stay_go():
-    # Two soft vetos are below the 2026-06-12 SOFT_VETO_BAR=5
-    # threshold. The 2-soft-veto bar (the project's pre-replay
-    # default) was wrong on the n=3,331 replay baseline; the data-
-    # fitted optimum is at 5. Two soft vetos leave the verdict at
-    # GO; five or more downgrade to MAYBE. See
-    # docs/findings/aggregator-bar.md.
-    verdicts = [_v(Signal.GO)] * 11 + [_v(Signal.NO_GO, Severity.SOFT)] * 2
+def test_below_bar_soft_vetos_stay_go():
+    # One fewer soft veto than SOFT_VETO_BAR leaves the verdict at GO.
+    # (Bar reverted 5→2 on 2026-06-13 — see config + aggregator-bar-recalibrated.md.)
+    from oracle.config import SOFT_VETO_BAR
+    verdicts = [_v(Signal.GO)] * 11 + [_v(Signal.NO_GO, Severity.SOFT)] * (SOFT_VETO_BAR - 1)
     assert aggregate(verdicts) is Signal.GO
 
 
-def test_five_soft_vetos_downgrade_to_maybe():
-    # Five converging negative signals = real concern, downgrade.
-    verdicts = [_v(Signal.GO)] * 8 + [_v(Signal.NO_GO, Severity.SOFT)] * 5
+def test_at_bar_soft_vetos_downgrade_to_maybe():
+    # SOFT_VETO_BAR converging soft vetos = real concern, downgrade to MAYBE.
+    from oracle.config import SOFT_VETO_BAR
+    verdicts = [_v(Signal.GO)] * 8 + [_v(Signal.NO_GO, Severity.SOFT)] * SOFT_VETO_BAR
     assert aggregate(verdicts) is Signal.MAYBE
-
-
-def test_four_soft_vetos_still_go():
-    # Four soft vetos are below the 5-veto threshold.
-    verdicts = [_v(Signal.GO)] * 9 + [_v(Signal.NO_GO, Severity.SOFT)] * 4
-    assert aggregate(verdicts) is Signal.GO
 
 
 def test_many_soft_vetos_still_only_maybe():

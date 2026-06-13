@@ -63,7 +63,7 @@ def apply_rules(
     *,
     now: datetime | None = None,
 ) -> list[Verdict]:
-    """Pure function: pillar snapshots in, thirteen verdicts out.
+    """Pure function: pillar snapshots in, fourteen verdicts out.
 
     Extracted so calibration tooling can re-run the rule layer against a
     record's stored `inputs` block without re-fetching the upstream APIs.
@@ -85,6 +85,7 @@ def apply_rules(
         rules.post_rain_moisture(meteo_snap),
         rules.atmospheric_stability(meteo_snap),
         rules.daytime_clouds(meteo_snap),
+        rules.no_insolation(meteo_snap),
         rules.upper_level_wind(meteo_snap),
         rules.synoptic_override(meteo_snap),
         rules.thermal_ignition(winds),

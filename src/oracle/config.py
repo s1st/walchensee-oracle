@@ -214,6 +214,18 @@ MAX_DAYTIME_LOW_CLOUD_PCT = 75.0 # max cloud_cover_low 09:00–13:00; above = sl
                                  # raise to 75% is the clean read of the data;
                                  # 66-69% are tied at +138 within noise.
 GOOD_DAYTIME_LOW_CLOUD_PCT = 30.0 # below this = unobstructed sun
+
+# Combined-insolation HARD veto. Heavy daytime cloud AND low morning solar
+# together mean no surface heating → no thermal. Decisive as a *combination*
+# even though either signal alone is only a SOFT hint (and the prior pass had
+# loosened both). This is the structural fix that supplies the HARD NO_GO the
+# aggregator lacked: on the thermal label it lifts held-out Peirce −0.012 →
+# +0.066 (McNemar p=6e-8), the only large, significant, era-stable gain found in
+# either tuning pass. Thresholds fit on a temporal holdout (train ≤2022 /
+# test ≥2023) by minimising cost; cost-positive on both splits.
+# See docs/findings/structural-insolation-veto.md.
+NO_INSOLATION_CLOUD_PCT = 70.0    # daytime low-cloud % AND ↓ ; n=1912, holdout-validated
+NO_INSOLATION_SOLAR_WM2 = 400.0   # morning solar W/m² ; both must hold to fire the veto
 SYNOPTIC_OPPOSING_DEG = (150, 210)  # 850 hPa wind from SSE counters the N→S thermal
 SYNOPTIC_OPPOSING_MIN_KNOTS = 12.0  # SSE direction only vetoes at meaningful 850 speed.
                                     # n=4 calibration days: light SSE drift (2.8–10.3 kt)
@@ -292,15 +304,15 @@ COLD_LAKE_DELTA_C = 999.0            # air − water > this fires a SOFT NO_GO
 MAX_LAKE_TEMP_AGE_HOURS = 168.0      # 7 days; buoy readings older than this
                                      # are "no signal" rather than a fresh veto
 
-# Aggregator: how many SOFT vetos are needed to downgrade a
-# GO verdict to MAYBE. The 2-soft-veto bar (the project's
-# pre-replay default) was wrong on the n=3,331 replay baseline.
-# Per-rule FP-veto rates are 30-70% in many cases, so a 2-of-N
-# consensus catches mostly noise. Data-fitted optimum is
-# SOFT_VETO_BAR=5 (see docs/findings/aggregator-bar.md for the
-# sensitivity table). Raising from 2 to 5 gives +2.9pp on
-# the headline accuracy with no change in hard-error rate.
-SOFT_VETO_BAR = 5                 # SOFT vetos required to downgrade → MAYBE
+# Aggregator: how many SOFT vetos are needed to downgrade a GO verdict to MAYBE.
+# Reverted 5 → 2 (the project's pre-replay default) on 2026-06-13. The 2→5
+# change was fit on the *contaminated* peak-label accuracy metric (+2.9pp); under
+# the corrected thermal label it lands at near-zero skill (Peirce +0.006) and the
+# bar5→bar2 difference is within noise (McNemar p=0.20) and era-unstable (IFS
+# wants 2, ICON 1). bar=2 restores meaningful MAYBE hedging (≈920 vs 56 days).
+# The soft bar only moves GO↔MAYBE; NO_GO now comes from the no_insolation HARD
+# veto. See docs/findings/aggregator-bar-recalibrated.md + structural-insolation-veto.md.
+SOFT_VETO_BAR = 2                 # SOFT vetos required to downgrade → MAYBE
 
 # Classic Urfeld ignition window 10:30–11:30; propagation done by ~15:00.
 IGNITION_WINDOW_LOCAL: tuple[time, time] = (time(10, 30), time(15, 0))

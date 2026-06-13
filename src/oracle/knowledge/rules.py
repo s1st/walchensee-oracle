@@ -271,6 +271,33 @@ def daytime_clouds(meteo: MeteoSnapshot) -> Verdict:
     )
 
 
+def no_insolation(meteo: MeteoSnapshot) -> Verdict:
+    """Heavy daytime cloud *and* low morning solar together → no thermal.
+
+    A thermal is solar-driven; with the slopes shaded all day (high low-cloud)
+    *and* little morning insolation reaching the ground, there is no surface
+    heating to build one. Either signal alone is only a SOFT hint (`daytime_clouds`,
+    `solar_radiation`); their *combination* is decisive, so this is a HARD veto.
+    It is the structural source of NO_GO the soft-veto aggregator otherwise
+    lacks — without it the rules over-forecast GO on cloudy days. Thresholds are
+    holdout-fit; see docs/findings/structural-insolation-veto.md.
+    """
+    cloud = meteo.max_daytime_low_cloud_pct
+    solar = meteo.morning_solar_radiation_wm2
+    if cloud >= config.NO_INSOLATION_CLOUD_PCT and solar <= config.NO_INSOLATION_SOLAR_WM2:
+        return Verdict(
+            "no_insolation", Signal.NO_GO,
+            reason_en=f"{cloud:.0f}% daytime cloud + only {solar:.0f} W/m² solar — no insolation to drive a thermal",
+            reason_de=f"{cloud:.0f}% Bewölkung tagsüber + nur {solar:.0f} W/m² Strahlung — keine Einstrahlung für Thermik",
+            severity=Severity.HARD,
+        )
+    return Verdict(
+        "no_insolation", Signal.GO,
+        reason_en=f"{cloud:.0f}% daytime cloud / {solar:.0f} W/m² solar — enough insolation for a thermal",
+        reason_de=f"{cloud:.0f}% Bewölkung / {solar:.0f} W/m² Strahlung — ausreichend Einstrahlung für Thermik",
+    )
+
+
 def upper_level_wind(meteo: MeteoSnapshot) -> Verdict:
     direction = meteo.wind_850_direction_at_peak_deg
     speed_850 = meteo.synoptic_wind_knots

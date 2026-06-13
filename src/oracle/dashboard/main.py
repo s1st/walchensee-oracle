@@ -117,6 +117,13 @@ _RULE_I18N: dict[str, RuleI18n] = {
             "en": "Max low-cloud cover 09:00–13:00. Above 60 % shades the Herzogstand/Jochberg slopes and stops slope heating.",
         },
     ),
+    "no_insolation": RuleI18n(
+        label={"de": "Keine Einstrahlung", "en": "No insolation"},
+        description={
+            "de": "Harte Sperre: dichte Tagesbewölkung (≥ 70 %) UND niedrige Morgenstrahlung (≤ 400 W/m²) zusammen — ohne Sonne keine Hangheizung, keine Thermik. Einzeln sind beide nur weiche Signale; die Kombination ist eindeutig.",
+            "en": "Hard veto: heavy daytime cloud (≥ 70 %) AND low morning solar (≤ 400 W/m²) together — no sun, no slope heating, no thermal. Either alone is only a soft hint; the combination is decisive.",
+        },
+    ),
     "upper_level_wind": RuleI18n(
         label={"de": "Höhenwind (850 / 700 hPa)", "en": "Upper-level wind (850 / 700 hPa)"},
         description={
