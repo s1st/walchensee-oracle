@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
+from oracle import config
 from oracle.engine import Forecast, run_forecast, run_replay
 from oracle.logger import backfill_run, forecast_to_dict, load_run, write_run
 
@@ -18,6 +19,19 @@ load_dotenv()
 
 app = typer.Typer(help="Walchi Thermic Oracle")
 console = Console()
+
+
+def _resolve_months(season: bool, months: str | None) -> frozenset[int] | None:
+    """Turn the --season/--all-year flag and optional --months spec into a month
+    set. Explicit --months wins; otherwise --season → Apr–Oct, --all-year → None."""
+    from oracle.calibration import parse_months
+
+    if months:
+        try:
+            return parse_months(months)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    return config.ACTIVE_SEASON_MONTHS if season else None
 
 
 @app.command()
@@ -171,6 +185,8 @@ def rescore(
     until: str = typer.Option(None, help="ISO date — only re-score days up to this date."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Don't write; just report what would change."),
     replayed: bool = typer.Option(False, "--replayed", help="Re-score the replay records (runs/replay/) instead of the live forecasts — the no-API inner loop of historical calibration."),
+    season: bool = typer.Option(False, "--season/--all-year", help="Restrict to the active thermal season (Apr–Oct). Default re-scores all months."),
+    months: str = typer.Option(None, help="Explicit months, e.g. '4-10' or '4,5,9'. Overrides --season/--all-year."),
 ) -> None:
     """Re-run the rule layer on each logged record under the current aggregator.
 
@@ -187,7 +203,10 @@ def rescore(
 
     since_d = date.fromisoformat(since) if since else None
     until_d = date.fromisoformat(until) if until else None
-    summary = rescore_all(since=since_d, until=until_d, dry_run=dry_run, replayed=replayed)
+    months_set = _resolve_months(season, months)
+    summary = rescore_all(
+        since=since_d, until=until_d, dry_run=dry_run, replayed=replayed, months=months_set,
+    )
     if dry_run:
         console.print(f"would rewrite {len(summary['unchanged'])} records")
     else:
@@ -212,6 +231,8 @@ def calibrate(
     label: str = typer.Option("peak", help="Ground-truth scale: 'peak' (max avg knots) or 'duration' (sustained samples)."),
     resimulated: bool = typer.Option(False, "--resimulated/--historical", help="Score the current rule layer (`verdicts_resimulated`) instead of the historical verdicts. Requires `oracle rescore` to have populated those fields."),
     replayed: bool = typer.Option(False, "--replayed", help="Score the replay records (runs/replay/) against the ground truth in the matching main records. Combine with --resimulated after a threshold tune + `oracle rescore --replayed`."),
+    season: bool = typer.Option(True, "--season/--all-year", help="Score only the active thermal season (Apr–Oct, the default — the window the product serves). --all-year includes Nov–Mar, which over-weights the winter negative class."),
+    months: str = typer.Option(None, help="Explicit months, e.g. '4-10' or '4,5,9'. Overrides --season/--all-year."),
     csv: str = typer.Option(None, help="Path to write a flat one-row-per-day CSV (features + ground truth) for offline ML."),
 ) -> None:
     """Score logged forecasts against Urfeld ground truth.
@@ -228,6 +249,11 @@ def calibrate(
     no-arg run walks all 3,700 files (~10-20 min over GCS); pass
     `--since 2026-04-22` to restrict to the project's own days.
 
+    Scoring defaults to the active thermal season (Apr–Oct) — the window
+    the product actually serves. Pass `--all-year` to include Nov–Mar, but
+    note winter dominates the negative class and turns univariate
+    thresholds into season detectors (see docs/fable_findings.md §2).
+
     With --replayed: score the archive-replayed verdicts (written by
     `oracle replay --from/--to`) against the same stored ground truth.
     Reads two records per day over GCS — for repeated runs, mirror the
@@ -240,13 +266,14 @@ def calibrate(
         raise typer.BadParameter("--label must be 'peak' or 'duration'")
     since_d = date.fromisoformat(since) if since else None
     until_d = date.fromisoformat(until) if until else None
+    months_set = _resolve_months(season, months)
     report = compile_report(
         since=since_d, until=until_d, label=label,
-        resimulated=resimulated, replayed=replayed,
+        resimulated=resimulated, replayed=replayed, months=months_set,
     )
     console.print(format_text_report(report, rule_filter=rule))
     if csv:
-        n = export_csv(csv, since=since_d, until=until_d, replayed=replayed)
+        n = export_csv(csv, since=since_d, until=until_d, replayed=replayed, months=months_set)
         console.print(f"\n[dim]Wrote {n} rows to {csv}[/dim]")
 
 

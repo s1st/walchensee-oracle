@@ -12,11 +12,13 @@ from oracle.calibration import (
     format_text_report,
     heidke_skill_score,
     mean_cost,
+    parse_months,
     peirce_skill_score,
     rescore_all,
     rescore_record,
     storm_suspected,
 )
+from oracle.calibration import _months_label
 from oracle.logger import LocalRunStore
 
 
@@ -192,6 +194,44 @@ def test_false_positive_veto_attribution(tmp_path: Path):
     # `worst_offenders` should rank this rule first.
     worst = report.worst_offenders()
     assert worst and worst[0].rule == "post_rain_moisture"
+
+
+def test_parse_months_ranges_and_lists():
+    assert parse_months("4-10") == frozenset({4, 5, 6, 7, 8, 9, 10})
+    assert parse_months("4,5,9") == frozenset({4, 5, 9})
+    assert parse_months("6") == frozenset({6})
+    # "11-2" is an empty range (lo>hi) → no months → invalid, falls to bad set below.
+    for bad in ("0-3", "13", "", "  ", "11-2"):
+        try:
+            parse_months(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected ValueError for {bad!r}")
+
+
+def test_months_label_contiguous_vs_sparse():
+    assert _months_label(frozenset({4, 5, 6, 7, 8, 9, 10})) == "Apr–Oct"
+    assert _months_label(frozenset({4, 5, 9})) == "Apr,May,Sep"
+    assert _months_label(frozenset({6})) == "Jun"
+
+
+def test_compile_report_season_filter_drops_winter(tmp_path: Path):
+    store = LocalRunStore(tmp_path)
+    # Two in-season days (Jun) and two winter days (Dec/Jan), all fired.
+    for iso in ("2023-06-10", "2023-06-11", "2022-12-15", "2023-01-20"):
+        store.write(iso, _record(
+            day=iso, overall="go", peak=14.0, verdicts=[_verdict("thermik", "go")],
+        ))
+
+    all_year = compile_report(store=store)  # default months=None here (library default)
+    assert all_year.sample_size == 4
+    assert all_year.months is None
+
+    in_season = compile_report(store=store, months={4, 5, 6, 7, 8, 9, 10})
+    assert in_season.sample_size == 2
+    assert sorted(in_season.days_with_ground_truth) == ["2023-06-10", "2023-06-11"]
+    assert in_season.months == frozenset({4, 5, 6, 7, 8, 9, 10})
 
 
 def test_storm_suspected_reads_lifted_index():

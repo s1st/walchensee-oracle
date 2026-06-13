@@ -311,6 +311,13 @@ IGNITION_WINDOW_LOCAL: tuple[time, time] = (time(10, 30), time(15, 0))
 # only the project's own forecast days.
 PROJECT_FIRST_DAY = date(2026, 4, 22)
 
+# The product only serves the thermal season — the project shuts down Nov–Mar
+# (no GCP cost, no samples accrue off-season). Calibration must score on the
+# same window it serves: scoring year-round lets winter (which dominates the
+# negative class) turn univariate thresholds into "is it winter?" detectors.
+# Apr–Oct inclusive. See docs/fable_findings.md §2.
+ACTIVE_SEASON_MONTHS: frozenset[int] = frozenset({4, 5, 6, 7, 8, 9, 10})
+
 # --- External endpoints ---------------------------------------------------
 # Production: live forecast. Replay uses one of the archive hosts below —
 # see docs/historical_forecasts.md for model coverage and caveats. The query

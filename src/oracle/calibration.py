@@ -219,6 +219,7 @@ class Report:
     resimulated: bool = False
     replayed: bool = False  # scored replay records joined with main-record ground truth
     quarantined_days: list[str] = field(default_factory=list)  # storm-suspected, excluded
+    months: frozenset[int] | None = None  # season filter applied, if any
 
     @property
     def overall_accuracy(self) -> float:
@@ -307,15 +308,53 @@ def _ignition_minute_of_day(iso_ts: str | None) -> int | None:
     return dt.hour * 60 + dt.minute
 
 
+_MONTH_ABBR = ("", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def parse_months(spec: str) -> frozenset[int]:
+    """Parse a months spec like '4-10' (range) or '4,5,9' (list) into a set.
+
+    Raises ValueError on out-of-range or malformed input so the CLI can
+    surface a clean BadParameter.
+    """
+    out: set[int] = set()
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            lo_s, hi_s = part.split("-", 1)
+            lo, hi = int(lo_s), int(hi_s)
+            out.update(range(lo, hi + 1))
+        else:
+            out.add(int(part))
+    if not out or any(m < 1 or m > 12 for m in out):
+        raise ValueError(f"months out of 1–12 range: {spec!r}")
+    return frozenset(out)
+
+
+def _months_label(months: frozenset[int]) -> str:
+    """Compact human label: 'Apr–Oct' for a contiguous run, else 'Apr,May,Sep'."""
+    ms = sorted(months)
+    if ms == list(range(ms[0], ms[-1] + 1)) and len(ms) > 1:
+        return f"{_MONTH_ABBR[ms[0]]}–{_MONTH_ABBR[ms[-1]]}"
+    return ",".join(_MONTH_ABBR[m] for m in ms)
+
+
 def _iter_window_days(
     store: RunStore, since: date | None, until: date | None,
-    replayed: bool = False,
+    replayed: bool = False, months: set[int] | frozenset[int] | None = None,
 ) -> Iterator[str]:
     """Yield logged ISO days that fall within [since, until] (inclusive ends).
 
     Single source of the date-window filter shared by `rescore_all`,
     `compile_report` and `export_csv`. With `replayed=True`, walk the
     replay namespace (`runs/replay/`) instead of the main records.
+
+    `months` (e.g. `config.ACTIVE_SEASON_MONTHS`) restricts to those calendar
+    months — the product only serves Apr–Oct, so calibration scores on that
+    window rather than letting winter dominate the negative class.
     """
     days = store.list_replays() if replayed else store.list_days()
     for iso in days:
@@ -323,6 +362,8 @@ def _iter_window_days(
         if since and d < since:
             continue
         if until and d > until:
+            continue
+        if months is not None and d.month not in months:
             continue
         yield iso
 
@@ -395,6 +436,7 @@ def rescore_all(
     until: date | None = None,
     dry_run: bool = False,
     replayed: bool = False,
+    months: set[int] | frozenset[int] | None = None,
 ) -> dict:
     """Walk every logged record, re-score it, and persist the result.
 
@@ -424,7 +466,7 @@ def rescore_all(
     skipped: list[str] = []
     flipped: list[tuple[str, str, str]] = []  # (iso, old_overall, new_overall)
 
-    for iso in _iter_window_days(store, since, until, replayed=replayed):
+    for iso in _iter_window_days(store, since, until, replayed=replayed, months=months):
         record = store.read_replay(iso) if replayed else store.read(iso)
         if record is None:
             continue
@@ -466,6 +508,7 @@ def compile_report(
     label: str = "peak",
     resimulated: bool = False,
     replayed: bool = False,
+    months: set[int] | frozenset[int] | None = None,
 ) -> Report:
     """Walk every logged record and aggregate forecast-vs-actual metrics.
 
@@ -505,7 +548,7 @@ def compile_report(
     sample_days: list[str] = []
     quarantined: list[str] = []
 
-    for iso in _iter_window_days(store, since, until, replayed=replayed):
+    for iso in _iter_window_days(store, since, until, replayed=replayed, months=months):
         record = _merged_replay_record(store, iso) if replayed else store.read(iso)
         if record is None:
             continue
@@ -545,6 +588,7 @@ def compile_report(
         resimulated=resimulated,
         replayed=replayed,
         quarantined_days=quarantined,
+        months=frozenset(months) if months is not None else None,
     )
 
 
@@ -571,9 +615,10 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
     if report.replayed:
         view = f"replay (archive forecasts), {view}"
     lines: list[str] = []
+    season = "all months" if report.months is None else _months_label(report.months)
     lines.append(
         f"Calibration sample: {report.sample_size} days with ground truth "
-        f"(label = {report.label_mode}: {label_desc}; view = {view})."
+        f"(label = {report.label_mode}: {label_desc}; view = {view}; season = {season})."
     )
     if report.quarantined_days:
         lines.append(
@@ -718,6 +763,7 @@ def export_csv(
     since: date | None = None,
     until: date | None = None,
     replayed: bool = False,
+    months: set[int] | frozenset[int] | None = None,
 ) -> int:
     """Write every ground-truthed record to `path` as a flat CSV. Returns row count.
 
@@ -726,7 +772,7 @@ def export_csv(
     offline ML (see GH issue #12)."""
     store = store or default_store()
     rows: list[dict] = []
-    for iso in _iter_window_days(store, since, until, replayed=replayed):
+    for iso in _iter_window_days(store, since, until, replayed=replayed, months=months):
         record = _merged_replay_record(store, iso) if replayed else store.read(iso)
         if record is None:
             continue
