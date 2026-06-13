@@ -19,9 +19,10 @@ Deliberately doesn't auto-tune thresholds; surfaces evidence for a human.
 from __future__ import annotations
 
 import csv
+import math
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from oracle import config
@@ -884,3 +885,172 @@ def export_csv(
         writer.writeheader()
         writer.writerows(rows)
     return len(rows)
+
+
+# --- validation harness ---------------------------------------------------
+# The replay pass shipped without any of this: every claim was in-sample on the
+# same ~3,300 days, with no significance test and no era/holdout split. So
+# noise-level changes (one tune was +4 days; another McNemar p≈0.54) shipped
+# as "data-fitted (n=3,263)". These helpers make a tune defend itself:
+# McNemar for "did this change actually move the needle", and year/era splits
+# for "does the optimum hold out of sample". Fable review §5.
+
+_VALID_FORECASTS = frozenset(s.value for s in SIGNAL_ORDER)
+
+
+@dataclass
+class McNemarResult:
+    """Paired before/after significance test on the same days.
+
+    `b` = days the change fixed (old wrong → new right); `c` = days it broke
+    (old right → new wrong). Only discordant days carry information. A change
+    is real only if b ≫ c *and* p is small; b ≈ c (whatever the raw day delta)
+    is noise.
+    """
+    b: int                  # old wrong, new right  (fixed)
+    c: int                  # old right, new wrong  (broke)
+    n_discordant: int
+    statistic: float        # continuity-corrected χ², 1 dof
+    p_value: float
+    exact: bool             # True → exact binomial (small n), χ² is advisory
+
+    @property
+    def net(self) -> int:
+        """Net days moved in the new forecast's favour (b − c)."""
+        return self.b - self.c
+
+
+def mcnemar(old_correct: list[bool], new_correct: list[bool], *, exact_below: int = 25) -> McNemarResult:
+    """McNemar's test over two correct/incorrect verdict sequences for the same days.
+
+    Uses the exact two-sided binomial when the discordant count is small
+    (< `exact_below`, where the χ² approximation is unreliable) and the
+    continuity-corrected χ² otherwise. p-value needs no scipy: for 1 dof,
+    P(χ² > x) = erfc(√(x/2)).
+    """
+    b = sum(1 for o, n in zip(old_correct, new_correct, strict=True) if (not o) and n)
+    c = sum(1 for o, n in zip(old_correct, new_correct, strict=True) if o and (not n))
+    n = b + c
+    if n == 0:
+        return McNemarResult(0, 0, 0, 0.0, 1.0, exact=True)
+    statistic = (abs(b - c) - 1) ** 2 / n
+    if n < exact_below:
+        k = min(b, c)
+        tail = sum(math.comb(n, i) for i in range(k + 1)) / (2 ** n)
+        return McNemarResult(b, c, n, statistic, min(1.0, 2.0 * tail), exact=True)
+    return McNemarResult(b, c, n, statistic, math.erfc((statistic / 2.0) ** 0.5), exact=False)
+
+
+def era_of(iso: str) -> str:
+    """'ifs' (Open-Meteo IFS HRES era) or 'icon' (DWD ICON-D2 era) for a day."""
+    return "ifs" if date.fromisoformat(iso) < config.ICON_ERA_START else "icon"
+
+
+def mcnemar_keys(
+    store: RunStore | None = None,
+    key_old: str = "overall",
+    key_new: str = "overall_resimulated",
+    *,
+    since: date | None = None,
+    until: date | None = None,
+    label: str = "thermal",
+    replayed: bool = False,
+    months: set[int] | frozenset[int] | None = None,
+) -> McNemarResult:
+    """Compare two forecast fields on the same days against the ground-truth label.
+
+    Defaults compare the as-written verdict (`overall`) to the current rule
+    layer (`overall_resimulated`) — run `oracle rescore` first to populate the
+    latter. To test a single threshold change in isolation, snapshot
+    `overall_resimulated` to a custom field before the change, re-score after,
+    and pass both field names here. Storm-quarantined days are excluded, as in
+    `compile_report`, so the two views are scored on an identical day set.
+    """
+    store = store or default_store()
+    old_correct: list[bool] = []
+    new_correct: list[bool] = []
+    for iso in _iter_window_days(store, since, until, replayed=replayed, months=months):
+        record = _merged_replay_record(store, iso) if replayed else store.read(iso)
+        if record is None:
+            continue
+        actual = _label_record(record, label)
+        if actual is None or storm_suspected(record):
+            continue
+        fo, fn = record.get(key_old), record.get(key_new)
+        if fo not in _VALID_FORECASTS or fn not in _VALID_FORECASTS:
+            continue
+        old_correct.append(fo == actual)
+        new_correct.append(fn == actual)
+    return mcnemar(old_correct, new_correct)
+
+
+def reports_by_era(
+    store: RunStore | None = None,
+    *,
+    label: str = "thermal",
+    resimulated: bool = False,
+    replayed: bool = False,
+    months: set[int] | frozenset[int] | None = None,
+) -> dict[str, Report]:
+    """One Report per model era (IFS vs ICON), split at `config.ICON_ERA_START`.
+
+    A corpus-wide threshold optimum that disagrees across the two eras is
+    unstable — the input distributions differ (see the era boundary note in
+    config). Reads the store once per era.
+    """
+    store = store or default_store()
+    return {
+        "ifs": compile_report(
+            store=store, until=config.ICON_ERA_START - timedelta(days=1),
+            label=label, resimulated=resimulated, replayed=replayed, months=months,
+        ),
+        "icon": compile_report(
+            store=store, since=config.ICON_ERA_START,
+            label=label, resimulated=resimulated, replayed=replayed, months=months,
+        ),
+    }
+
+
+def reports_by_year(
+    store: RunStore | None = None,
+    *,
+    label: str = "thermal",
+    resimulated: bool = False,
+    replayed: bool = False,
+    months: set[int] | frozenset[int] | None = None,
+) -> dict[int, Report]:
+    """One Report per calendar year present in the store — a cheap year-wise CV:
+    a tune that only helps in one or two years isn't a real signal. Walks the
+    store listing once to find the years, then once more per year."""
+    store = store or default_store()
+    years = sorted({
+        date.fromisoformat(iso).year
+        for iso in _iter_window_days(store, None, None, replayed=replayed, months=months)
+    })
+    return {
+        y: compile_report(
+            store=store, since=date(y, 1, 1), until=date(y, 12, 31),
+            label=label, resimulated=resimulated, replayed=replayed, months=months,
+        )
+        for y in years
+    }
+
+
+def format_skill_line(name: str, report: Report) -> str:
+    """One-line skill summary for a partition, for the --split table."""
+    return (
+        f"  {name:<8s}  n={report.sample_size:>5d}  "
+        f"Peirce={report.peirce_score:+.3f}  Heidke={report.heidke_score:+.3f}  "
+        f"cost={report.mean_cost:.3f}  acc={report.overall_accuracy:5.1%}"
+    )
+
+
+def format_mcnemar(result: McNemarResult, *, old: str, new: str) -> str:
+    """Human-readable McNemar verdict line."""
+    method = "exact binomial" if result.exact else "χ², cont.corr."
+    sig = "SIGNIFICANT" if result.p_value < 0.05 else "not significant"
+    return (
+        f"McNemar {old} → {new}: fixed {result.b}, broke {result.c} "
+        f"(net {result.net:+d} of {result.n_discordant} discordant); "
+        f"p={result.p_value:.3f} [{method}] → {sig} at α=0.05"
+    )

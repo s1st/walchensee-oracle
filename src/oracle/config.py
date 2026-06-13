@@ -318,6 +318,12 @@ PROJECT_FIRST_DAY = date(2026, 4, 22)
 # Apr–Oct inclusive. See docs/fable_findings.md §2.
 ACTIVE_SEASON_MONTHS: frozenset[int] = frozenset({4, 5, 6, 7, 8, 9, 10})
 
+# Open-Meteo Best Match flips the underlying NWP model here: IFS HRES (9 km)
+# before this date, DWD ICON-D2 (2.2 km) from it. Solar/cloud/BLH distributions
+# differ across the two, so replay-fitted thresholds must be checked per era —
+# a single corpus-wide optimum can hide an IFS/ICON split (Fable review §6).
+ICON_ERA_START = date(2022, 11, 24)
+
 # --- External endpoints ---------------------------------------------------
 # Production: live forecast. Replay uses one of the archive hosts below —
 # see docs/historical_forecasts.md for model coverage and caveats. The query

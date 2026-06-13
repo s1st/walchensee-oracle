@@ -12,14 +12,18 @@ from oracle.calibration import (
     export_csv,
     format_text_report,
     heidke_skill_score,
+    mcnemar,
+    mcnemar_keys,
     mean_cost,
     parse_months,
     peirce_skill_score,
+    reports_by_era,
+    reports_by_year,
     rescore_all,
     rescore_record,
     storm_suspected,
 )
-from oracle.calibration import _months_label
+from oracle.calibration import _months_label, era_of
 from oracle.logger import LocalRunStore
 
 
@@ -286,6 +290,79 @@ def test_compile_report_season_filter_drops_winter(tmp_path: Path):
     assert in_season.sample_size == 2
     assert sorted(in_season.days_with_ground_truth) == ["2023-06-10", "2023-06-11"]
     assert in_season.months == frozenset({4, 5, 6, 7, 8, 9, 10})
+
+
+def test_mcnemar_no_discordant_pairs_is_not_significant():
+    # Identical forecasts → no discordant days → p = 1.
+    r = mcnemar([True, False, True], [True, False, True])
+    assert r.b == 0 and r.c == 0
+    assert r.p_value == 1.0
+
+
+def test_mcnemar_strong_improvement_is_significant():
+    # 30 days fixed, 2 broken → large, lopsided discordance → significant.
+    old = [False] * 30 + [True] * 2 + [True] * 50
+    new = [True] * 30 + [False] * 2 + [True] * 50
+    r = mcnemar(old, new)
+    assert r.b == 30 and r.c == 2
+    assert r.net == 28
+    assert not r.exact          # 32 discordant ≥ 25 → χ² path
+    assert r.p_value < 0.05
+
+
+def test_mcnemar_balanced_discordance_is_noise():
+    # The review's case: many discordant days but ~evenly split → not significant
+    # even though the raw n is large. (89 newly-right vs 81 newly-wrong.)
+    old = [False] * 89 + [True] * 81
+    new = [True] * 89 + [False] * 81
+    r = mcnemar(old, new)
+    assert r.b == 89 and r.c == 81
+    assert r.p_value > 0.05     # net +8 of 170 is noise
+
+
+def test_mcnemar_small_sample_uses_exact():
+    r = mcnemar([False] * 3 + [True] * 2, [True] * 3 + [False] * 2)
+    assert r.exact              # 5 discordant < 25 → exact binomial
+    assert r.b == 3 and r.c == 2
+
+
+def test_era_of_boundary():
+    assert era_of("2022-11-23") == "ifs"
+    assert era_of("2022-11-24") == "icon"
+    assert era_of("2026-06-13") == "icon"
+
+
+def test_reports_by_year_and_era_partition(tmp_path: Path):
+    store = LocalRunStore(tmp_path)
+    # Two IFS-era days (2021) and two ICON-era days (2023), all in-season, fired.
+    for iso in ("2021-06-10", "2021-07-11", "2023-06-10", "2023-07-11"):
+        store.write(iso, _record(
+            day=iso, overall="go", peak=14.0, verdicts=[_verdict("thermik", "go")],
+        ))
+    by_year = reports_by_year(store=store, label="peak")
+    assert set(by_year) == {2021, 2023}
+    assert by_year[2021].sample_size == 2 and by_year[2023].sample_size == 2
+
+    by_era = reports_by_era(store=store, label="peak")
+    assert by_era["ifs"].sample_size == 2   # 2021
+    assert by_era["icon"].sample_size == 2  # 2023
+
+
+def test_mcnemar_keys_compares_overall_to_resimulated(tmp_path: Path):
+    store = LocalRunStore(tmp_path)
+    # Day 1: old wrong (no_go), new right (go), actual go → fixes.
+    # Day 2: old right (go), new wrong (no_go), actual go → breaks.
+    # Day 3: both right.
+    rec1 = _record(day="2023-06-10", overall="no_go", peak=14.0, verdicts=[])
+    rec1["overall_resimulated"] = "go"
+    rec2 = _record(day="2023-06-11", overall="go", peak=14.0, verdicts=[])
+    rec2["overall_resimulated"] = "no_go"
+    rec3 = _record(day="2023-06-12", overall="go", peak=14.0, verdicts=[])
+    rec3["overall_resimulated"] = "go"
+    for r in (rec1, rec2, rec3):
+        store.write(r["day"], r)
+    result = mcnemar_keys(store=store, label="peak")
+    assert result.b == 1 and result.c == 1  # one fixed, one broken
 
 
 def test_storm_suspected_reads_lifted_index():

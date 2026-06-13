@@ -233,6 +233,8 @@ def calibrate(
     replayed: bool = typer.Option(False, "--replayed", help="Score the replay records (runs/replay/) against the ground truth in the matching main records. Combine with --resimulated after a threshold tune + `oracle rescore --replayed`."),
     season: bool = typer.Option(True, "--season/--all-year", help="Score only the active thermal season (Apr–Oct, the default — the window the product serves). --all-year includes Nov–Mar, which over-weights the winter negative class."),
     months: str = typer.Option(None, help="Explicit months, e.g. '4-10' or '4,5,9'. Overrides --season/--all-year."),
+    split: str = typer.Option("none", help="Also print per-partition skill: 'year' (year-wise CV) or 'era' (IFS vs ICON). A tune whose optimum doesn't hold across splits is overfit."),
+    mcnemar: bool = typer.Option(False, "--mcnemar", help="Run McNemar's paired significance test comparing the as-written verdict (`overall`) to the current rule layer (`overall_resimulated`). Needs `oracle rescore` first."),
     csv: str = typer.Option(None, help="Path to write a flat one-row-per-day CSV (features + ground truth) for offline ML."),
 ) -> None:
     """Score logged forecasts against Urfeld ground truth.
@@ -260,10 +262,21 @@ def calibrate(
     bucket locally (`gcloud storage cp -r gs://<bucket>/runs data/`) and
     run without $RUNS_BUCKET.
     """
-    from oracle.calibration import compile_report, export_csv, format_text_report
+    from oracle.calibration import (
+        compile_report,
+        export_csv,
+        format_mcnemar,
+        format_skill_line,
+        format_text_report,
+        mcnemar_keys,
+        reports_by_era,
+        reports_by_year,
+    )
 
     if label not in ("peak", "duration", "thermal"):
         raise typer.BadParameter("--label must be 'peak', 'duration', or 'thermal'")
+    if split not in ("none", "year", "era"):
+        raise typer.BadParameter("--split must be 'none', 'year', or 'era'")
     since_d = date.fromisoformat(since) if since else None
     until_d = date.fromisoformat(until) if until else None
     months_set = _resolve_months(season, months)
@@ -272,6 +285,26 @@ def calibrate(
         resimulated=resimulated, replayed=replayed, months=months_set,
     )
     console.print(format_text_report(report, rule_filter=rule))
+
+    if split != "none":
+        if split == "era":
+            parts: dict = reports_by_era(
+                label=label, resimulated=resimulated, replayed=replayed, months=months_set,
+            )
+        else:
+            parts = reports_by_year(
+                label=label, resimulated=resimulated, replayed=replayed, months=months_set,
+            )
+        console.print(f"\nPer-{split} skill (a real tune holds across splits):")
+        for name, part in parts.items():
+            console.print(format_skill_line(str(name), part))
+
+    if mcnemar:
+        result = mcnemar_keys(
+            since=since_d, until=until_d, label=label, replayed=replayed, months=months_set,
+        )
+        console.print("\n" + format_mcnemar(result, old="overall", new="overall_resimulated"))
+
     if csv:
         n = export_csv(csv, since=since_d, until=until_d, replayed=replayed, months=months_set)
         console.print(f"\n[dim]Wrote {n} rows to {csv}[/dim]")
