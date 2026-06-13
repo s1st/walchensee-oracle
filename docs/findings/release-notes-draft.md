@@ -17,6 +17,45 @@ a few weeks, released as a series. Not a single long-form essay —
 the threads are different enough that grouping them forces a
 "sponsored content" feel that doesn't suit the audience.
 
+## ⚠ Reframed 2026-06-13 — the real story is the rework
+
+The series below was drafted around the 2026-06-12 pass and its "41% accuracy /
+where the model is wrong" framing. That framing is now known to be built on a
+**contaminated metric and label** (see `docs/fable_findings.md` +
+`docs/2026-06-13-corrected-methodology-rework.md`). Don't publish those accuracy
+numbers at face value. The honest arc is a *better* story — the "I was fooling
+myself and here's how I caught it" narrative the data crowd loves:
+
+- **A. "I built a 9-year backtest for my wind forecaster — then proved my own
+  improvements were fake."** The hook: I tuned the model, accuracy went up, I
+  shipped it. An external review showed the metric (3-class accuracy) is *beaten
+  by always guessing "GO"*, and the ground-truth label measured "was it windy"
+  not "was there a thermal". The gains were measurement artifacts; the tuned
+  model scored *below* a constant.
+- **B. "The metric is the hard part" (the back-and-forth).** Why accuracy lies
+  under class imbalance (a constant scores the majority-class rate, not 1/3);
+  skill scores (Peirce = sensitivity + specificity − 1) a constant can't win;
+  the missed-session-vs-wasted-drive cost matrix; why precision/recall are the
+  diagnostic view but need an ordinal/cost-aware companion; and the public-
+  dashboard call to *not* show a skill score (too hard to sell) but a naive-
+  baseline line instead, and to grade on "rideable wind" not "thermal" because
+  the latter would publicly read below a constant. The most transferable post —
+  every hobby-ML project hits this.
+- **C. "The fix wasn't more tuning — it was one missing rule."** Foehn was the
+  red herring everyone (me *and* the review) chased; the data said the
+  non-thermal days are simply cloudy/low-sun. A single "no sun → no thermal"
+  hard veto, holdout-validated, was the only change with real, significant,
+  era-stable skill — and it *lowered* headline accuracy while making the
+  forecast genuinely more useful (specificity 14% → 50%).
+- **D. Methodology retrospective:** the validation harness that should have
+  existed from day one — significance tests (McNemar), year/era holdout splits,
+  season restriction. The lesson: dial-tuning was within noise; structure and
+  honest measurement were everything.
+
+Post 1 below still stands as the opener. Posts 2–5 are **superseded** by A–D —
+keep them only as source material (charts, the 2021–2022 deep-dive), and
+re-caption every accuracy figure with the corrected-metric caveat.
+
 ## Posts
 
 ### 1. "How we got 9 years of back-testable thermal data for a single Bavarian lake"

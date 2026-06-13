@@ -90,3 +90,19 @@ Two Docker images built from the same source tree via `cloudbuild.yaml` (`_DOCKE
 - `Dockerfile.dashboard` → `dashboard:latest`, run as Cloud Run service `walchi-oracle-dash` in `europe-west1` (region required for custom domain mapping to `walchensee.simon-stieber.de`).
 
 The service account split (`walchi-oracle-job@` read/write runs bucket, `walchi-oracle-dash@` read-only) is intentional; keep it when adding new resources. (Historical: `windinfo-user` / `windinfo-pass` Secret Manager entries and Cloud Run job env bindings can be deleted manually — no in-tree code consumes them after the chat pillar removal.)
+
+#### Deploy runbook (push-to-`main` workflow)
+
+Two Cloud Build triggers fire on push to `main`: `dashboard-deploy-on-main` and `job-build-on-main` (both use `cloudbuild.yaml`). Watch them with `gcloud builds list`. Important gotchas, learned 2026-06-13:
+
+- **The build updates the dashboard *service* but NOT the *jobs*.** `cloudbuild.yaml`'s deploy step only runs `gcloud run services update` (for `_DEPLOY_SERVICE`); the job trigger has `_DEPLOY_SERVICE=''`, so it builds+pushes `oracle-job:latest` but never re-points the jobs. Cloud Run jobs pin the digest at update time, so **after a build that changes rule logic you must re-pin both jobs** or the next scheduled forecast runs the old code:
+  ```
+  gcloud run jobs update oracle-forecast --region europe-west3 --image europe-west3-docker.pkg.dev/walchi-oracle-prod/walchi/oracle-job:latest
+  gcloud run jobs update oracle-backfill --region europe-west3 --image .../oracle-job:latest
+  ```
+- **After any rule/threshold change, rescore the prod bucket** so the dashboard's stats panel (which reads `overall_resimulated`) reflects the deployed rules — otherwise it advertises rules that no longer run:
+  ```
+  RUNS_BUCKET=walchi-oracle-prod-runs oracle rescore --since <PROJECT_FIRST_DAY>   # back up the affected runs/ first
+  ```
+  The stats panel caches for 1 h (`_STATS_TTL_S`), so bounce the service to show it immediately: `gcloud run services update walchi-oracle-dash --region europe-west1 --update-env-vars STATS_CACHE_BUST=<sha>`.
+- Today's on-page verdict only refreshes on the next scheduled job run; `gcloud run jobs execute oracle-forecast` regenerates it now if needed.

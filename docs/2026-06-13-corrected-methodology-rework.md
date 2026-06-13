@@ -198,3 +198,63 @@ Repro: `oracle rescore --replayed` then `oracle calibrate --replayed --resimulat
 **Live behaviour change to watch:** the dashboard now shows **NO_GO on heavily
 overcast, low-sun days** (intended — no sun, no thermal), where the old version
 optimistically said GO.
+
+## 10. Public-dashboard metric decisions (the back-and-forth)
+
+Choosing what to *show the public* was a separate debate from how to *tune
+internally*. The reasoning, so it isn't re-litigated:
+
+- **"Doesn't always-GO only win 1/3 with three classes?"** No — a constant
+  scores the **prevalence of the majority class**, not 1/3, because the classes
+  are imbalanced. On the wind/peak label GO was ~50% of days → always-GO ≈
+  49.5%. On the thermal label the balance flips and NO_GO (~45%) is the bar.
+  The "1/3" intuition only holds for balanced classes.
+- **Skill score (Peirce/Heidke): kept internal, *not* shown to the public.**
+  It's the right A/B-comparison metric (imbalance-proof, a constant scores 0),
+  but it's hard to explain/sell on a public page. Decision: keep it in the
+  calibration tooling, and on the dashboard show the explainable substitute —
+  a **naive-baseline line** ("accuracy 52% · always-GO would score 46%"). Same
+  job (proves we beat a constant), no formula.
+- **Public panel uses the `duration` label, not `thermal`.** On the thermal
+  label the system scores ~40% vs always-NO_GO ~47% — i.e. plain accuracy on
+  thermal would publicly show us *below a constant*. On `duration` the system
+  beats its constant, and "was there ≥1 h of rideable wind" is the simplest
+  thing to explain. So: **thermal = internal tuning target; duration = public
+  display.** (The naive-baseline line only reads well on duration for the same
+  reason.)
+- **Precision/recall/sensitivity/specificity do apply** and are the most
+  diagnostic view — the dashboard already shows sensitivity + specificity in the
+  advanced panel. Note `Peirce = sensitivity + specificity − 1` (Youden's J), so
+  it's the same toolkit. Caveats: the classes are ordinal (a GO→MAYBE miss <
+  GO→NO_GO miss — captured by the cost matrix, not by nominal P/R) and the
+  aggregator emits a discrete label (one operating point, no PR *curve* — that's
+  the ML pitch, §8).
+- **Why the public accuracy *dropped* on deploy (59% → 52%) and that's honest:**
+  the old 59% came from the over-optimistic ruleset that almost never said
+  NO_GO, which duration-accuracy rewards (specificity was 14%). The new rules
+  trade a little catch-rate for the ability to say NO_GO — specificity 14% →
+  50%, sensitivity 90% → 82%. Lower headline, genuinely more useful forecast.
+
+## 11. Deployment to production (2026-06-13)
+
+Merged `threshold-tuning` → `main` (fast-forward); the `dashboard-deploy-on-main`
+and `job-build-on-main` triggers built both images. Steps + the gotcha (now in
+CLAUDE.md → Deploy runbook):
+
+1. Dashboard service auto-deployed by the build.
+2. **Jobs re-pinned manually** — the build does not update Cloud Run *jobs*, so
+   `oracle-forecast`/`oracle-backfill` were re-pointed to the new
+   `oracle-job:latest` or they'd keep running old code.
+3. **Prod bucket rescored** (`RUNS_BUCKET=… oracle rescore --since 2026-04-22`,
+   55 records, backed up to `data/runs.prodbackup-20260613/` first) so the stats
+   panel reflects the deployed rules.
+4. Dashboard revision bounced to clear the 1 h stats cache.
+
+Live stats, before → after:
+
+| metric | before (old rules) | after (shipped) |
+|---|---|---|
+| Accuracy | 59% | 52% |
+| Naive baseline (always-GO) | 48% | 46% |
+| Sensitivity | 90% | 82% |
+| Specificity | **14%** | **50%** |
