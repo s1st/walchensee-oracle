@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
+import pickle
 import sys
 from datetime import date, timedelta
+from pathlib import Path
 
+import numpy as np
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
@@ -18,6 +22,8 @@ from oracle.logger import backfill_run, forecast_to_dict, load_run, write_run
 load_dotenv()
 
 app = typer.Typer(help="Walchi Thermic Oracle")
+ml_app = typer.Typer(help="ML thermal-wind classifier — see docs/findings/ml-research-2026-06-13.md.")
+app.add_typer(ml_app, name="ml")
 console = Console()
 
 
@@ -308,6 +314,250 @@ def calibrate(
     if csv:
         n = export_csv(csv, since=since_d, until=until_d, replayed=replayed, months=months_set)
         console.print(f"\n[dim]Wrote {n} rows to {csv}[/dim]")
+
+
+# --- ML subcommand (Phase B: shell; Phase C fills in the body) -------------
+# The CLI surface and the --csv/--label/--horizon contract are stable from
+# this commit forward. Phase C replaces the training stub with the actual
+# training loop (see `oracle.ml.train`); this module's `train` and
+# `evaluate` subcommands are the entry points.
+
+_VALID_ML_LABELS = ("peak", "duration", "thermal")
+
+
+def _require_ml_deps(action: str) -> None:
+    """ML extras guard: use find_spec rather than a real `import sklearn` so
+    `oracle --help` works on the prod images (no `ml` extra installed)
+    AND mypy doesn't complain about a missing stub for an undeclared dep."""
+    if importlib.util.find_spec("sklearn") is None:
+        raise typer.BadParameter(
+            f"ML {action} requires the 'ml' extra. "
+            "Install locally with: uv pip install -e '.[ml]'. "
+            "Production images do not install this extra — by design."
+        )
+
+
+@ml_app.command()
+def train(
+    csv: Path = typer.Option(
+        ..., "--csv",
+        help="Replay CSV produced by `oracle calibrate --csv <path> --replayed` "
+             "(schema: see tests/test_calibration.py — the three target columns "
+             "are actual_verdict / actual_verdict_duration / actual_verdict_thermal).",
+    ),
+    label: str = typer.Option(
+        "thermal", "--label",
+        help="Target column to train against. 'thermal' is the recommended scale "
+             "(decontaminates foehn/frontal days; see the handoff + thermal-model.md).",
+    ),
+    horizon: int = typer.Option(
+        1, "--horizon",
+        help="Production lead time in days (1=today, 2=tomorrow, 3=day-after). "
+             "The replay CSV is lead-time-0, so the spike trains on day-D inputs "
+             "and the held-out score represents a lead-0 model. Documented as a "
+             "follow-up to widen the evaluation to lead-D inputs (Phase E).",
+    ),
+    train_until_year: int = typer.Option(
+        2022, "--train-until-year",
+        help="Year-blocked holdout: train on years ≤ this (research doc §5 default).",
+    ),
+    test_from_year: int = typer.Option(
+        2023, "--test-from-year",
+        help="Year-blocked holdout: test on years ≥ this (research doc §5 default).",
+    ),
+    out: Path | None = typer.Option(
+        None, "--out",
+        help="Where to write the fitted models. Default: data/ml/<csv-stem>.pkl. "
+             "The file holds a dict {name: FittedClassifier} — logistic + hgb "
+             "(+ tabpfn if installed and --include-tabpfn).",
+    ),
+    include_tabpfn: bool = typer.Option(
+        False, "--include-tabpfn",
+        help="Add TabPFN to the head-to-head (requires the optional 'ml-tabpfn' "
+             "extra; silently skipped if the dep isn't installed).",
+    ),
+) -> None:
+    """Train a thermal-wind classifier on the replay CSV.
+
+    Phase C fills in the body. Fits both logistic regression and
+    HistGradientBoostingClassifier on the year-blocked train split
+    (defaults: train ≤ 2022, test ≥ 2023, per research doc §5) and
+    persists them to `--out` for the `evaluate` subcommand to consume.
+
+    The `--horizon` flag is accepted but unused at the spike layer
+    (the replay CSV is lead-time-0; lead-D inputs are a follow-up).
+    """
+    if label not in _VALID_ML_LABELS:
+        raise typer.BadParameter(
+            f"--label must be one of {_VALID_ML_LABELS} (got {label!r})"
+        )
+    if horizon < 1:
+        raise typer.BadParameter("--horizon must be >= 1")
+    _require_ml_deps("training")
+
+    # Lazy imports: the ML subpackage pulls in sklearn + pandas, which
+    # the prod image doesn't install. Importing inside the function (not
+    # at module top) keeps `oracle --help` working on those images.
+    from oracle.ml import dataset as ml_dataset
+    from oracle.ml.train import fit_logistic, fit_hgb, fit_tabpfn
+
+    data = ml_dataset.load_replay_csv(csv, label_col=f"actual_verdict_{label}" if label != "peak" else "actual_verdict")
+    # Use 2022 as training (it has ICON data) rather than carving it out
+    # for calibration. The temperature-scaling step (research doc §3.2)
+    # is deferred for the first spike pass — the HGB raw predict_proba
+    # is good enough for the head-to-head, and 2022 is too small to
+    # both train on AND calibrate on without the ICON-era features
+    # (BLH, soil moisture) being entirely NaN in the train set.
+    split = ml_dataset.split_by_year(
+        data, train_until_year=train_until_year, test_from_year=test_from_year, calibration_year=None,
+    )
+    console.print(
+        f"[dim]Loaded {data.n_rows} rows ({data.n_features} features); "
+        f"train={split.train.n_rows} ({split.train.era.value_counts().to_dict() if hasattr(split.train.era, 'value_counts') else 'mixed'}), "
+        f"test={split.test.n_rows}.[/dim]"
+    )
+
+    log = fit_logistic(split.train)
+    hgb = fit_hgb(split.train)
+    console.print(f"[bold]logistic[/bold] fit on {len(log.classes_)} classes")
+    console.print(f"[bold]hgb[/bold] fit on {len(hgb.classes_)} classes")
+
+    models: dict[str, object] = {"logistic": log, "hgb": hgb}
+    if include_tabpfn and importlib.util.find_spec("tabpfn") is not None:
+        try:
+            models["tabpfn"] = fit_tabpfn(split.train)
+            console.print("[bold]tabpfn[/bold] fit (optional family)")
+        except Exception as exc:
+            console.print(f"[yellow]tabpfn skipped: {exc}[/yellow]")
+    elif include_tabpfn:
+        console.print("[yellow]tabpfn not installed; skipped (install via a future 'ml-tabpfn' extra)[/yellow]")
+
+    # Persist a dict so the evaluate subcommand can score each family.
+    if out is None:
+        out = Path("data/ml") / f"{Path(csv).stem}.pkl"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "wb") as f:
+        pickle.dump({"models": models, "label": label, "train_until_year": train_until_year,
+                     "test_from_year": test_from_year}, f)
+    console.print(f"[dim]Wrote {len(models)} fitted model(s) to {out}[/dim]")
+
+
+@ml_app.command()
+def evaluate(
+    csv: Path = typer.Option(
+        ..., "--csv",
+        help="Replay CSV (same one the `train` subcommand consumed).",
+    ),
+    model: Path = typer.Option(
+        ..., "--model",
+        help="Path to the fitted-models file written by `oracle ml train --out`.",
+    ),
+    label: str = typer.Option(
+        "thermal", "--label",
+        help="Target column to score against. Must match what was passed to `train`.",
+    ),
+    report: Path | None = typer.Option(
+        None, "--report",
+        help="Path to write the JSON metrics. Default: data/ml/<model-stem>_report.json.",
+    ),
+    no_mcnemar: bool = typer.Option(
+        False, "--no-mcnemar",
+        help="Skip McNemar's paired significance test (faster, but no p-value).",
+    ),
+) -> None:
+    """Score the fitted models against the rule baseline on the year-blocked test set.
+
+    Computes Peirce, HSS, accuracy, hard-error rate, mean cost, RPS, Brier
+    with Murphy (1973) decomposition, and the economic-value curve for each
+    model; runs McNemar's paired significance test vs the rule baseline
+    (research doc §4.5, Dietterich 1998). Writes a JSON report and prints
+    a plain-text summary.
+    """
+    if label not in _VALID_ML_LABELS:
+        raise typer.BadParameter(
+            f"--label must be one of {_VALID_ML_LABELS} (got {label!r})"
+        )
+    _require_ml_deps("evaluation")
+
+    from oracle.ml import dataset as ml_dataset
+    from oracle.ml.evaluate import score_head_to_head, format_text_report
+
+    data = ml_dataset.load_replay_csv(
+        csv, label_col=f"actual_verdict_{label}" if label != "peak" else "actual_verdict"
+    )
+    # Recover the split parameters from the model file (written by `train`)
+    # so the evaluate subcommand doesn't need a separate --train-until-year
+    # flag. Falls back to the research-doc defaults if the file is from an
+    # older Phase C commit.
+    with open(model, "rb") as f:
+        bundle = pickle.load(f)
+    train_until_year = bundle.get("train_until_year", 2022)
+    test_from_year = bundle.get("test_from_year", 2023)
+    split = ml_dataset.split_by_year(
+        data, train_until_year=train_until_year, test_from_year=test_from_year,
+        calibration_year=None,
+    )
+
+    # Rule baseline = `forecast_overall_resimulated` if present in the
+    # source CSV, else `forecast_overall`. The resimulated variant is
+    # the post-threshold-tune version (set by `oracle rescore`); using
+    # it keeps the head-to-head apples-to-apples with the dashboard's
+    # 'Re-scored' strip. The check is against the *source* CSV's
+    # columns, not data.X — those are excluded from FEATURE_COLS so
+    # `col in data.X.columns` is always False here.
+    import pandas as pd  # type: ignore[import-untyped]
+    raw_df = pd.read_csv(csv)
+    if "forecast_overall_resimulated" in raw_df.columns:
+        baseline_col = "forecast_overall_resimulated"
+    elif "forecast_overall" in raw_df.columns:
+        baseline_col = "forecast_overall"
+    else:
+        raise typer.BadParameter(
+            "replay CSV is missing both 'forecast_overall_resimulated' and "
+            "'forecast_overall' — no rule baseline to score against"
+        )
+    test_days = set(split.test.day.tolist())
+    baseline_rows = raw_df[raw_df["day"].isin(test_days)][["day", baseline_col]].set_index("day")
+    baseline_pred_str = [baseline_rows.loc[d, baseline_col] for d in split.test.day]
+    # Skip rows where the baseline didn't produce a verdict (legacy data).
+    valid = [s in ml_dataset.LABEL_ORDER for s in baseline_pred_str]
+    if not all(valid):
+        n_dropped = sum(1 for v in valid if not v)
+        console.print(f"[yellow]dropping {n_dropped} test rows with no baseline verdict[/yellow]")
+    baseline_pred_int = np.array(
+        [ml_dataset.LABEL_ORDER.index(s) for s, v in zip(baseline_pred_str, valid) if v]
+    )
+    # Apply the same valid-mask to the test split so ML and baseline align.
+    test_mask = np.array(valid)
+    test_aligned = ml_dataset._slice(split.test, test_mask)
+
+    reports: dict[str, object] = {}
+    for name, fitted in bundle["models"].items():
+        ml_pred = fitted.predict_int(test_aligned.X)
+        ml_proba = fitted.predict_proba(test_aligned.X)
+        h2h = score_head_to_head(
+            name, ml_pred, ml_proba, "rule", baseline_pred_int, test_aligned,
+            run_mcnemar=not no_mcnemar,
+        )
+        console.print(f"\n{format_text_report(h2h)}\n")
+        reports[name] = h2h.as_dict()
+
+    # Persist the JSON metrics for the Phase E writeup.
+    if report is None:
+        report = Path("data/ml") / f"{Path(model).stem}_report.json"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    with open(report, "w") as f:
+        json.dump(
+            {
+                "label": label,
+                "train_until_year": train_until_year,
+                "test_from_year": test_from_year,
+                "n_test": len(baseline_pred_int),
+                "models": reports,
+            },
+            f, indent=2,
+        )
+    console.print(f"[dim]Wrote metrics for {len(reports)} model(s) to {report}[/dim]")
 
 
 def _render_tables(result: Forecast, target: date) -> None:

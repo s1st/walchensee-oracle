@@ -38,6 +38,13 @@ mypy src
 # Real dashboard traffic (bot-filtered, IPv6 /64-deduped) — for sizing rollout reach
 python3 scripts/dashboard_traffic.py            # last 30d, prod
 python3 scripts/dashboard_traffic.py --days 7   # shorter window
+
+# ML ceiling spike + distillation (merged to main; ml CLI behind the [ml] extra, not in either Dockerfile)
+uv pip install -e ".[ml]"                       # adds scikit-learn + pandas; not in either Dockerfile
+oracle ml train --csv data/replay_full.csv --out data/ml/replay_full.pkl
+oracle ml evaluate --csv data/replay_full.csv --model data/ml/replay_full.pkl \
+                   --report data/ml/replay_full_report.json
+python3 scripts/cost_ratio_sweep.py             # sensitivity sweep over the missed/wasted cost ratio
 ```
 
 To measure **actual visitors** to the live dashboard, use `scripts/dashboard_traffic.py` — do **not** hand-roll `gcloud logging read | sort -u` IP counts, which overcount ~4× (AI crawlers like GPTBot send browser-ish UAs; one-off scanner IPs read as visitors). The script pulls Cloud Run GET logs, drops bots / exploit-scanner paths / empty-UA probes, and dedupes IPv6 by /64 (flagging m-net's `2001:a61::/32`, which rotates the customer /48 so one person spans several /64s). Run it the day after each rollout step to see what a channel actually delivered.
@@ -81,6 +88,10 @@ The model is **pure data**: ~69 floats frozen in `src/oracle/knowledge/ml_coeffs
 All threshold constants live in `src/oracle/config.py`. They are mixed: the main driver thresholds have been data-fitted against the Urfeld calibration log — `MIN_THERMIK_DELTA_HPA` (+2.5 → −1.0, n=10), `MAX_OVERNIGHT_CLOUD_COVER_PCT` (30 → 95, n=22), `MIN_DEW_POINT_SPREAD_C` (5.0 → 2.5, n=22) and `MAX_LIFTED_INDEX` (6 → 10, n=22) — and the aggregator was reworked to severity-tier/consensus semantics (a single soft veto no longer downgrades). The rest (Föhn trigger, synoptic override, ignition wind, BLH, soil/rain, solar) are still research-analogue guesses — identifiable as the constants lacking an `n=` note in config.py. Use `oracle calibrate` to identify which rules are over-vetoing real session days before tuning the rest. Single-day evidence is not enough; demand the offender list from a sample of ≥10 ground-truthed days, then change one threshold per commit so the rescore-strip in the dashboard isolates the effect.
 
 For large-sample tuning, the historical replay loop (see `docs/historical_forecasts.md`): `oracle replay --from/--to` once (archive-fed verdicts into `runs/replay/`), then `oracle calibrate --replayed` to score ~3,300 archived ground-truth days; after each threshold change, `oracle rescore --replayed` + `oracle calibrate --replayed --resimulated` re-evaluates from stored inputs with zero API traffic.
+
+### ML ceiling spike (research)
+
+The 14-rule heuristic + severity-tiered aggregator is the **production** classifier. The offline ceiling check (developed on the `ml-classifier` branch, **now merged to `main`**; the `oracle ml` CLI lives behind the `[ml]` extra, not installed in either Dockerfile) asks "is the rule baseline near the data ceiling?" — answer on 715 ICON-era holdout days: **no**. With 11 ICON-stable features (the 8 ICON-era-only features were dropped to avoid an era-boundary distribution shift in the train/test comparison — see the writeup's Setup section for the rationale), logistic regression beats the rule on Peirce, HSS, accuracy, and hard-error rate simultaneously, and HGB clears +0.142 Peirce (Δ from rule's +0.066) with McNemar p = 3.8 × 10⁻⁸. The cost matrix in `calibration._COST` is a per-rider knob, not a project constant — `scripts/cost_ratio_sweep.py` sweeps the missed-session / wasted-drive ratio r ∈ [0.25, 7.0] and shows **both** ML models dominating the rule across the full range (no crossover for either). Tier 1+2 hyperparam + class_weight tuning via `scripts/tune_ml.py` confirmed the doc's first-pass defaults were already near-optimal; the project's `class_weight='balanced'` beat all cost-sensitive dict variants. Empirical writeup: `docs/findings/ml-classifier-2026-06-13.md`. **No model *drives the verdict*** — but a **shadow classifier did ship** from this work (logged + shown alongside the rules; see "Shadow ML classifier" above and `docs/findings/ml-shadow-classifier-design-2026-06-14.md`). The original ship/no-ship call (interpretability, per-rider cost framing, "project doesn't dictate cost") still holds for *replacing* the rule layer; the shadow path threads it by shipping only an interpretable, per-rider-thresholdable logistic that never touches `overall`. Phase D distillation (`ml-distill-cut{1,2,3}`) found no new conjunctive rule to harvest — the fire decision is linear, HGB's edge is strength-grading — but did surface and ship the `overnight_cooling` veto removal. The `oracle ml` CLI is preserved so the experiment can be re-run after future threshold changes.
 
 ### Dashboard
 
