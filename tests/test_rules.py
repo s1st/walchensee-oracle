@@ -96,8 +96,13 @@ def test_overnight_cooling_clear_night_go():
     assert overnight_cooling(_meteo(cloud=15)).signal is Signal.GO
 
 
-def test_overnight_cooling_cloudy_night_no_go():
-    assert overnight_cooling(_meteo(cloud=97)).signal is Signal.NO_GO
+def test_overnight_cooling_veto_disabled_high_cloud_is_go():
+    # The overnight_cooling SOFT veto is disabled (MAX_OVERNIGHT_CLOUD_COVER_PCT
+    # = 100): n=1912 replay showed it fired 478× with 424 false-positives and
+    # removing it improved Peirce/cost/accuracy (ML-distill Cut 3,
+    # docs/findings/ml-distill-cut3-2026-06-14.md). Even at 97% overnight cloud
+    # it no longer vetoes. Re-enabling means lowering the threshold below 100.
+    assert overnight_cooling(_meteo(cloud=97)).signal is Signal.GO
 
 
 def test_solar_radiation_bright_morning_go():
@@ -251,10 +256,6 @@ def test_thermik_no_go_is_soft():
 
 def test_foehn_override_is_hard():
     assert foehn_override(_snapshot(3.0, foehn_delta=12.0)).severity is Severity.HARD
-
-
-def test_overnight_cooling_no_go_is_soft():
-    assert overnight_cooling(_meteo(cloud=97)).severity is Severity.SOFT
 
 
 def test_solar_radiation_no_go_is_soft():

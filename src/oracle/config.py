@@ -119,11 +119,23 @@ SYNOPTIC_OVERRIDE_KNOTS = 25.0   # ≥ 3 Bft base wind deforms the thermal cell
                                  # plan's "HARD→SOFT" hint could be a future
                                  # commit if the safety net is over-vetoing.)
 IGNITION_WIND_KNOTS = 8.0        # shore reading that signals ignition
-MAX_OVERNIGHT_CLOUD_COVER_PCT = 95.0  # 22:00→06:00 average; above this, weak inversion.
-                                      # Was 30.0; raised after n=22 calibration — sessions
-                                      # fired at up to 94% cloud cover; only the 97.1% day
-                                      # was a true NO_GO. Alpine mountain effects dominate
-                                      # radiative cooling at this proximity to the ridge.
+MAX_OVERNIGHT_CLOUD_COVER_PCT = 100.0  # 22:00→06:00 average; above this, weak inversion.
+                                      # Was 30.0 → 95.0 (n=22) → 100.0 (effectively
+                                      # disabled; n=1912 replay, 2026-06-14, ML-distill
+                                      # Cut 3). At 95 the overnight_cooling SOFT veto fired
+                                      # 478× on the replay, 424 of them false-positive (a
+                                      # real GO/MAYBE session). Removing the veto improves
+                                      # Peirce (+0.063→+0.072), mean cost (0.535→0.517) AND
+                                      # accuracy (44.0→45.1%) together — a clean Pareto win.
+                                      # The discriminative content of overnight cloud is in
+                                      # the 50–71% mid-range (thermal mean 52 vs no-go 71),
+                                      # not the >95% tail the veto fired on; and as a SOFT
+                                      # veto it only ever mattered as the 2nd veto tipping a
+                                      # day down, so removal (not re-tuning) is the lever.
+                                      # 100 keeps the rule wired/visible but it can never
+                                      # fire (cloud ≤ 100 always) — same disable idiom as
+                                      # FOEHN_TRIGGER_DELTA_HPA / SYNOPTIC_OVERRIDE_KNOTS.
+                                      # See docs/findings/ml-distill-cut3-2026-06-14.md.
 MIN_MORNING_SOLAR_WM2 = 380.0    # max hourly shortwave radiation 09:00–13:00
                                  # Was 600.0 (research-analogue guess); refitted from
                                  # n=3,263 replay baseline (2026-06-12, branch
