@@ -90,14 +90,30 @@ def fit_logistic(data: ReplayDataset) -> FittedClassifier:
     + §3.5). The int-encoded labels in `data.y_int` are 0/1/2 in
     LABEL_ORDER, which is what sklearn's LogisticRegression expects
     (no string→int mapping needed at fit time).
-    """
-    from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]
 
-    model = LogisticRegression(
-        max_iter=1000,
-        class_weight="balanced",
-        random_state=RANDOM_STATE,
-    )
+    LogisticRegression does NOT accept NaN — the replay dataset has
+    block-missing ICON-era features (BLH, soil moisture) for IFS-era
+    rows (research doc §3.8). Wrap in a Pipeline with SimpleImputer
+    (median) + StandardScaler so the linear baseline can fit the same
+    feature matrix HGB sees. HGB handles NaN natively and doesn't
+    need this step. Scaling matters for LR convergence — without it
+    lbfgs won't converge on the project's mix of unit-scale and
+    large-magnitude features (hPa in the 1000s, percentages in 0–100).
+    """
+    from sklearn.impute import SimpleImputer  # type: ignore[import-untyped]
+    from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]
+    from sklearn.pipeline import Pipeline  # type: ignore[import-untyped]
+    from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]
+
+    model = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler()),
+        ("classifier", LogisticRegression(
+            max_iter=5000,
+            class_weight="balanced",
+            random_state=RANDOM_STATE,
+        )),
+    ])
     model.fit(data.X, data.y_int)
     classes_ = np.array(sorted(np.unique(data.y_int)))
     return FittedClassifier(name="logistic", model=model, classes_=classes_)
@@ -109,9 +125,17 @@ def fit_hgb(data: ReplayDataset) -> FittedClassifier:
     Native NaN handling for the ICON-era block-missing features
     (research doc §3.8); `class_weight='balanced'` to correct the
     NO_GO prior; `min_samples_leaf=20` per the doc's first-pass default.
-    `max_iter=200` with `n_iter_no_change=20` for early stopping on a
-    held-out 10% validation slice — both are sklearn defaults the doc
-    endorses (§3.7).
+
+    `early_stopping=False` here: the research doc recommends internal
+    early stopping (§3.7), but on the project's 1k-row training set
+    HGB's internal `validation_fraction=0.1` split can leave too few
+    members of the rarest class in the validation fold and trip a
+    numpy stride error inside the histogram binner ("window shape
+    cannot be larger than input array shape"). Using a fixed
+    `max_iter=200` is the first-pass default from the doc and runs
+    without surprise; a follow-up can add an explicit held-out fold
+    for early stopping once the spike decides whether HGB earns
+    production consideration.
     """
     from sklearn.ensemble import HistGradientBoostingClassifier  # type: ignore[import-untyped]
 
@@ -121,9 +145,7 @@ def fit_hgb(data: ReplayDataset) -> FittedClassifier:
         min_samples_leaf=MIN_SAMPLES_LEAF,
         class_weight="balanced",
         random_state=RANDOM_STATE,
-        early_stopping=True,
-        n_iter_no_change=20,
-        validation_fraction=0.1,
+        early_stopping=False,
     )
     model.fit(data.X, data.y_int)
     classes_ = np.array(sorted(np.unique(data.y_int)))

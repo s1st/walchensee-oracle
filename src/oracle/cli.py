@@ -402,12 +402,19 @@ def train(
     from oracle.ml.train import fit_logistic, fit_hgb, fit_tabpfn
 
     data = ml_dataset.load_replay_csv(csv, label_col=f"actual_verdict_{label}" if label != "peak" else "actual_verdict")
+    # Use 2022 as training (it has ICON data) rather than carving it out
+    # for calibration. The temperature-scaling step (research doc §3.2)
+    # is deferred for the first spike pass — the HGB raw predict_proba
+    # is good enough for the head-to-head, and 2022 is too small to
+    # both train on AND calibrate on without the ICON-era features
+    # (BLH, soil moisture) being entirely NaN in the train set.
     split = ml_dataset.split_by_year(
-        data, train_until_year=train_until_year, test_from_year=test_from_year, calibration_year=train_until_year,
+        data, train_until_year=train_until_year, test_from_year=test_from_year, calibration_year=None,
     )
     console.print(
         f"[dim]Loaded {data.n_rows} rows ({data.n_features} features); "
-        f"train={split.train.n_rows}, test={split.test.n_rows}.[/dim]"
+        f"train={split.train.n_rows} ({split.train.era.value_counts().to_dict() if hasattr(split.train.era, 'value_counts') else 'mixed'}), "
+        f"test={split.test.n_rows}.[/dim]"
     )
 
     log = fit_logistic(split.train)
@@ -488,7 +495,7 @@ def evaluate(
     test_from_year = bundle.get("test_from_year", 2023)
     split = ml_dataset.split_by_year(
         data, train_until_year=train_until_year, test_from_year=test_from_year,
-        calibration_year=train_until_year,
+        calibration_year=None,
     )
 
     # Rule baseline = `forecast_overall_resimulated` if present, else

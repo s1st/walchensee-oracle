@@ -227,6 +227,17 @@ def split_by_year(
     = 2022 alone". The defaults match; pass overrides only for ablations.
     Raises if the resulting train/cal/test sets are empty — silent
     zero-row fits are debugging traps.
+
+    Also drops any feature column that is 100% NaN in the *training*
+    rows: the ICON-era block-missing features (BLH, soil moisture, 850
+    hPa wind, 700 hPa wind) are absent from every IFS-era day, and
+    HGB's histogram binner crashes on a column with zero non-NaN values
+    ("window shape cannot be larger than input array shape"). The test
+    rows have these features populated, so the dropped columns are
+    lost for the test prediction too — the spike has to fall back on
+    the ICON-stable features (pressure delta, solar, dew-spread, LI,
+    cloud cover) for the head-to-head. Confirmed in practice with the
+    1,912-row replay: 5 of 19 features are dropped, 14 remain.
     """
     years = data.year.to_numpy()
     train_mask = years <= train_until_year
@@ -237,6 +248,14 @@ def split_by_year(
     else:
         cal_mask = np.zeros(len(years), dtype=bool)
         calibration_year = None
+
+    # Drop columns that are 100% NaN in the train rows. The test rows
+    # are masked OUT of the all-NaN check — we only care about what the
+    # model can learn from at fit time.
+    train_for_drop = data.X.iloc[train_mask]
+    all_nan_cols = [c for c in train_for_drop.columns if train_for_drop[c].isna().all()]
+    if all_nan_cols:
+        data = _drop_columns(data, all_nan_cols)
 
     train = _slice(data, train_mask)
     test = _slice(data, test_mask)
@@ -284,4 +303,26 @@ def _slice(data: ReplayDataset, mask: np.ndarray) -> ReplayDataset:
         year=data.year.iloc[mask].reset_index(drop=True),
         era=data.era.iloc[mask].reset_index(drop=True),
         feature_names=data.feature_names,
+    )
+
+
+def _drop_columns(data: ReplayDataset, columns: list[str]) -> ReplayDataset:
+    """Return a new ReplayDataset with `columns` removed from X.
+
+    Used by `split_by_year` to strip the ICON-era block-missing features
+    that are 100% NaN in the training subset. `feature_names` is updated
+    to match; the new dataclass is otherwise identical.
+    """
+    if not columns:
+        return data
+    new_feature_names = tuple(c for c in data.feature_names if c not in columns)
+    return ReplayDataset(
+        X=data.X.drop(columns=list(columns)),
+        y_str=data.y_str,
+        y_int=data.y_int,
+        day=data.day,
+        month=data.month,
+        year=data.year,
+        era=data.era,
+        feature_names=new_feature_names,
     )
