@@ -137,8 +137,10 @@ Order of attack (cheap → heavy):
       `overnight_cooling` SOFT veto (95→off) improves Peirce (+0.063→+0.072),
       cost (0.535→0.517) AND acc (44→45.1) together — 478 vetos, 424 FP, and
       it only ever mattered as the 2nd soft veto, so remove not re-tune.
-      No production threshold changed; config.py reverted clean.
-      Still open: SHIP overnight_cooling removal via a validated one-change
-      commit (McNemar + overfit check, pending user sign-off); foehn_delta
-      inverted-U needs a non-monotonic rule; aggregator-level veto-
-      aggressiveness lever (the strength-grading edge Cut 2 isolated).
+      No production threshold changed on ml-classifier; config.py clean.
+      overnight_cooling removal PREPARED on `tune-overnight-cooling` (off
+      main, 8c9b8d5: config 95→100 + test update). McNemar p=0.358 (NOT
+      significant): 58 discordant, net +8 — weak positive, not a proven
+      win. Merge is a user judgment call (bad veto, reversible), NOT on
+      main. Still open: foehn_delta inverted-U (non-monotonic rule);
+      aggregator-level veto-aggressiveness lever (Cut 2's strength edge).

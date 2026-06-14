@@ -410,19 +410,23 @@ changed; all experiments reverted, `config.py` clean.
 | *baseline* | production | +0.063 | 0.535 | 44.0% | — |
 | `thermik` | veto off (−1.0→−99) | +0.051 | 0.503 | 45.0% | cost/skill tradeoff |
 | `daytime_clouds` | loosen 75→88 | +0.055 | 0.533 | 43.8% | loosening hurts — leave |
-| **`overnight_cooling`** | **veto off (95→100)** | **+0.072** | **0.517** | **45.1%** | **Pareto win — ship candidate** |
+| **`overnight_cooling`** | **veto off (95→100)** | **+0.072** | **0.517** | **45.1%** | **best candidate — but McNemar n.s. (p=0.358)** |
 | `dew_point_spread` | loosen 2.5→1.5 | +0.050 | 0.513 | 44.5% | cost/skill tradeoff |
 | `solar_radiation` | loosen 380→300 | +0.061 | 0.533 | 44.0% | neutral |
 
-**One clean shippable result:** removing the `overnight_cooling` SOFT veto
-improves Peirce, cost **and** accuracy together. It fired 478 vetos (424
-false-positive); partial loosening only helps cost (it's a soft veto that
-mattered only as the 2nd veto tipping a day down — so the skill gain needs
-full removal, not a threshold tweak). Every other candidate is a per-rider
-cost/skill tradeoff or neutral. **Not yet committed to production** — needs
-the standard one-change-per-commit validation + McNemar significance on the
-+0.063→+0.072 Peirce gain before shipping. All experiments reverted;
-`config.py` clean.
+**Best candidate — a weak positive, not a proven win:** removing the
+`overnight_cooling` SOFT veto improves Peirce, cost **and** accuracy in
+aggregate. It fired 478 vetos (424 false-positive, 89%); partial loosening
+only helps cost (it's a soft veto that mattered only as the 2nd veto
+tipping a day down — so removal, not a threshold tweak, is the lever). But
+the **paired McNemar test is NOT significant**: 58 discordant days (33
+baseline-wrong→right, 25 right→wrong, net +8), **p = 0.358**. So the gain
+is within noise; the defensible framing is "remove a demonstrably bad veto
+that doesn't hurt and simplifies the layer," not a significant accuracy
+win. Prepared on branch `tune-overnight-cooling` (off `main`, `8c9b8d5`)
+for review — **not merged**. Every other candidate is a per-rider
+cost/skill tradeoff or neutral. All `ml-classifier` experiments reverted;
+`config.py` clean here.
 
 ## Reproduction
 

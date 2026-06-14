@@ -95,11 +95,25 @@ mid-range (thermal mean 52% vs no-go 71%), not the >95% tail the rule
 actually vetoes — same "veto fires in the wrong place" pattern as the
 cloud finding in Cut 1/§2.
 
-**This is the single shippable distillation result.** It is **not yet
-committed** — before shipping it needs the standard treatment: one change
-per commit, McNemar significance on the +0.063→+0.072 gain, and a check it
-isn't overfitting the replay (the cost improvement 0.535→0.517 is the more
-robust signal; the Peirce gain is small and unverified for significance).
+**This is the single distillation result that touches production — and it
+is a *weak* positive, not a proven win.** Prepared on branch
+`tune-overnight-cooling` (off `main`, commit `8c9b8d5`): threshold 95→100
+(disabled via the never-fire idiom matching FOEHN/SYNOPTIC), plus the
+`tests/test_rules.py` update.
+
+**McNemar (paired, baseline-95 vs disabled-100, same days): NOT
+significant.** 58 discordant days — 33 baseline-wrong→right, 25
+right→wrong, net +8 — **p = 0.358** (χ², cont.corr.). The aggregate gains
+(Peirce +0.009, cost −0.018, acc +1.1 pp) are **directionally favorable but
+within noise**. Robust facts: the 89% false-veto rate and the
+flat-to-better aggregates; the per-day improvement is not statistically
+distinguishable from chance.
+
+**Reframed recommendation:** "remove a demonstrably bad veto that doesn't
+hurt, marginally helps, and simplifies the layer" — *not* "ship a
+significant accuracy improvement." Defensible to merge (the veto is
+miscalibrated and removal is reversible), but the call is the user's with
+the non-significance in view. Not merged to `main`.
 
 ### The others
 - `daytime_clouds`: loosening *hurts* Peirce — its 75% veto is closer to
@@ -110,8 +124,9 @@ robust signal; the Peirce gain is small and unverified for significance).
   count is mostly redundant with cloud.
 
 ## Still open
-- [ ] Ship `overnight_cooling` removal via a validated one-change commit
-      (McNemar + overfit check) — pending user sign-off (production rule).
+- [~] `overnight_cooling` removal PREPARED on `tune-overnight-cooling`
+      (`8c9b8d5`, off main); McNemar p=0.358 (not significant) → merge is a
+      user judgment call (weak positive, reversible), not yet on `main`.
 - [ ] `foehn_delta_hpa` inverted-U (Cut 2): needs a *non-monotonic* rule
       (low-Δ caution + existing high-Δ veto), not a single-threshold test.
 - [ ] Aggregator-level lever: the systematic over-veto + the soft-veto
