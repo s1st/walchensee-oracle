@@ -26,6 +26,17 @@ dashboard = [
     "jinja2>=3.1",
     "google-cloud-logging>=3.10",  # stats panel: visitor count from Cloud Run request logs
 ]
+# ML thermal-wind classifier. Optional — not installed by either Dockerfile
+# (job runs `pip install .`; dashboard runs `pip install ".[dashboard]"`).
+# Phase C of the ml-classifier plan trains on the replay CSV; install locally
+# with: uv pip install -e ".[ml]". scikit-learn 1.4+ for HistGradientBoosting
+# class_weight + native temperature scaling in CalibratedClassifierCV.
+ml = [
+    "scikit-learn>=1.4",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+]
 
 [project.scripts]
 oracle = "oracle.cli:app"

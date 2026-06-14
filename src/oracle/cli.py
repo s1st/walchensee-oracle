@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import sys
 from datetime import date, timedelta
+from pathlib import Path
 
 import typer
 from dotenv import load_dotenv
@@ -18,6 +20,8 @@ from oracle.logger import backfill_run, forecast_to_dict, load_run, write_run
 load_dotenv()
 
 app = typer.Typer(help="Walchi Thermic Oracle")
+ml_app = typer.Typer(help="ML thermal-wind classifier — see docs/findings/ml-research-2026-06-13.md.")
+app.add_typer(ml_app, name="ml")
 console = Console()
 
 
@@ -308,6 +312,74 @@ def calibrate(
     if csv:
         n = export_csv(csv, since=since_d, until=until_d, replayed=replayed, months=months_set)
         console.print(f"\n[dim]Wrote {n} rows to {csv}[/dim]")
+
+
+# --- ML subcommand (Phase B: shell; Phase C fills in the body) -------------
+# The CLI surface and the --csv/--label/--horizon contract are stable from
+# this commit forward. The body is a stub that fails fast with a clear
+# message; Phase C replaces it with the actual training loop. The deps
+# guard uses a lazy import so `oracle --help` keeps working on the prod
+# images (no ML extras installed there).
+
+_VALID_ML_LABELS = ("peak", "duration", "thermal")
+
+
+@ml_app.command()
+def train(
+    csv: Path = typer.Option(
+        ..., "--csv",
+        help="Replay CSV produced by `oracle calibrate --csv <path> --replayed` "
+             "(schema: see tests/test_calibration.py — the three target columns "
+             "are actual_verdict / actual_verdict_duration / actual_verdict_thermal).",
+    ),
+    label: str = typer.Option(
+        "thermal", "--label",
+        help="Target column to train against. 'thermal' is the recommended scale "
+             "(decontaminates foehn/frontal days; see the handoff + thermal-model.md).",
+    ),
+    horizon: int = typer.Option(
+        1, "--horizon",
+        help="Production lead time in days (1=today, 2=tomorrow, 3=day-after). "
+             "The replay CSV is lead-time-0, so the spike trains on day-D inputs "
+             "and the held-out score represents a lead-0 model. Documented as a "
+             "follow-up to widen the evaluation to lead-D inputs (Phase E).",
+    ),
+    out: Path | None = typer.Option(
+        None, "--out",
+        help="Where to write the trained model. Default: data/ml/<csv-stem>.joblib. "
+             "Set to '-' to skip persistence (the Phase C spike scores in-memory "
+             "and doesn't ship a model file until a ship-decision is made).",
+    ),
+) -> None:
+    """Train a thermal-wind classifier on the replay CSV.
+
+    Phase B delivers the CLI surface + the dep guard. Phase C replaces the
+    body with the actual training loop (HistGradientBoostingClassifier vs
+    TabPFN head-to-head; see docs/findings/ml-research-2026-06-13.md). The
+    `--horizon` flag is accepted now so the contract is stable, even though
+    lead-time-aware inputs are not wired into the CSV until Phase E.
+    """
+    if label not in _VALID_ML_LABELS:
+        raise typer.BadParameter(
+            f"--label must be one of {_VALID_ML_LABELS} (got {label!r})"
+        )
+    if horizon < 1:
+        raise typer.BadParameter("--horizon must be >= 1")
+    # ML extras guard: use find_spec rather than a real `import sklearn` so
+    # `oracle --help` works on the prod images (no `ml` extra installed)
+    # AND mypy doesn't complain about a missing stub for an undeclared dep.
+    if importlib.util.find_spec("sklearn") is None:
+        raise typer.BadParameter(
+            "ML training requires the 'ml' extra. "
+            "Install locally with: uv pip install -e '.[ml]'. "
+            "Production images do not install this extra — by design."
+        )
+    # Phase C will replace this stub with the actual training loop.
+    raise typer.BadParameter(
+        "ML training is not yet implemented — Phase C of the ml-classifier "
+        "plan. The CLI surface (--csv, --label, --horizon, --out) is stable "
+        "from Phase B forward. See docs/findings/ml-research-2026-06-13.md."
+    )
 
 
 def _render_tables(result: Forecast, target: date) -> None:
