@@ -112,11 +112,19 @@ Order of attack (cheap → heavy):
       tighten; (3) absolute pressure levels carry signal the delta-only
       rules discard. Linear edge ≈ threshold mis-placement; binary LR test
       acc 0.642 ≪ HGB → interactions unexplained, Cut 2 warranted.
-- [ ] **Cut 2 (interactions, only if Cut 1 leaves gain unexplained):**
-      shallow surrogate tree (depth ≤3) and/or SHAP on HGB to find
-      conjunctions the rules treat independently (e.g. "low Δp is
-      forgivable *if* dew-spread AND LI both favorable"). Output:
-      candidate conjunctive rules.
+- [x] **Cut 2 (interactions):** DONE 2026-06-14 →
+      `docs/findings/ml-distill-cut2-2026-06-14.md`. Interaction ablation
+      (linear vs additive-HGB `interaction_cst='no_interactions'` vs full
+      HGB). Findings: (1) interactions add +0.088 Peirce on 3-class
+      (+0.208 vs additive +0.120) — real and large; (2) but on BINARY
+      thermal full≈linear (+0.288 vs +0.286) — so the interaction edge
+      lives in GO-vs-MAYBE *strength*, NOT the fire/no-fire veto decision
+      the rules make. Distilling it ⇒ a graded-strength model, not a
+      conjunctive veto rule (architectural, = ship/no-ship call). (3) One
+      non-monotonic univariate signal both rules+linear miss:
+      `foehn_delta_hpa` inverted-U (fire peaks mid-range, drops at both
+      extremes; rule only vetoes high-positive) — candidate for the gate.
+      No clean new conjunctive rule to harvest.
 - [~] **Cut 3 (validate + ship):** STARTED 2026-06-14 →
       `docs/findings/ml-distill-cut3-2026-06-14.md`. Offender list confirms
       systematic over-vetoing (rule layer cost 0.535 > always-GO 0.263).
