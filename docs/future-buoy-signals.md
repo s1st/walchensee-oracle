@@ -18,14 +18,16 @@ at `/fileadmin/webcam/src/mediaPlayerWebcamView.js`):
 | `rain` | mm | Local rain gauge (interval amount) |
 
 **Status (2026-06-14):** the scraper now *parses and logs* all of these
-fields — `measurements.py` surfaces `wtemp`, `temp`, `dp`, `rh`, `rp` and
-`rain` as optional fields on both `WindReading` and `UrfeldSample`, so the
-historical record carries them. What's still open is *rule consumption*:
-only `wsavg`/`wsmax` (`thermal_ignition`) and `wtemp` (`air_lake_delta`)
-drive a verdict today. The rest are captured-but-not-yet-wired — available
-for calibration and the ML training export, but no rule reads them. (The
-older framing of this doc — "everything except wind is dropped on the
-floor" — is obsolete; the fields are captured, just not yet acted on.)
+fields — `measurements.py` surfaces the normalized counterparts
+`water_temp_c`, `air_temp_c`, `dew_point_c`, `rel_humidity_pct`,
+`pressure_hpa` and `rain_mm` as optional fields on both `WindReading` and
+`UrfeldSample`, so the historical record carries them. What's still open
+is *rule consumption*: only `wsavg`/`wsmax` (`thermal_ignition`) and
+`water_temp_c` (`air_lake_delta`) drive a verdict today. The rest are
+captured-but-not-yet-wired — available for calibration and the ML training
+export, but no rule reads them. (The older framing of this doc —
+"everything except wind is dropped on the floor" — is obsolete; the
+fields are captured, just not yet acted on.)
 
 This document is a catalog of what could be done with the captured-but-
 unused fields — the physical/forecast signal each could power, and what
