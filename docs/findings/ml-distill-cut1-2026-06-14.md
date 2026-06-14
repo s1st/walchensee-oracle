@@ -71,15 +71,22 @@ one change per commit, score on replay. **Do not flip blind** — a
 confound (negative Δ co-occurring with some thermally-active synoptic
 pattern) is a live alternative explanation.
 
-### 2. Cloud thresholds are too lenient (lowest-risk tuning candidates)
-`max_daytime_low_cloud_pct` (rule veto at **75**) and
-`overnight_cloud_cover_pct` (veto at **95**) are the cleanest robust
-signals after thermik. Thermal vs no-go means: daytime low cloud **31% vs
-58%**, overnight cloud **52% vs 71%**. Both vetoes sit so high they almost
-never fire, yet the model weights these features 2nd and 4th. Hypothesis:
-**lower both thresholds** (and/or make daytime cloud a graded signal, not
-a hard cut). Direction agrees with the rule, so low risk — but still
-through the gate, one threshold per commit, per CLAUDE.md.
+### 2. Cloud signals are predictive — but the vetoes OVER-fire (corrected by Cut 3)
+`max_daytime_low_cloud_pct` and `overnight_cloud_cover_pct` are the
+cleanest robust signals after thermik (thermal vs no-go means: daytime
+**31% vs 58%**, overnight **52% vs 71%**).
+
+> **Correction (Cut 3 offender list, same day):** an earlier draft said
+> the cloud vetoes "sit so high they almost never fire → tighten." That
+> was **wrong in both directions.** `oracle calibrate --replayed` shows
+> `daytime_clouds` fired **709** NO_GO vetos (**648 false-positive** — on
+> real GO/MAYBE sessions) and `overnight_cooling` **478** vetos (**424
+> FP**). The vetoes fire plenty *and* are wrong ~91% of the time, so the
+> fix is to **loosen / make graded**, NOT tighten. Lesson: a feature being
+> predictive (more cloud → less thermal) does not mean its hard-veto
+> threshold is well-placed — only the offender list / replay gate tells
+> you that. This is exactly why Cut 1 hands off to Cut 3 rather than
+> editing `config.py` directly.
 
 ### 3. Absolute pressure levels carry signal the rules throw away
 `innsbruck_hpa` (+0.18 raw) and `bolzano_hpa` (+0.23 raw) robustly

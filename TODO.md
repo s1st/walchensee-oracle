@@ -117,7 +117,15 @@ Order of attack (cheap → heavy):
       conjunctions the rules treat independently (e.g. "low Δp is
       forgivable *if* dew-spread AND LI both favorable"). Output:
       candidate conjunctive rules.
-- [ ] **Cut 3 (validate + ship):** run each surviving candidate through
-      the replay-calibration gate; ship only those that improve replay
-      Peirce/cost without overfitting the ICON holdout. One change per
-      commit.
+- [~] **Cut 3 (validate + ship):** STARTED 2026-06-14 →
+      `docs/findings/ml-distill-cut3-2026-06-14.md`. Offender list confirms
+      systematic over-vetoing (rule layer cost 0.535 > always-GO 0.263).
+      Exp 1 (thermik, worst offender, 1077 FP): loosening is a cost/skill
+      tradeoff, NOT a clean ship — cost 0.535→0.503 but Peirce +0.063→0.050,
+      no Pareto sweet spot. Reproduces the project's per-rider-cost tension.
+      Also corrected Cut 1 #2: cloud vetoes OVER-fire (loosen, not tighten).
+      No production threshold changed; config.py reverted clean.
+      Still open: Exp 2 (cloud loosen), Exp 3 (dew/solar), and an
+      aggregator-level veto-aggressiveness lever (bigger than one-threshold).
+      Ship gate unchanged: only replay-validated Pareto improvements, one
+      change per commit.
