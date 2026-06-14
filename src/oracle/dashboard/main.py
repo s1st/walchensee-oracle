@@ -161,6 +161,7 @@ _RULE_I18N: dict[str, RuleI18n] = {
 _UI: dict[str, dict[str, str]] = {
     "de": {
         "strip_forecast": "Vorhersage",
+        "strip_ml": "ML-Klassifikator (exp.)",
         "strip_forecast_original": "Vergangene Vorhersageart",
         "strip_forecast_original_note": "Wie der Tag damals vorhergesagt wurde, vor der Nachkalibrierung der Regeln — nur zum Vergleich.",
         "strip_actual": "Tatsächlich (Session ≥ 1 h)",
@@ -235,6 +236,7 @@ _UI: dict[str, dict[str, str]] = {
     },
     "en": {
         "strip_forecast": "Forecast",
+        "strip_ml": "ML classifier (exp.)",
         "strip_forecast_original": "Previous forecast method",
         "strip_forecast_original_note": "How the day was forecast at the time, before the rules were recalibrated — shown for comparison only.",
         "strip_actual": "Actual (session ≥ 1 h)",
@@ -821,6 +823,7 @@ def _history(today: date, lang: str, days: int = 30) -> list[dict]:
         peak = None
         verdict = None
         resimulated = None
+        ml = None
         machine: dict | None = None
         if record:
             machine = (record.get("ground_truth") or {}).get("machine") or {}
@@ -831,11 +834,15 @@ def _history(today: date, lang: str, days: int = 30) -> list[dict]:
             # records too incomplete to re-score) still show *something* in the
             # row instead of an empty cell.
             resimulated = record.get("overall_resimulated") or verdict
+            # Shadow ML classifier verdict (only present on records written
+            # after it shipped — earlier days show an empty cell).
+            ml = (record.get("ml_classifier") or {}).get("verdict")
         items.append({
             "iso": d.isoformat(),
             "day": _fmt_date(d, lang, "strip"),
             "verdict": verdict,
             "resimulated": resimulated,
+            "ml": ml,
             "peak_avg_knots": peak,
             "actual": _actual_verdict_duration(machine),
             "storm": _storm_suspected(record) if record else False,

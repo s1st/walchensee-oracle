@@ -145,5 +145,7 @@ def test_dashboard_renders_ml_card(tmp_path, monkeypatch):
     en = client.get("/?day=2026-06-12&lang=en").text
     assert "ML Classifier" in en and "experimental" in en
     assert "Learned model" in en and "maybe 54%" in en
+    assert "ML classifier (exp.)" in en  # 30-day strip row
     de = client.get("/?day=2026-06-12&lang=de").text
     assert "Gelerntes Modell" in de
+    assert "ML-Klassifikator (exp.)" in de  # 30-day strip row

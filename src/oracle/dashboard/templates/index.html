@@ -429,6 +429,21 @@
 </div>
 
 <div class="strip-row">
+  <div class="strip-row-label">{{ t.strip_ml }}</div>
+  <div class="strip">
+    {% for d in history %}
+      {% if d.ml %}
+        <a class="cell {{ d.ml }}{% if d.iso == selected_iso %} selected{% endif %}{% if d.storm %} storm{% endif %}"
+           href="?day={{ d.iso }}&view={{ view }}"
+           title="{{ d.day }} — {{ t.strip_ml }}: {{ d.ml }}{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
+      {% else %}
+        <div class="cell empty{% if d.storm %} storm{% endif %}" title="{{ d.day }} — {{ t.strip_ml }}: —"></div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+<div class="strip-row">
   <div class="strip-row-label">{{ t.strip_actual }}</div>
   <div class="strip">
     {% for d in history %}
