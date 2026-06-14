@@ -38,6 +38,13 @@ mypy src
 # Real dashboard traffic (bot-filtered, IPv6 /64-deduped) — for sizing rollout reach
 python3 scripts/dashboard_traffic.py            # last 30d, prod
 python3 scripts/dashboard_traffic.py --days 7   # shorter window
+
+# ML ceiling spike (research-side; on branch `ml-classifier`, not deployed)
+uv pip install -e ".[ml]"                       # adds scikit-learn + pandas; not in either Dockerfile
+oracle ml train --csv data/replay_full.csv --out data/ml/replay_full.pkl
+oracle ml evaluate --csv data/replay_full.csv --model data/ml/replay_full.pkl \
+                   --report data/ml/replay_full_report.json
+python3 scripts/cost_ratio_sweep.py             # sensitivity sweep over the missed/wasted cost ratio
 ```
 
 To measure **actual visitors** to the live dashboard, use `scripts/dashboard_traffic.py` — do **not** hand-roll `gcloud logging read | sort -u` IP counts, which overcount ~4× (AI crawlers like GPTBot send browser-ish UAs; one-off scanner IPs read as visitors). The script pulls Cloud Run GET logs, drops bots / exploit-scanner paths / empty-UA probes, and dedupes IPv6 by /64 (flagging m-net's `2001:a61::/32`, which rotates the customer /48 so one person spans several /64s). Run it the day after each rollout step to see what a channel actually delivered.
@@ -75,6 +82,10 @@ Preserving `ground_truth` across re-runs is important: `write_run` reads the exi
 All threshold constants live in `src/oracle/config.py`. They are mixed: the main driver thresholds have been data-fitted against the Urfeld calibration log — `MIN_THERMIK_DELTA_HPA` (+2.5 → −1.0, n=10), `MAX_OVERNIGHT_CLOUD_COVER_PCT` (30 → 95, n=22), `MIN_DEW_POINT_SPREAD_C` (5.0 → 2.5, n=22) and `MAX_LIFTED_INDEX` (6 → 10, n=22) — and the aggregator was reworked to severity-tier/consensus semantics (a single soft veto no longer downgrades). The rest (Föhn trigger, synoptic override, ignition wind, BLH, soil/rain, solar) are still research-analogue guesses — identifiable as the constants lacking an `n=` note in config.py. Use `oracle calibrate` to identify which rules are over-vetoing real session days before tuning the rest. Single-day evidence is not enough; demand the offender list from a sample of ≥10 ground-truthed days, then change one threshold per commit so the rescore-strip in the dashboard isolates the effect.
 
 For large-sample tuning, the historical replay loop (see `docs/historical_forecasts.md`): `oracle replay --from/--to` once (archive-fed verdicts into `runs/replay/`), then `oracle calibrate --replayed` to score ~3,300 archived ground-truth days; after each threshold change, `oracle rescore --replayed` + `oracle calibrate --replayed --resimulated` re-evaluates from stored inputs with zero API traffic.
+
+### ML ceiling spike (research)
+
+The 14-rule heuristic + severity-tiered aggregator is the **production** classifier. The `ml-classifier` branch (not deployed) carries an offline ceiling check that asks "is the rule baseline near the data ceiling?" — answer on 715 ICON-era holdout days: **no**; logistic regression on the same 14 ICON-stable features beats the rule on every metric simultaneously, and HGB clears +0.192 Peirce (Δ from rule's +0.017) with McNemar p = 3.8 × 10⁻¹³. The cost matrix in `calibration._COST` is a per-rider knob, not a project constant — `scripts/cost_ratio_sweep.py` sweeps the missed-session / wasted-drive ratio r ∈ [0.25, 7.0] and shows the head-to-head across the full range; logistic wins for all r, HGB crosses over at r ≈ 6.54. Empirical writeup: `docs/findings/ml-classifier-2026-06-13.md`. **No model ships to production from this work** — see the writeup's ship/no-ship call for the rationale (interpretability, per-rider cost framing, stakeholder preference for "project doesn't dictate cost"). The CLI is preserved on the branch so the experiment can be re-run after future threshold changes.
 
 ### Dashboard
 
