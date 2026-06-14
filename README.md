@@ -15,19 +15,22 @@ gap.
    synoptic wind aloft, dew-point spread, boundary-layer height, soil
    moisture + recent precipitation.
 3. **Live Measurements** — shore wind from the Addicted-Sports anemometer at
-   Urfeld + the nearest DWD synoptic station (via Bright Sky).
+   Urfeld + lake water temperature from the buoy, plus the nearest DWD
+   synoptic station (via Bright Sky).
 
 > An earlier fourth pillar that scraped the windinfo.eu Wind-Wetter-Chat was
 > removed for DSGVO + § 87b UrhG (Datenbankschutz) reasons. The dashboard now
 > only links to that chat; nothing is scraped, stored, or fed into the verdict.
 
-Twelve heuristic rules — `thermik`, `foehn_override`, `overnight_cooling`,
+Fourteen heuristic rules — `thermik`, `foehn_override`, `overnight_cooling`,
 `solar_radiation`, `dew_point_spread`, `boundary_layer_height`,
 `post_rain_moisture`, `atmospheric_stability`, `daytime_clouds`,
-`upper_level_wind`, `synoptic_override`, `thermal_ignition` — turn raw
-pillar data into a GO / MAYBE / NO_GO forecast verdict. Each rule emits
-both a German and an English reason so the dashboard can render in either
-language without post-hoc translation.
+`no_insolation`, `upper_level_wind`, `synoptic_override`, `thermal_ignition`,
+`air_lake_delta` — turn raw pillar data into a GO / MAYBE / NO_GO forecast
+verdict via a severity-tiered aggregator (any hard blocker wins; two or more
+soft vetoes downgrade to MAYBE). Each rule emits both a German and an English
+reason so the dashboard can render in either language without post-hoc
+translation.
 
 ## Public dashboard
 
@@ -42,9 +45,16 @@ domain via Cloudflare DNS). Shows:
   forecasts every morning.
 - **Verdict card** with a single-line summary (top blocking reason for
   NO_GO, counter of green rules for GO).
-- **30-day strip** split into two rows — the oracle's forecast verdict on
-  top, the actual Urfeld peak wind below, same colour scale so forecast
-  misses jump out visually.
+- **30-day strip** with three rows on a shared colour scale so forecast
+  misses jump out visually: the oracle's **forecast** verdict (toggle
+  between the as-written verdict and one re-scored under the current rules),
+  an **experimental ML-classifier** line (see below), and the **actual**
+  session outcome (a sustained session ≥ 1 h, from the Urfeld wind curve).
+- **Experimental ML classifier** — a learned logistic model (distilled to a
+  pure-Python scorer, no extra runtime deps) runs alongside the rules in
+  *shadow mode*: it's logged and shown (a card + the strip row above) for
+  comparison, but it **never drives the official verdict**. It exists to
+  gather live evidence on whether a model could eventually beat the rules.
 - **Advanced panel** (checkbox-toggled) with the full rule table and `?`
   tooltips explaining each rule.
 - **DE / EN language toggle** in the top right corner, with auto-detection
@@ -64,8 +74,8 @@ domain via Cloudflare DNS). Shows:
   progression, seasonal patterns, pressure pairs, and threshold
   calibration status.
 - **[docs/future-factors.md](docs/future-factors.md)** — forecast factors
-  already shipped and those still to add (lake temperature, snow cover,
-  Kesselberg channeling, seasonal threshold calibration, …) with
+  already shipped (e.g. lake temperature) and those still to add (snow
+  cover, Kesselberg channeling, seasonal threshold calibration, …) with
   prioritisation.
 
 ## Setup
@@ -73,7 +83,7 @@ domain via Cloudflare DNS). Shows:
 ```bash
 # install uv if needed: curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev,dashboard]"   # add ,ml for the research `oracle ml` CLI
 cp .env.example .env
 ```
 
@@ -102,5 +112,7 @@ src/oracle/
 ├── pillars/           # one module per data source
 ├── knowledge/rules.py # heuristics
 ├── engine.py          # aggregates pillars → forecast
+├── ml_classifier.py   # shadow ML classifier (pure-Python scorer)
+├── ml/                # offline ML research (train/evaluate; behind the [ml] extra)
 └── cli.py             # entry point
 ```
