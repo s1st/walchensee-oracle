@@ -141,6 +141,18 @@
   .verdict-word.no_go { color: var(--no-go); }
   .verdict-summary { margin: 10px 0 0; font-size: 15px; }
   .verdict-meta { color: var(--muted); font-size: 12px; margin-top: 14px; }
+  /* Shadow ML classifier — deliberately quieter than the verdict card. */
+  .ml-card { background: var(--panel); border-radius: 8px; padding: 10px 16px; margin-top: 10px;
+             border-left: 3px solid var(--muted); }
+  .ml-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+  .ml-title { font-weight: 600; font-size: 14px; }
+  .ml-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+            border: 1px solid var(--muted); border-radius: 4px; padding: 1px 5px; }
+  .ml-verdict { font-weight: 700; font-size: 14px; }
+  .ml-verdict.go { color: var(--go); } .ml-verdict.maybe { color: var(--maybe); } .ml-verdict.no_go { color: var(--no-go); }
+  .ml-probs { color: var(--muted); font-size: 12px; }
+  .ml-reason { margin: 6px 0 0; font-size: 13px; }
+  .ml-note { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
 
   h3 { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .1em; margin: 24px 0 8px; }
 
@@ -371,6 +383,25 @@
       <span class="view-tag">{{ t.view_label_original }}</span>{% endif %}.
     </div>
   </section>
+
+  {% if ml_forecast %}
+  <section class="ml-card {{ ml_forecast.verdict }}" title="{{ t.ml_note }}">
+    <div class="ml-head">
+      <span class="ml-title">{{ t.ml_title }}</span>
+      <span class="ml-tag">{{ t.ml_experimental }}</span>
+      <span class="ml-verdict {{ ml_forecast.verdict }}">
+        {% if ml_forecast.verdict == 'go' %}{{ t.verdict_go }}{% elif ml_forecast.verdict == 'maybe' %}{{ t.verdict_maybe }}{% else %}{{ t.verdict_no_go }}{% endif %}
+      </span>
+      <span class="ml-probs">
+        go {{ (ml_forecast.probabilities.go * 100) | round | int }}% ·
+        maybe {{ (ml_forecast.probabilities.maybe * 100) | round | int }}% ·
+        no_go {{ (ml_forecast.probabilities.no_go * 100) | round | int }}%
+      </span>
+    </div>
+    <p class="ml-reason">{{ ml_forecast.reason }}</p>
+    <p class="ml-note">{{ t.ml_note }}</p>
+  </section>
+  {% endif %}
 
 {% else %}
   <section class="verdict-card">
