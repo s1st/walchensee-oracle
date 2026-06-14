@@ -123,9 +123,15 @@ All artefacts are in `data/ml/`:
 | Accuracy (3-class) | 48.8% | 44.8% | 34.8% |
 | Hard-error rate | 19.0% | 19.0% | 20.6% |
 | Mean cost / day (r = 2) | 0.534 | 0.545 | 0.517 |
-| Value-curve AUC | -0.161 | +0.035 | 0.000 |
+| Value-curve AUC † | -0.161 | +0.035 | 0.000 |
 | RPS (3-class, ML only) | 0.4931 | 0.4317 | — |
 | Brier (binary) | 0.254 | — | — |
+
+† The rule baseline's value-curve AUC of 0.000 is a "not computed"
+sentinel, not a measured zero: the rule emits a categorical verdict with
+no probability, so the relative-value curve (which needs `predict_proba`)
+is undefined for it. Don't read it as "HGB is worse than the rule on
+value" — there is no rule value curve to compare against.
 
 McNemar paired significance (HGB vs rule, same 715 days): **fixed 212,
 broke 112, net +100 of 324 discordant, p = 3.8 × 10⁻⁸** (χ² cont.corr.).

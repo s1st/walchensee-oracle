@@ -91,14 +91,14 @@ def fit_logistic(data: ReplayDataset) -> FittedClassifier:
     LABEL_ORDER, which is what sklearn's LogisticRegression expects
     (no string→int mapping needed at fit time).
 
-    LogisticRegression does NOT accept NaN — the replay dataset has
-    block-missing ICON-era features (BLH, soil moisture) for IFS-era
-    rows (research doc §3.8). Wrap in a Pipeline with SimpleImputer
-    (median) + StandardScaler so the linear baseline can fit the same
-    feature matrix HGB sees. HGB handles NaN natively and doesn't
-    need this step. Scaling matters for LR convergence — without it
-    lbfgs won't converge on the project's mix of unit-scale and
-    large-magnitude features (hPa in the 1000s, percentages in 0–100).
+    LogisticRegression does NOT accept NaN. Since c1337e0 the 11
+    ICON-stable features have no NaNs, so the SimpleImputer (median) is a
+    no-op on the current feature set — it's kept as a defensive guard
+    against a future feature that's block-missing in some era (and so the
+    LR pipeline never crashes on NaN the way it would bare). StandardScaler
+    matters for LR convergence — without it lbfgs won't converge on the
+    project's mix of unit-scale and large-magnitude features (hPa in the
+    1000s, percentages in 0–100). HGB handles NaN natively and skips both.
     """
     from sklearn.impute import SimpleImputer  # type: ignore[import-untyped]
     from sklearn.linear_model import LogisticRegression  # type: ignore[import-untyped]

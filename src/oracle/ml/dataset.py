@@ -108,10 +108,11 @@ def encode_labels(y_str: pd.Series | list[str]) -> np.ndarray:
 
 
 def binarise_thermal(y: np.ndarray) -> np.ndarray:
-    """3-class → binary: GO/MAYBE vs NO_GO. Matches the rule baseline's
-    Peirce anchor (+0.107 on the same binarisation). The research doc
-    §4.1 uses this binarisation for the Peirce score; the multi-class
-    RPS handles the full 3-class target separately."""
+    """3-class → binary: GO/MAYBE vs NO_GO. Feeds the binary probabilistic
+    metrics (Brier + relative-value curve); the reported Peirce/HSS are
+    3-class (see evaluate.py). The research doc §4.1 reports a binary Peirce
+    anchor of +0.107 on its own dataset — not directly comparable to the
+    3-class numbers this spike reports."""
     return (y != int(LABEL_TO_INT[Signal.NO_GO.value])).astype(np.int64)
 
 

@@ -9,8 +9,12 @@ Conventions:
 - All inputs are NumPy arrays. Categorical y_true uses LABEL_TO_INT
   ordering (0=go, 1=maybe, 2=no_go) from `dataset`. Probability vectors
   y_proba have shape (N, 3) in the same column order.
-- The "binary thermal" target is GO-or-MAYBE = 1, NO_GO = 0. This matches
-  the rule baseline's +0.107 Peirce anchor (research doc §4.1 + §4.2).
+- The "binary thermal" target is GO-or-MAYBE = 1, NO_GO = 0. It feeds the
+  probabilistic metrics only (Brier + relative-value curve). The reported
+  `peirce`/`hss` fields are the 3-class Hanssen-Kuipers / Heidke scores on
+  the full confusion (rule = +0.066 on the 1,912-row replay). The research
+  doc's §4.1 +0.107 figure is a *binary* Peirce anchor on its own dataset
+  and is not directly comparable to the 3-class numbers reported here.
 - For the rule baseline, the comparison is on its categorical `overall`
   field — categorical-vs-categorical scoring (HSS, accuracy, hard-error
   rate) but not the probabilistic metrics (RPS, Brier, value curve).
@@ -253,6 +257,9 @@ class ModelScore:
     rps: float | None = None
     brier: BrierDecomposition | None = None
     value_curve: dict[float, float] = field(default_factory=dict)
+    # 0.0 is the "not computed" sentinel: the rule baseline has no proba, so
+    # its value curve/AUC is never computed. Don't read rule value_auc=0.0 as
+    # "computed and zero" — see the writeup table footnote.
     value_auc: float = 0.0
 
     def as_dict(self) -> dict:
@@ -295,10 +302,9 @@ def score_predictions(
     """
     n = len(y_true_int)
     confusion = _confusion_3x3(y_true_int, y_pred_int)
-    y_bin = binarise_thermal(y_true_int)
-    # Peirce + HSS use the existing helpers (they expect a 3x3 confusion
-    # dict; the binary score is recovered via `peirce_skill_score` which
-    # scores 0 for any constant and is the project-anchor).
+    y_bin = binarise_thermal(y_true_int)  # binary target — used for Brier + value curve below
+    # Peirce + HSS are scored on the full 3-class confusion (not the binary
+    # target); both helpers return 0 for any constant forecast.
     peirce = peirce_skill_score(confusion)
     hss = heidke_skill_score(confusion)
     accuracy = multiclass_accuracy(y_true_int, y_pred_int)

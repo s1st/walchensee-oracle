@@ -158,11 +158,22 @@ def main(argv: list[str] | None = None) -> int:
         data, train_until_year=train_until_year, test_from_year=test_from_year, calibration_year=None,
     )
 
-    # Rule baseline = `forecast_overall_resimulated` on the test days.
+    # Rule baseline = `forecast_overall_resimulated` on the test days,
+    # falling back to `forecast_overall` for legacy CSVs that predate the
+    # rescore column (mirrors `oracle ml evaluate`).
     raw_df = pd.read_csv(args.csv)
+    if "forecast_overall_resimulated" in raw_df.columns:
+        baseline_col = "forecast_overall_resimulated"
+    elif "forecast_overall" in raw_df.columns:
+        baseline_col = "forecast_overall"
+    else:
+        raise SystemExit(
+            "replay CSV is missing both 'forecast_overall_resimulated' and "
+            "'forecast_overall' — no rule baseline to score against"
+        )
     test_days = set(split.test.day.tolist())
     baseline_rows = raw_df[raw_df["day"].isin(test_days)].set_index("day")
-    baseline_pred_str = [baseline_rows.loc[d, "forecast_overall_resimulated"] for d in split.test.day]
+    baseline_pred_str = [baseline_rows.loc[d, baseline_col] for d in split.test.day]
     baseline_pred_int = np.array([LABEL_TO_INT[s] for s in baseline_pred_str])
 
     # Predicted probabilities from each fitted model.
