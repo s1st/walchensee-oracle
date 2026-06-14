@@ -23,6 +23,7 @@ import httpx
 
 from oracle.engine import Forecast
 from oracle.knowledge.rules import Verdict
+from oracle.ml_classifier import classify
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
 
 DEFAULT_RUNS_DIR = Path("data/runs")
@@ -205,19 +206,28 @@ def forecast_to_dict(result: Forecast, target_day: date) -> dict[str, Any]:
     Replay records carry `replay_day` + `replay_source` so the calibrate
     loop and the dashboard can distinguish them from live forecasts.
     """
+    pressure_d = result.pressure.to_dict()
+    meteo_d = result.meteo.to_dict()
     d: dict[str, Any] = {
         "day": target_day.isoformat(),
         "overall": result.overall.value,
         "verdicts": [verdict_to_dict(v, legacy_reason=True) for v in result.verdicts],
         "inputs": {
-            "pressure": result.pressure.to_dict(),
-            "meteo": result.meteo.to_dict(),
+            "pressure": pressure_d,
+            "meteo": meteo_d,
             "measurements": [w.to_dict() for w in result.winds],
             "lake_temp": (
                 result.lake_temp.to_dict() if result.lake_temp is not None else None
             ),
         },
     }
+    # Shadow ML classifier: experimental, logged + shown alongside the rules,
+    # NEVER fed into `overall`. Attached here (not in the engine) so it is
+    # structurally incapable of influencing the aggregated verdict. Scores the
+    # exact serialised feature values the training CSV was built from.
+    ml = classify(pressure_d, meteo_d)
+    if ml is not None:
+        d["ml_classifier"] = ml.to_dict()
     if result.replay_day is not None:
         d["replay_day"] = result.replay_day.isoformat()
         d["replay_source"] = result.replay_source

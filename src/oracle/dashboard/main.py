@@ -191,6 +191,9 @@ _UI: dict[str, dict[str, str]] = {
         "verdict_go": "LÄUFT",
         "verdict_maybe": "VIELLEICHT",
         "verdict_no_go": "FLAUTE",
+        "ml_title": "🤖 ML-Klassifikator",
+        "ml_experimental": "experimentell",
+        "ml_note": "Ein gelerntes Modell, das parallel zu den Regeln läuft — nicht die offizielle Vorhersage.",
         "for_day": "Für",
         "last_30_days": "Letzte 30 Tage",
         "no_data": "Keine Daten — warte auf die nächste Vorhersage (ca. 08:00 Ortszeit).",
@@ -262,6 +265,9 @@ _UI: dict[str, dict[str, str]] = {
         "verdict_go": "GO",
         "verdict_maybe": "MAYBE",
         "verdict_no_go": "NO GO",
+        "ml_title": "🤖 ML Classifier",
+        "ml_experimental": "experimental",
+        "ml_note": "A learned model run alongside the rules — not the official verdict.",
         "for_day": "For",
         "last_30_days": "Last 30 days",
         "no_data": "No data yet — next scheduled forecast runs at 08:00 CET.",
@@ -1019,6 +1025,17 @@ async def index(request: Request) -> Response:
     host = (request.headers.get("host") or "").split(":")[0].lower()
     show_github = not host.endswith("s1st.de")
 
+    # Shadow ML classifier (experimental extra; independent of the view toggle
+    # since it's a single learned prediction, not a rescored rule verdict).
+    ml_forecast = None
+    if raw and raw.get("ml_classifier"):
+        _ml = raw["ml_classifier"]
+        ml_forecast = {
+            "verdict": _ml.get("verdict"),
+            "probabilities": _ml.get("probabilities", {}),
+            "reason": _ml.get("reason_de" if lang == "de" else "reason_en"),
+        }
+
     summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
     tooltips = _TOOLTIPS_BY_LANG[lang]
     rule_labels = _LABELS_BY_LANG[lang]
@@ -1035,6 +1052,7 @@ async def index(request: Request) -> Response:
             "display_verdicts": display_verdicts,
             "view": view,
             "summary": summary,
+            "ml_forecast": ml_forecast,
             "history": _history(today, lang),
             "selected_date_label": _fmt_date(selected_day, lang, "full"),
             "today_iso": today.isoformat(),
