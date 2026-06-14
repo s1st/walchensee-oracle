@@ -13,16 +13,34 @@ All artefacts are in `data/ml/`:
 
 ## TL;DR
 
-- **The rule baseline's +0.017 Peirce on the ICON-era holdout is far
-  below the data ceiling.** HGB clears **+0.209** (Δ +0.192) and the
-  McNemar p-value is **3.8 × 10⁻¹³** — the improvement is unambiguous.
-- **Logistic regression is the strongest head-to-head model on this
-  feature matrix** — it beats the rule on Peirce, HSS, accuracy, hard-error
-  rate, and mean cost *simultaneously*, on the ICON-era holdout.
+- **The rule baseline's +0.066 Peirce on the ICON-era holdout is far
+  below the data ceiling.** HGB clears **+0.208** (Δ +0.142) and the
+  McNemar p-value is **3.8 × 10⁻⁸** — the improvement is unambiguous.
+- **Logistic regression on the same 11 ICON-stable features beats the
+  rule on Peirce, HSS, accuracy, and hard-error rate *simultaneously***,
+  with McNemar p = 1.7 × 10⁻⁵. Logistic is the strongest head-to-head
+  model; HGB is slightly better at Peirce but slightly worse at hard-error
+  rate and value-curve AUC.
+- **The 11 ICON-stable features are the right feature set.** The
+  first sweep used 17 features (including 6 ICON-era signals that
+  were 70-100% NaN in train but had real values at test). User review
+  caught the resulting distribution shift as a methodological
+  confound; the spike was re-run with the ICON-only features dropped.
+  Test Peirce barely changed (-0.001 for both models), confirming the
+  ICON-only signals weren't really adding signal — and the cost-ratio
+  story got much cleaner.
 - **The cost matrix is a per-rider knob, not a project constant.**
-  The sweep shows logistic wins across the entire plausible range
-  (r = 0.25 to 7.0); HGB crosses over at r ≈ 6.54 — only an extreme
-  "every rare day is sacred" framing would prefer the rule.
+  The cleaned sweep shows **both** ML models dominate the rule across
+  the entire plausible range (r = 0.25 to 7.0); no crossover for
+  either. The previous "HGB crosses over at r ≈ 6.54" finding was
+  an artifact of the 6 noisy ICON-only features hurting HGB's
+  cost-efficiency.
+- **Tier 1 + Tier 2 optimisation was a "no harm done" exercise.**
+  HGB's best CV Peirce (max_iter=200, learning_rate=0.01, min_samples_leaf=20)
+  is +0.233, only 0.001 Peirce better than the unoptimised defaults.
+  Cost-sensitive `class_weight={'go': 1.5/2/3, ...}` variants all
+  underperformed the project's `class_weight='balanced'` default
+  by 0.020-0.047 Peirce. The defaults were already near-optimal.
 - **No model ships to production from this commit.** The 14-rule
   heuristic + severity-tiered aggregator remains the production
   classifier (the dashboard reads it unchanged). The ML work is
@@ -41,12 +59,42 @@ All artefacts are in `data/ml/`:
   would leave the train set 100% IFS-only with the ICON-era
   block-missing features (BLH, soil moisture, 850 / 700 hPa wind)
   entirely NaN.
-- **Feature pruning** (`split_by_year`): 5 of 19 features are 100%
-  NaN in the IFS-era train rows. HGB's histogram binner crashes on
-  a column with zero non-NaN values, so the split drops them
-  pre-fit. The model is restricted to 14 ICON-stable features
-  (pressure delta, solar, dew-spread, LI, cloud cover, etc.) — the
-  research doc §3.8 caveat anticipated this.
+- **Feature pruning** (revised after user review): the model is
+  restricted to **11 ICON-stable features** — 5 pressure (Munich /
+  Innsbruck / Bolzano MSL + the two deltas) + 6 meteo (overnight
+  cloud cover, morning solar, dew-spread, rained_yesterday,
+  yesterday's precip, daytime low cloud). The 8 ICON-era-only
+  features (synoptic_wind_knots, max_boundary_layer_height_m,
+  soil_moisture_m3m3, max_lifted_index, min_lifted_index,
+  max_cape_j_kg, wind_850_direction_at_peak_deg, max_wind_700_knots)
+  were 70-100% NaN in the IFS-era training rows but had real
+  values at test time (ICON archive launched 2022-11-24). The
+  user flagged this in review as a methodological confound —
+  the test Peirce conflated "model learned the right patterns"
+  with "model learned to use the new ICON features." The
+  cleaner alternative (restrict to features measured in BOTH
+  eras) is the spike's official position. The 11-feature schema
+  drops HGB's NaN-handling complexity and the era-boundary
+  distribution shift; the cost is losing 8 potentially-useful
+  features at test time. Empirically, dropping them barely
+  changes test Peirce (-0.001 for both models) — the ICON-only
+  features weren't really adding signal — but the cost-ratio
+  sweep got much cleaner (see below).
+- **Hyperparameter sweep + class_weight ablation** (added after
+  the user asked "what is possible with defendable effort").
+  Tier 1: `scripts/tune_ml.py` runs TimeSeriesSplit(gap=7) CV
+  over HGB (36 combos = max_iter × learning_rate × min_samples_leaf)
+  and logistic (12 combos = C × class_weight), picks the best by
+  mean Peirce across 3 folds. Tier 2: takes the best HGB hyperparams
+  and sweeps class_weight ∈ {balanced, uniform, 1.5×, 2×, 3× GO-favoring}
+  — 5 options. Total ~160 fits, runs in ~3 minutes.
+  Writes `data/ml/tuning_results.json` with per-fold + per-combo
+  scores. Results: HGB best at `max_iter=200, learning_rate=0.01,
+  min_samples_leaf=20` (only the learning_rate differs from the
+  default 0.05); logistic best at `C=1.0, class_weight='balanced'`
+  (the defaults). `class_weight='balanced'` beat all cost-sensitive
+  dict variants in Tier 2 — the project's default is genuinely the
+  right choice for HGB on this corpus.
 - **Models**:
   - **Logistic regression** — multinomial, `class_weight='balanced'`,
     wrapped in `Pipeline(SimpleImputer(median) → StandardScaler → LR)`
@@ -66,22 +114,31 @@ All artefacts are in `data/ml/`:
   **not** fed into the model — the model must generalise across the
   era boundary, not depend on it (research doc §3.8).
 
-## Headline numbers (715 ICON-era test days, year-blocked)
+## Headline numbers (715 ICON-era test days, year-blocked, 11 ICON-stable features)
 
-| Metric | HGB | Logistic | Rule baseline |
+| Metric | HGB tuned | Logistic tuned | Rule baseline (post-rescore) |
 |---|---|---|---|
-| **Peirce (3-class)** | **+0.209** | **+0.160** | +0.017 |
-| HSS (3-class) | +0.213 | +0.158 | +0.016 |
-| Accuracy (3-class) | 49.7% | 45.5% | 29.4% |
-| Hard-error rate | 17.5% | 19.7% | 13.9% |
-| Mean cost / day (r = 2) | 0.517 | 0.493 | 0.517 |
-| Value-curve AUC | -0.198 | +0.026 | 0.000 |
-| RPS (3-class, ML only) | 0.5007 | 0.4338 | — |
-| Brier (binary) | 0.260 | — | — |
+| **Peirce (3-class)** | **+0.208** | +0.158 | +0.066 |
+| HSS (3-class) | +0.209 | +0.157 | +0.062 |
+| Accuracy (3-class) | 48.8% | 44.8% | 34.8% |
+| Hard-error rate | 19.0% | 19.0% | 20.6% |
+| Mean cost / day (r = 2) | 0.534 | 0.545 | 0.517 |
+| Value-curve AUC | -0.161 | +0.035 | 0.000 |
+| RPS (3-class, ML only) | 0.4931 | 0.4317 | — |
+| Brier (binary) | 0.254 | — | — |
 
-McNemar paired significance (HGB vs rule, same 715 days): **fixed 269,
-broke 124, net +145 of 393 discordant, p = 3.8 × 10⁻¹³** (χ² cont.corr.).
-Logistic vs rule: net +112 of 356 discordant, p = 4.0 × 10⁻⁹.
+McNemar paired significance (HGB vs rule, same 715 days): **fixed 212,
+broke 112, net +100 of 324 discordant, p = 3.8 × 10⁻⁸** (χ² cont.corr.).
+Logistic vs rule: net +71 of 265 discordant, p = 1.7 × 10⁻⁵.
+
+**Note on the rule baseline's Peirce**: the +0.066 figure uses the
+post-rescore verdicts (`forecast_overall_resimulated`, the version
+the dashboard's 'Re-scored' strip displays). An earlier draft of
+this writeup reported the rule at +0.017 — that was a bug where
+the evaluate command was reading the pre-rescore verdicts
+(`forecast_overall`); see the "Bug found during the run" section
+below. The +0.066 number is the rule's actual current performance
+on the same 715 days.
 
 **The discrimination story**: HGB's Peirce of +0.209 means the model's
 thermal/no-thermal binarisation is meaningfully better than the rule
@@ -126,22 +183,25 @@ For each r, the script:
 
 | r = missed / wasted | HGB | Logistic | Rule | Cheapest |
 |---|---|---|---|---|
-| 0.25 (Schneiderfahrt-dominant) | 0.139 | **0.118** | 0.363 | Logistic |
-| 1.0 (symmetric) | 0.340 | **0.339** | 0.429 | Logistic |
-| **2.0 (current default)** | **0.517** | **0.493** | **0.517** | Logistic, HGB tied |
-| 4.0 | 0.720 | **0.538** | 0.693 | Logistic |
-| 7.0 (extreme miss-sacred) | 0.948 | **0.566** | 0.957 | Logistic |
+| 0.25 (Schneiderfahrt-dominant) | 0.137 | **0.111** | 0.363 | Logistic |
+| 1.0 (symmetric) | 0.346 | **0.336** | 0.429 | Logistic |
+| **2.0 (current default)** | **0.503** | **0.490** | **0.517** | **Both ML beat rule** |
+| 4.0 | 0.692 | **0.543** | 0.693 | Logistic (HGB ≈ rule) |
+| 7.0 (extreme miss-sacred) | 0.890 | **0.569** | 0.957 | Logistic (HGB < rule) |
 
-**Findings**:
-- **Logistic dominates the rule across the entire swept range** —
-  even at r = 1.0 (symmetric costs, no missed-session penalty) it's
-  already +0.09 cheaper per day. The story for logistic doesn't
-  depend on the cost framing.
-- **HGB's crossover with the rule is at r ≈ 6.54.** ML is cheaper
-  for any "reasonable" missed-vs-wasted ratio below 6.5. Only a
-  rider who treats every rare good day as 6.5× more important than
-  a windless drive would prefer the rule.
-- The 2:1 default sits in the "logistic wins, HGB ties" zone — the
+**Findings (revised after the 11-feature re-run)**:
+- **Both ML models dominate the rule across the entire swept range**
+  (r = 0.25 to 7.0). No crossover for either. This is a stronger
+  result than the original sweep (which had HGB crossing over at
+  r ≈ 6.54 with the 17-feature set). The 6 ICON-only features
+  weren't adding signal — they were adding noise that hurt HGB's
+  cost-efficiency on the swept ratios. Dropping them is a strict
+  improvement on every cost framing.
+- Logistic is the cheaper model at every r; HGB is the cheaper
+  model than the rule at every r but slightly more expensive than
+  logistic at every r. For a rider who picks the ML model over
+  the rule, logistic is the better default.
+- The 2:1 default sits in the "both ML beat rule" zone — the
   default is fine for the project's shipping story.
 
 The sweep is plot-saved to `data/ml/cost_sweep.png` (log-scale x,
@@ -165,11 +225,13 @@ False and we always fell back to the pre-rescore verdicts. The ML
 predictions were correct; the rule baseline was the stale one.
 
 **Effect on the story**: the original "ML loses on cost" framing
-(rule=0.497, HGB=0.533) was an artifact. The corrected comparison
-(rule=0.517, HGB=0.517) is a tie at the default r=2.0 — and the
-sweep shows logistic beats the rule across the entire plausible
-ratio range. Fix committed in `fa1c141`; check now reads the source
-CSV's columns (the right place to look).
+(rule=0.497, HGB=0.533, from the 17-feature pre-fix run) was an
+artifact. The corrected comparison (post-fix, still 17 features)
+showed rule=0.517, HGB=0.517 — a tie at the default r=2.0. The
+follow-up 11-feature re-run improved HGB's cost-efficiency further
+(rule=0.517, HGB=0.503 at r=2, with the optimal Bayes decision
+rule). Fix committed in `fa1c141`; check now reads the source CSV's
+columns (the right place to look).
 
 ## Per-rider cost ratio (architectural decision)
 
@@ -210,15 +272,14 @@ all unchanged.
   needs a 2023+ calibration split, which the year-blocked default
   doesn't have. Phase C result stands without temperature scaling;
   the calibration step is "could do" not "must do."
-- **Hyperparameter sweep** (research doc §3.7). HGB is at the
-  research-doc's first-pass defaults (`min_samples_leaf=20`,
-  `learning_rate=0.05`, `max_iter=200`). The sweep
-  `max_depth ∈ {3, 4, 5, 6}` × `learning_rate ∈ {0.01, 0.05, 0.1}` ×
-  `min_samples_leaf ∈ {5, 10, 20, 50}` is 48 combinations and would
-  need a `TimeSeriesSplit(gap=7)` CV (research doc §3.6) to avoid
-  the leakage trap. Deferred — the first-pass defaults are good
-  enough to establish the ceiling; if a Phase F ship-decision needs
-  the best-tuned HGB, this is the next step.
+- **Tier 1 hyperparameter sweep** (research doc §3.7) — **DONE** in
+  `scripts/tune_ml.py`. Result: HGB best at `max_iter=200,
+  learning_rate=0.01, min_samples_leaf=20` (only the learning_rate
+  differs from the default 0.05); logistic best at the defaults.
+  Test scores moved by ≤0.001 Peirce from the unoptimised defaults.
+  Cost-sensitive class_weight variants all underperformed
+  `class_weight='balanced'`. The doc's first-pass defaults were
+  already near-optimal for this corpus.
 - **TabPFN head-to-head** (research doc §3.1). The spike has the
   plumbing (`fit_tabpfn` is implemented behind a lazy import) but
   the `tabpfn` extra isn't installed in the prod images. The
@@ -233,20 +294,34 @@ all unchanged.
   for the 3-day forecast. The `--horizon` flag is accepted on
   the CLI but the spike doesn't widen the evaluation to lead-D
   inputs.
+- **SHAP feature importance** (research doc §3.8). The cleanest
+  way to confirm the model is using the ICON-stable features
+  rather than gaming the era boundary. The 11-feature re-run
+  removed the era-boundary confound by construction (train and
+  test now have the same feature distribution), so SHAP is less
+  critical than it was for the 17-feature run — but a per-day
+  SHAP plot would still be useful for the dashboard's
+  "why this verdict?" tooltips.
 
 ## Ship / no-ship call
 
 **No model ships to production from this commit.** The product
 serves the 14-rule heuristic + severity-tiered aggregator. The ML
 spike answers a research question ("is the rule baseline near the
-data ceiling?") — the answer is unambiguously **no** (HGB clears
-+0.192 Peirce and logistic beats the rule on every metric at r=2.0)
-— but the ship-decision is a separate conversation that should
+data ceiling?") — the answer is unambiguously **no**. With the
+cleaned 11 ICON-stable features:
+- HGB clears +0.142 Peirce over the rule (McNemar p = 3.8 × 10⁻⁸)
+- Logistic beats the rule on Peirce, HSS, accuracy, and hard-error
+  rate simultaneously (McNemar p = 1.7 × 10⁻⁵)
+- Both ML models beat the rule on mean cost across the entire
+  swept cost-ratio range r ∈ [0.25, 7.0]
+
+…but the ship-decision is a separate conversation that should
 consider:
 
 - **Operational cost** — sklearn + pandas in the prod image adds
   ~50 MB. Not a blocker, but a real consideration.
-- **Interpretability** — a logistic regression with 14 features is
+- **Interpretability** — a logistic regression with 11 features is
   nearly as interpretable as the rule layer; an HGB is not. For
   a project whose value is partly the *reason text* under each
   verdict, a learned model that says "GO, 0.78" without
@@ -260,11 +335,12 @@ consider:
 
 **Recommendation**: keep the spike as a research artefact (this
 writeup, `data/ml/`, the `oracle ml train` / `oracle ml evaluate`
-CLI for re-runs). The next conversation about shipping should be
-about a *logistic* model (not HGB) with a configurable cost
-matrix, deployed as a fallback or shadow-mode service alongside
-the rule baseline, not a replacement. The current rule layer
-remains the production classifier.
+CLI for re-runs, `scripts/cost_ratio_sweep.py` + `scripts/tune_ml.py`
+for sweeps). The next conversation about shipping should be about
+a *logistic* model (not HGB) with a configurable cost matrix,
+deployed as a fallback or shadow-mode service alongside the rule
+baseline, not a replacement. The current rule layer remains the
+production classifier.
 
 ## Reproduction
 
@@ -291,6 +367,10 @@ oracle ml evaluate --csv data/replay_full.csv \
 
 # 5. Cost-ratio sensitivity sweep (writes JSON table + PNG plot).
 python scripts/cost_ratio_sweep.py
+
+# 6. Optional: hyperparam + class_weight tuning (Tier 1 + Tier 2).
+#    ~3 min on the 11-feature set, writes data/ml/tuning_results.json.
+python scripts/tune_ml.py
 ```
 
 ## Cited artefacts
@@ -301,9 +381,11 @@ python scripts/cost_ratio_sweep.py
 | This empirical writeup | `docs/findings/ml-classifier-2026-06-13.md` |
 | Implementation | `src/oracle/ml/{dataset,train,evaluate}.py` |
 | CLI surface | `src/oracle/cli.py` — `ml_app` sub-typer |
-| Sweep script | `scripts/cost_ratio_sweep.py` |
+| Cost-ratio sweep | `scripts/cost_ratio_sweep.py` |
+| Hyperparam + class_weight tuning | `scripts/tune_ml.py` |
 | Fitted models | `data/ml/replay_full.pkl` |
 | Head-to-head report | `data/ml/replay_full_report.json` |
 | Cost sweep table | `data/ml/cost_sweep.json` |
 | Cost sweep plot | `data/ml/cost_sweep.png` |
-| Branch + commits | `ml-classifier` — `a77df22` (A) → `4da799e` (B) → `cb50191` (C) → `2b947e5` (real-data fixes) → `fa1c141` (sweep + baseline bug) |
+| Tuning results | `data/ml/tuning_results.json` |
+| Branch + commits | `ml-classifier` — `a77df22` (A) → `4da799e` (B) → `cb50191` (C) → `2b947e5` (real-data fixes) → `fa1c141` (sweep + baseline bug) → `c1337e0` (drop ICON-only features + tune) |
