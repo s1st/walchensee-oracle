@@ -17,14 +17,19 @@ at `/fileadmin/webcam/src/mediaPlayerWebcamView.js`):
 | `rp` | hPa | Local pressure (NOT MSL-reduced; altitude correction needed for cross-station comparison) |
 | `rain` | mm | Local rain gauge (interval amount) |
 
-The oracle currently reads only `wsavg` and `wsmax` (used by the
-`thermal_ignition` rule). Everything else is dropped on the floor after
-JSON parse, even though the scraper is already paying the bandwidth and
-the CSRF cost.
+**Status (2026-06-14):** the scraper now *parses and logs* all of these
+fields — `measurements.py` surfaces `wtemp`, `temp`, `dp`, `rh`, `rp` and
+`rain` as optional fields on both `WindReading` and `UrfeldSample`, so the
+historical record carries them. What's still open is *rule consumption*:
+only `wsavg`/`wsmax` (`thermal_ignition`) and `wtemp` (`air_lake_delta`)
+drive a verdict today. The rest are captured-but-not-yet-wired — available
+for calibration and the ML training export, but no rule reads them. (The
+older framing of this doc — "everything except wind is dropped on the
+floor" — is obsolete; the fields are captured, just not yet acted on.)
 
-This document is a catalog of what could be done with the rest. No
-priorities, no effort estimates — just the physical/forecast signal each
-field could power, and what would need to change to unlock it.
+This document is a catalog of what could be done with the captured-but-
+unused fields — the physical/forecast signal each could power, and what
+would need to change to turn it into a rule or feature.
 
 ## Local humidity (`temp` + `dp`, or `rh`)
 
@@ -105,13 +110,14 @@ What it could power:
   "rainy day that clears up" before the rule layer commits to a
   verdict.
 
-## The air-lake delta: shipped in this branch
+## The air-lake delta: shipped (on `main`)
 
-`wtemp` is the first non-wind field the oracle is wiring up. The
+`wtemp` was the first non-wind field the oracle wired into a rule. The
 `air_lake_delta` rule uses forecast air temperature (Open-Meteo) minus
 current water temperature (buoy) to detect the cold-lake regime that
 opposes the thermal in spring. See `src/oracle/knowledge/rules.py` and
-`docs/thermal-model.md` once merged.
+`docs/thermal-model.md`. It remains the only non-wind buoy field consumed
+by a rule; the others above are logged but not yet acted on.
 
 ## Cross-cutting concerns
 
