@@ -65,18 +65,55 @@ the smoke runs on synthetic data show:
   (the strict identity is approximate for continuous forecasts binned
   into K intervals, per the test).
 
-# Phase D — Distill (next session after C)
+# Phase E — Honest comparison writeup — DONE
 
-Goal: extract the rule-set from the trained model (tree distillation, GBDT → rule list) so the production rule layer can adopt whatever the spike found.
+Goal: write `docs/findings/ml-classifier-2026-06-13.md` (the empirical
+writeup, distinct from the research doc) with the head-to-head numbers,
+McNemar significance, and the ship/no-ship decision.
 
-# Phase E — Honest comparison writeup (next session after D)
+- [x] Writeup committed (88c1f9f, corrected in 00cedd4 / d37b069)
+- [x] Headline numbers, cost-ratio sweep, McNemar, stale-baseline bug,
+      per-rider cost framing, ship/no-ship call, reproduction block
+- [ ] (Open gap) Per-era IFS/ICON breakdown is named in PLAN's scoring
+      protocol but not in the writeup. The 11-feature re-run removed the
+      era-boundary confound *by construction* (train/test share a feature
+      distribution), so this is now a "nice-to-have" sanity check, not a
+      blocker. Fold in if/when Phase D's analysis runs the breakdown anyway.
 
-Goal: write `docs/findings/ml-classifier-2026-06-13.md` (the empirical writeup, distinct from the research doc) with the head-to-head numbers, McNemar significance, era breakdown, and the ship/no-ship decision.
+# Phase D — Distill — REFRAMED (ML-as-oracle, not model-ship)
 
-# Phase D — Distill (next session after C)
+Goal (reframed 2026-06-14): use the trained model as a **research
+instrument** to surface rule/threshold structure the 14-rule layer
+misses, then re-express it as ordinary rules/thresholds in
+`knowledge/rules.py` + `config.py`. **This is fully inside "no model
+ships"** — no sklearn in prod, no `model.predict()` on the serving path;
+the model stays a branch artefact and only *rules* ship.
 
-Goal: extract the rule-set from the trained model (tree distillation, GBDT → rule list) so the production rule layer can adopt whatever the spike found.
+Hard constraint — distillation produces **hypotheses, not commits**:
+every candidate must clear the project's existing validation gate
+(`calibrate --replayed` → one change per commit → `rescore --replayed` →
+re-calibrate, with the ≥10-day offender-list bar from CLAUDE.md). A rule
+that only improves the 715-day ICON holdout is overfitting, not a ship.
 
-# Phase E — Honest comparison writeup (next session after D)
+Honesty caveat: distilling **HGB** is lossy — a small rule list can't
+reproduce a 200-tree ensemble's full +0.142 Peirce. We harvest
+*direction*, not the last decimal; the writeup must not imply the rule
+layer inherited HGB's number.
 
-Goal: write `docs/findings/ml-classifier-2026-06-13.md` (the empirical writeup, distinct from the research doc) with the head-to-head numbers, McNemar significance, era breakdown, and the ship/no-ship decision.
+Order of attack (cheap → heavy):
+- [ ] **Cut 1 (logistic coefficients):** read the 11 signed standardized
+      LR weights — which features carry the discrimination, and in which
+      direction. Compare each against the current `config.py` threshold
+      for that signal. Output: a table of (feature, LR weight sign/mag,
+      current threshold, "does the rule use this signal consistently?").
+      This alone likely explains most of the edge as *threshold
+      mis-placement* → feeds the calibration backlog directly.
+- [ ] **Cut 2 (interactions, only if Cut 1 leaves gain unexplained):**
+      shallow surrogate tree (depth ≤3) and/or SHAP on HGB to find
+      conjunctions the rules treat independently (e.g. "low Δp is
+      forgivable *if* dew-spread AND LI both favorable"). Output:
+      candidate conjunctive rules.
+- [ ] **Cut 3 (validate + ship):** run each surviving candidate through
+      the replay-calibration gate; ship only those that improve replay
+      Peirce/cost without overfitting the ICON holdout. One change per
+      commit.

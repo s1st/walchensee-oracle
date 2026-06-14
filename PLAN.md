@@ -79,7 +79,11 @@ CLI:
   synthetic data — all metrics computed, JSON written, text report printed
 
 ## Out of scope
-- Phase D (distill), Phase E (honest comparison writeup)
+- Phase D (distill) — reframed 2026-06-14 as ML-as-oracle: the model is a
+  research instrument for finding rule/threshold structure to feed the rule
+  layer via the existing replay-calibration gate, NOT a "GBDT → rule list to
+  ship." It stays inside "no model ships." See TODO.md "Phase D — REFRAMED".
+- Phase E (honest comparison writeup) — DONE; `docs/findings/ml-classifier-2026-06-13.md`.
 - Shipping a model to production (deferred until a ship-decision)
 - Lead-time-aware inputs (the replay CSV is lead-time-0; widening to
   lead-D is a follow-up per the handoff)
