@@ -182,6 +182,16 @@ def test_split_by_year_partitions_correctly(tmp_path: Path):
     assert split.calibration.year.tolist() == [2022, 2022, 2022]
     assert split.test.year.tolist() == [2023, 2023, 2023]
 
+    # Anti-leakage contract: no calendar day may appear in more than one
+    # split. The year-list asserts above imply this, but pin it directly so
+    # a future refactor of the split logic can't silently overlap train/test.
+    train_days = set(split.train.day)
+    cal_days = set(split.calibration.day)
+    test_days = set(split.test.day)
+    assert train_days.isdisjoint(test_days)
+    assert train_days.isdisjoint(cal_days)
+    assert cal_days.isdisjoint(test_days)
+
 
 def test_split_by_year_raises_on_empty_train():
     """An empty train set (e.g. all data in 2023, train-until=2022) must
@@ -226,6 +236,41 @@ def test_split_by_year_raises_on_empty_test():
     )
     with pytest.raises(ValueError, match="empty test set"):
         split_by_year(data, train_until_year=2022, test_from_year=2023, calibration_year=None)
+
+
+def test_split_by_year_drops_train_all_nan_column():
+    """A feature that is 100% NaN in the *train* rows must be dropped from
+    every split — train, test, and feature_names — even though it's
+    populated in the test rows. This is the ICON-era block-missing guard:
+    the model can't learn from a column it never sees at fit time, so it
+    must not be allowed to score on it in test either (that would be a
+    train/test feature-distribution mismatch, not honest discrimination)."""
+    n = 6  # 4 train years' rows below + 2 test rows
+    years = pd.Series([2020, 2021, 2022, 2022, 2023, 2023])
+    months = pd.Series([5, 5, 5, 6, 5, 6])
+    days = pd.Series([f"{y}-{m:02d}-15" for y, m in zip(years, months)])
+    X = pd.DataFrame(np.zeros((n, len(FEATURE_COLS))), columns=list(FEATURE_COLS))
+    # Make one feature all-NaN in the train rows (years ≤ 2022) but real in
+    # the test rows (≥ 2023) — the canonical ICON-era block-missing shape.
+    victim = "foehn_delta_hpa"
+    X.loc[years <= 2022, victim] = np.nan
+    X.loc[years >= 2023, victim] = 1.5
+    y_str = np.array(["go", "maybe", "no_go", "go", "maybe", "no_go"], dtype=object)
+    data = ReplayDataset(
+        X=X, y_str=y_str, y_int=encode_labels(y_str),
+        day=days, month=months, year=years, era=pd.Series(["ifs"] * 4 + ["icon"] * 2),
+        feature_names=FEATURE_COLS,
+    )
+
+    split = split_by_year(data, train_until_year=2022, test_from_year=2023, calibration_year=None)
+
+    assert victim not in split.train.feature_names
+    assert victim not in split.test.feature_names
+    assert victim not in split.train.X.columns
+    assert victim not in split.test.X.columns
+    # The 10 surviving ICON-stable features are untouched.
+    assert split.train.X.shape[1] == len(FEATURE_COLS) - 1
+    assert split.test.X.shape[1] == len(FEATURE_COLS) - 1
 
 
 def test_binarise_thermal_maybe_maps_to_one():

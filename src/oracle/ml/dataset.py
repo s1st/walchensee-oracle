@@ -237,15 +237,14 @@ def split_by_year(
     zero-row fits are debugging traps.
 
     Also drops any feature column that is 100% NaN in the *training*
-    rows: the ICON-era block-missing features (BLH, soil moisture, 850
-    hPa wind, 700 hPa wind) are absent from every IFS-era day, and
-    HGB's histogram binner crashes on a column with zero non-NaN values
-    ("window shape cannot be larger than input array shape"). The test
-    rows have these features populated, so the dropped columns are
-    lost for the test prediction too — the spike has to fall back on
-    the ICON-stable features (pressure delta, solar, dew-spread, LI,
-    cloud cover) for the head-to-head. Confirmed in practice with the
-    1,912-row replay: 5 of 19 features are dropped, 14 remain.
+    rows, as a defensive guard: a column with zero non-NaN values at fit
+    time can't be learned from, and HGB's histogram binner crashes on it
+    ("window shape cannot be larger than input array shape"). Since
+    c1337e0 the 8 ICON-era-only features (BLH, soil moisture, 850/700 hPa
+    wind, LI ×2, CAPE, synoptic wind) are no longer in FEATURE_COLS, so
+    the 11 ICON-stable features that remain have no NaNs and this drop is
+    a no-op on the real 1,912-row replay. It still fires (and is tested)
+    for any future feature that is block-missing in the train era.
     """
     years = data.year.to_numpy()
     train_mask = years <= train_until_year

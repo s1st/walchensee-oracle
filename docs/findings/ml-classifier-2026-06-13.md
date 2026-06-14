@@ -140,9 +140,9 @@ the evaluate command was reading the pre-rescore verdicts
 below. The +0.066 number is the rule's actual current performance
 on the same 715 days.
 
-**The discrimination story**: HGB's Peirce of +0.209 means the model's
-thermal/no-thermal binarisation is meaningfully better than the rule
-baseline's +0.017. The McNemar p-value of 3.8e-13 means the difference
+**The discrimination story**: HGB's Peirce of +0.208 means the model's
+thermal/no-thermal discrimination is meaningfully better than the rule
+baseline's +0.066. The McNemar p-value of 3.8 × 10⁻⁸ means the difference
 isn't noise on a 715-day test set — it's a real, reproducible effect.
 
 **The calibration story**: RPS for HGB (0.50) is higher than for
@@ -153,11 +153,27 @@ class_weight='balanced' over-emphasises the minority classes. Logistic
 benefits from the LR-implied softmax being a well-behaved probability
 distribution.
 
-**The cost story**: at the project's default r=2 (missed session is
-2× a wasted drive), HGB's mean cost ties the rule baseline
-(0.517 = 0.517) and logistic beats it (0.493 vs 0.517). Logistic is
-strictly better on every metric simultaneously — the strongest
-single-model result in the spike.
+**The cost story** (read this carefully — the verdict depends on the
+decision rule, and the two framings disagree): mean cost is the one
+metric where the answer flips depending on how you turn an ML
+probability vector into a categorical verdict.
+
+- **Under plain argmax** (pick the highest-probability class — the
+  headline table above), at the project's default r=2 the **rule
+  baseline is actually the cheapest**: rule 0.517, HGB 0.534, logistic
+  0.545. On this decision rule the ML models lose on cost.
+- **Under the Bayes-optimal decision rule** (argmin expected cost per
+  sample, see the cost-ratio sweep below), at r=2 **both ML models
+  beat the rule**: HGB 0.503, logistic 0.490, rule 0.517.
+
+This is the one place the comparison is *not* strictly
+apples-to-apples: the Bayes framing gives each ML model a cost-aware
+threshold tuned per cost ratio, while the rule keeps its fixed
+categorical verdicts and cannot be re-thresholded. So the honest
+summary is: **logistic (and HGB) win on Peirce, HSS, accuracy, and
+hard-error rate under any decision rule** — but their *cost* advantage
+is contingent on Bayes-optimal thresholding. Do not claim ML is "better
+on every metric simultaneously"; on argmax cost it is not.
 
 ## Cost-ratio sweep (the new contribution)
 
