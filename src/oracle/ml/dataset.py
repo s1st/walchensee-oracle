@@ -34,29 +34,37 @@ from oracle.knowledge.rules import SIGNAL_ORDER, Signal
 # the absolute pressures are kept for completeness but are collinear with
 # the deltas (Munich - Innsbruck = thermik_delta, etc.). HGB won't split
 # on the redundant ones, but keeping them makes the schema inspectable.
+# All 5 are ICON-stable: IFS HRES exposes MSL pressure at the same
+# Munich / Innsbruck / Bolzano stations across both eras.
 PRESSURE_COLS: tuple[str, ...] = (
     "munich_hpa", "innsbruck_hpa", "bolzano_hpa",
     "thermik_delta_hpa", "foehn_delta_hpa",
 )
 
-# Meteo pillar — 15 features. Includes the block-missing ICON-era signals
-# (BLH, soil moisture, synoptic_wind) that are NaN pre-2022-11-24.
-# HistGradientBoostingClassifier handles NaN natively.
+# Meteo pillar — 6 ICON-stable features. Deliberately excludes the
+# 8 ICON-era-only signals (`synoptic_wind_knots`, `max_boundary_layer_height_m`,
+# `soil_moisture_m3m3`, `max_lifted_index`, `min_lifted_index`, `max_cape_j_kg`,
+# `wind_850_direction_at_peak_deg`, `max_wind_700_knots`) that the
+# Open-Meteo archive only exposes from 2022-11-24 onward. Including them
+# in the model would mean training on IFS-era rows where they're 70-100%
+# NaN and testing on ICON-era rows where they have real values — a
+# distribution shift that conflates "the model learned the right
+# patterns" with "the model learned to use new ICON features." The
+# research doc §3.8 calls this out as a known confound; the user
+# flagged it during review ("are we sure this is a good split?") and
+# chose the cleaner alternative: restrict the model to features
+# measured in BOTH eras. Cost: 8 potentially-useful features are
+# dropped. Benefit: train and test have the same feature distribution;
+# the test Peirce is a clean measure of discrimination on a stable
+# feature set, not a mixture of discrimination + era generalisation.
+# Schema: 6 ICON-stable meteo features used by the model.
 METEO_COLS: tuple[str, ...] = (
     "overnight_cloud_cover_pct",
     "morning_solar_radiation_wm2",
-    "synoptic_wind_knots",
     "min_dew_point_spread_c",
-    "max_boundary_layer_height_m",
-    "soil_moisture_m3m3",
     "rained_yesterday",          # bool → cast to int
     "yesterday_precipitation_mm",
-    "max_lifted_index",
-    "min_lifted_index",
-    "max_cape_j_kg",
     "max_daytime_low_cloud_pct",
-    "wind_850_direction_at_peak_deg",
-    "max_wind_700_knots",
 )
 
 # Valid target columns on the replay CSV. All three are ground-truth

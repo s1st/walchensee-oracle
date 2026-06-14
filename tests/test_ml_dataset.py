@@ -83,7 +83,7 @@ def test_load_replay_csv_returns_aligned_dataset(tmp_path: Path):
     ds = load_replay_csv(csv)
     assert isinstance(ds, ReplayDataset)
     assert ds.n_rows == 6   # 3 months × 2 days
-    assert ds.n_features == 19
+    assert ds.n_features == 11   # 5 pressure + 6 ICON-stable meteo (8 ICON-era-only features excluded)
     # day / month / year / era aligned to X
     assert len(ds.day) == ds.n_rows
     assert len(ds.month) == ds.n_rows
@@ -196,7 +196,7 @@ def test_split_by_year_raises_on_empty_train():
         "storm_suspected": [False, False, False],
     })
     data = ReplayDataset(
-        X=pd.DataFrame(np.zeros((3, 19)), columns=FEATURE_COLS),
+        X=pd.DataFrame(np.zeros((3, 11)), columns=FEATURE_COLS),
         y_str=np.array(["go", "maybe", "no_go"], dtype=object),
         y_int=encode_labels(["go", "maybe", "no_go"]),
         day=df["day"], month=df["month"], year=df["year"], era=df["era"],
@@ -218,7 +218,7 @@ def test_split_by_year_raises_on_empty_test():
         "storm_suspected": [False, False],
     })
     data = ReplayDataset(
-        X=pd.DataFrame(np.zeros((2, 19)), columns=FEATURE_COLS),
+        X=pd.DataFrame(np.zeros((2, 11)), columns=FEATURE_COLS),
         y_str=np.array(["go", "maybe"], dtype=object),
         y_int=encode_labels(["go", "maybe"]),
         day=df["day"], month=df["month"], year=df["year"], era=df["era"],
