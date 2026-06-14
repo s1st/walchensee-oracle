@@ -364,6 +364,66 @@ deployed as a fallback or shadow-mode service alongside the rule
 baseline, not a replacement. The current rule layer remains the
 production classifier.
 
+## Phase D — distillation outcome (2026-06-14)
+
+Phase D asked: *is there structure the model found that the rule layer
+should adopt?* Reframed (TODO.md) as **ML-as-oracle** — the model is a
+research instrument that surfaces rule/threshold hypotheses, validated
+through the existing replay-calibration gate, fully inside "no model
+ships." Three cuts (full detail in `ml-distill-cut{1,2,3}-2026-06-14.md`):
+
+- **Cut 1 (logistic coefficients vs thresholds).** The fire/no-fire
+  decision is **linear**; the edge is threshold mis-placement, not exotic
+  structure. Each standardized coefficient was cross-checked against its
+  raw correlation — the check **rejected 2 of 4 surprising signs as
+  collinearity artifacts** (`min_dew_point_spread_c`: rule's "drier =
+  better" is correct; `rained_yesterday`: not a signal). Robust findings:
+  `thermik_delta_hpa` direction looks inverted vs its −1.0 soft-veto;
+  cloud/dew/solar over-veto.
+- **Cut 2 (interaction ablation).** Toggling *only* cross-feature
+  interactions (linear vs additive-HGB `interaction_cst='no_interactions'`
+  vs full HGB): interactions add **+0.088 Peirce on 3-class** (full +0.208
+  vs additive +0.120) — real and large — **but vanish on binary thermal**
+  (full +0.288 ≈ linear +0.286). So HGB's interaction edge lives in the
+  **GO-vs-MAYBE strength** distinction, not the fire/no-fire veto the rules
+  make. Harvesting it ⇒ a graded-strength model, **not** a conjunctive veto
+  rule (the architectural move the ship/no-ship call already flagged). Bonus:
+  `foehn_delta_hpa` is **inverted-U** (fire peaks mid-range, drops at both
+  extremes) — a non-monotonic signal both rules and linear miss; gate
+  candidate, unproven.
+- **Cut 3 (replay-gate validation).** Offender list confirms the rule
+  layer **over-vetoes systematically** — its mean cost (0.535) is worse
+  than the always-GO constant (0.263). `thermik` is the worst (1077 of
+  1150 vetos false). Tuning experiments below.
+
+**Net Phase D verdict:** distillation yields **no clean new conjunctive
+rule**. The harvestable signal is threshold tuning (per-rider cost/skill
+tradeoffs, not free wins), and the genuine ML-only edge is strength
+grading — an architecture decision, not a rule. **This reinforces the
+no-ship call from a second direction.** No production threshold was
+changed; all experiments reverted, `config.py` clean.
+
+### Cut 3 gate experiments (resimulated, 1912 replay days)
+
+| candidate | change | Peirce | cost (r=2) | acc | verdict |
+|---|---|---:|---:|---:|---|
+| *baseline* | production | +0.063 | 0.535 | 44.0% | — |
+| `thermik` | veto off (−1.0→−99) | +0.051 | 0.503 | 45.0% | cost/skill tradeoff |
+| `daytime_clouds` | loosen 75→88 | +0.055 | 0.533 | 43.8% | loosening hurts — leave |
+| **`overnight_cooling`** | **veto off (95→100)** | **+0.072** | **0.517** | **45.1%** | **Pareto win — ship candidate** |
+| `dew_point_spread` | loosen 2.5→1.5 | +0.050 | 0.513 | 44.5% | cost/skill tradeoff |
+| `solar_radiation` | loosen 380→300 | +0.061 | 0.533 | 44.0% | neutral |
+
+**One clean shippable result:** removing the `overnight_cooling` SOFT veto
+improves Peirce, cost **and** accuracy together. It fired 478 vetos (424
+false-positive); partial loosening only helps cost (it's a soft veto that
+mattered only as the 2nd veto tipping a day down — so the skill gain needs
+full removal, not a threshold tweak). Every other candidate is a per-rider
+cost/skill tradeoff or neutral. **Not yet committed to production** — needs
+the standard one-change-per-commit validation + McNemar significance on the
++0.063→+0.072 Peirce gain before shipping. All experiments reverted;
+`config.py` clean.
+
 ## Reproduction
 
 ```bash

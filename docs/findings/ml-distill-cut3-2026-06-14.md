@@ -69,15 +69,57 @@ noise.
   vetoes; a rider who hates wasted drives (low r) keeps them. This is the
   per-rider-config conversation the ship/no-ship call already deferred.
 
-## Still open (next gate runs)
-- [ ] Experiment 2 — loosen `daytime_clouds` / `overnight_cooling`
-      (Cut 1 #2, corrected direction): do they show the same cost/skill
-      tradeoff or a cleaner win? One change per commit.
-- [ ] Experiment 3 — `dew_point_spread` / `solar_radiation` threshold
-      (both over-veto ~800 FP with correct direction): how far can the
-      threshold relax before skill drops?
-- [ ] Cut 2 — interactions (surrogate tree / SHAP on HGB): the linear +
-      single-threshold story leaves HGB's +0.142 Peirce edge unexplained.
+## Experiments 2–3 — cloud / dew / solar loosening (each isolated from baseline)
+
+Each candidate loosened independently (config reverted between runs):
+
+| candidate | change | Peirce | cost | acc | verdict |
+|---|---|---:|---:|---:|---|
+| *baseline* | production | +0.063 | 0.535 | 44.0% | — |
+| `daytime_clouds` | 75→88 | +0.055 | 0.533 | 43.8% | loosening **hurts** — leave |
+| **`overnight_cooling`** | **95→100 (off)** | **+0.072** | **0.517** | **45.1%** | **Pareto win** |
+| `dew_point_spread` | 2.5→1.5 | +0.050 | 0.513 | 44.5% | cost/skill tradeoff |
+| `solar_radiation` | 380→300 | +0.061 | 0.533 | 44.0% | neutral |
+
+### `overnight_cooling` — the one clean win
+Removing this SOFT veto improves **all three** metrics simultaneously
+(Peirce +0.063→+0.072, cost 0.535→0.517, acc 44.0→45.1%). It fired 478
+vetos, **424 false-positive**. Mechanism note: intermediate thresholds
+(97, 98) improve only *cost* (0.531, 0.530), not Peirce — the skill gain
+appears only at full removal (100). Because it's a SOFT veto under
+`SOFT_VETO_BAR=2`, it only ever changed a verdict when it was the **2nd**
+soft veto tipping a day down; so loosening the threshold is the wrong
+lever — the rule's veto is net-harmful and should be **removed**, not
+re-tuned. The predictive content of overnight cloud lives in the 50–71%
+mid-range (thermal mean 52% vs no-go 71%), not the >95% tail the rule
+actually vetoes — same "veto fires in the wrong place" pattern as the
+cloud finding in Cut 1/§2.
+
+**This is the single shippable distillation result.** It is **not yet
+committed** — before shipping it needs the standard treatment: one change
+per commit, McNemar significance on the +0.063→+0.072 gain, and a check it
+isn't overfitting the replay (the cost improvement 0.535→0.517 is the more
+robust signal; the Peirce gain is small and unverified for significance).
+
+### The others
+- `daytime_clouds`: loosening *hurts* Peirce — its 75% veto is closer to
+  right than the binary surrogate's 87.5 split suggested (the surrogate was
+  fitting fire/no-fire; the soft-veto-in-aggregate context differs). Leave.
+- `dew_point_spread`: same cost/skill tradeoff shape as thermik.
+- `solar_radiation`: neutral — the 380 threshold is fine; its over-veto
+  count is mostly redundant with cloud.
+
+## Still open
+- [ ] Ship `overnight_cooling` removal via a validated one-change commit
+      (McNemar + overfit check) — pending user sign-off (production rule).
+- [ ] `foehn_delta_hpa` inverted-U (Cut 2): needs a *non-monotonic* rule
+      (low-Δ caution + existing high-Δ veto), not a single-threshold test.
+- [ ] Aggregator-level lever: the systematic over-veto + the soft-veto
+      tipping mechanism both point at veto-aggressiveness / graded signals
+      as the bigger structural opportunity (= the strength-grading edge
+      Cut 2 isolated). Architectural; scope deliberately.
+
+Cut 2 (interactions) is complete — see `ml-distill-cut2-2026-06-14.md`.
 
 ## Reproduction
 ```bash

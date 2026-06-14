@@ -132,8 +132,13 @@ Order of attack (cheap → heavy):
       tradeoff, NOT a clean ship — cost 0.535→0.503 but Peirce +0.063→0.050,
       no Pareto sweet spot. Reproduces the project's per-rider-cost tension.
       Also corrected Cut 1 #2: cloud vetoes OVER-fire (loosen, not tighten).
+      Exp 2-3 (cloud/dew/solar loosen) done: daytime_clouds loosening hurts;
+      dew/solar are tradeoff/neutral. ONE CLEAN PARETO WIN: removing the
+      `overnight_cooling` SOFT veto (95→off) improves Peirce (+0.063→+0.072),
+      cost (0.535→0.517) AND acc (44→45.1) together — 478 vetos, 424 FP, and
+      it only ever mattered as the 2nd soft veto, so remove not re-tune.
       No production threshold changed; config.py reverted clean.
-      Still open: Exp 2 (cloud loosen), Exp 3 (dew/solar), and an
-      aggregator-level veto-aggressiveness lever (bigger than one-threshold).
-      Ship gate unchanged: only replay-validated Pareto improvements, one
-      change per commit.
+      Still open: SHIP overnight_cooling removal via a validated one-change
+      commit (McNemar + overfit check, pending user sign-off); foehn_delta
+      inverted-U needs a non-monotonic rule; aggregator-level veto-
+      aggressiveness lever (the strength-grading edge Cut 2 isolated).
