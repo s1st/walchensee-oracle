@@ -802,12 +802,20 @@ _CSV_COLUMNS = [
     # ground truth (Urfeld peak)
     "peak_avg_knots", "peak_gust_knots",
     "first_ignition_minute", "samples_above_8kt", "samples_above_12kt",
-    "actual_verdict",
+    # Three ground-truth target scales. The peak label is the simplest
+    # (max avg knots → go/maybe/no_go); duration adds a "wind blew for an
+    # hour" gate; thermal further requires thermal character (mid-day
+    # onset + coherent gusts) so foehn/frontal days don't pollute the
+    # positive class. Phase A/C: the ML spike trains on `actual_verdict_thermal`.
+    "actual_verdict", "actual_verdict_duration", "actual_verdict_thermal",
     # storm flag: True = gust-front-contaminated label, quarantined from calibration.
     # Kept in the export (not dropped) so the ML notebook can mask or model it.
     "storm_suspected",
     # what the rule layer said (for benchmarking ML against the heuristic)
     "forecast_overall", "forecast_overall_resimulated",
+    # date metadata for season filter + year-blocked CV + era-aware sanity
+    # checks. `era` is "ifs" or "icon" (see `era_of` and `config.ICON_ERA_START`).
+    "month", "year", "era",
 ]
 
 
@@ -822,8 +830,17 @@ def _row_for(record: dict) -> dict | None:
     peak = machine.get("peak_avg_knots")
     if peak is None:
         return None
+    # day → month / year / era for the season filter and year-blocked CV.
+    # `_iter_window_days` only yields iso strings, so the parse is safe in
+    # practice; tolerate a malformed field by leaving the metadata empty
+    # rather than dropping the row (the row's other columns are still valid).
+    day_iso = record.get("day")
+    try:
+        day_obj = date.fromisoformat(day_iso) if day_iso else None
+    except (TypeError, ValueError):
+        day_obj = None
     return {
-        "day": record.get("day"),
+        "day": day_iso,
         "munich_hpa": p.get("munich_hpa"),
         "innsbruck_hpa": p.get("innsbruck_hpa"),
         "bolzano_hpa": p.get("bolzano_hpa"),
@@ -848,10 +865,17 @@ def _row_for(record: dict) -> dict | None:
         "first_ignition_minute": _ignition_minute_of_day(machine.get("first_ignition_at")),
         "samples_above_8kt": machine.get("samples_above_8kt"),
         "samples_above_12kt": machine.get("samples_above_12kt"),
+        # Three target scales. Duration/thermal need the buoy day-curve; a
+        # record with only the peak reading yields None → empty CSV cell.
         "actual_verdict": actual_verdict(peak),
+        "actual_verdict_duration": actual_verdict_duration(machine),
+        "actual_verdict_thermal": actual_verdict_thermal(machine),
         "storm_suspected": storm_suspected(record),
         "forecast_overall": record.get("overall"),
         "forecast_overall_resimulated": record.get("overall_resimulated"),
+        "month": day_obj.month if day_obj else None,
+        "year": day_obj.year if day_obj else None,
+        "era": era_of(day_iso) if day_iso else None,
     }
 
 

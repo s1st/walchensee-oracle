@@ -676,3 +676,155 @@ def test_export_csv_replayed_emits_joined_rows(tmp_path: Path):
     assert rows[0]["day"] == "2021-06-15"
     assert rows[0]["peak_avg_knots"] == "13.5"
     assert rows[0]["forecast_overall"] == "no_go"
+
+
+# --- Phase A: training-dataset export ---------------------------------------
+# The ML spike needs the three target scales (peak / duration / thermal) so the
+# notebook can pick the right one without re-running the buoy gates, plus
+# month / year / era metadata for the season filter, year-blocked CV, and the
+# era-aware sanity check (Hollmann 2023 / Roberts 2017: random k-fold on
+# autocorrelated daily weather is the wrong way to validate this corpus).
+# See docs/findings/ml-research-2026-06-13.md §3.2 + §3.4.
+
+def _phase_a_record(day: str, *, peak: float, samples_above_8kt: int | None,
+                    samples: list[dict] | None,
+                    samples_above_12kt: int | None = None) -> dict:
+    """Build a record with the shape `_row_for` expects.
+
+    `samples_above_8kt=None` simulates a legacy record that has only the
+    peak reading (no buoy day-curve, no per-bucket count) — used to verify
+    the duration/thermal target columns fall back cleanly to empty cells
+    instead of crashing the export.
+
+    When `samples_above_8kt` is set but `samples` is not, the legacy
+    fallback in `actual_verdict_duration` looks at `samples_above_12kt`,
+    so the helper defaults that to a matching value when the caller
+    hasn't supplied a real curve.
+    """
+    machine: dict = {"peak_avg_knots": peak}
+    if samples_above_8kt is not None:
+        machine["samples_above_8kt"] = samples_above_8kt
+        # Default the 12-kt count to the same value so the legacy fallback
+        # path yields a real verdict; callers can override or leave None.
+        machine["samples_above_12kt"] = (
+            samples_above_12kt if samples_above_12kt is not None else samples_above_8kt
+        )
+    elif samples_above_12kt is not None:
+        # Edge case: only the 12-kt count survives (rare). Keep it.
+        machine["samples_above_12kt"] = samples_above_12kt
+    if samples is not None:
+        machine["samples"] = samples
+    return {
+        "day": day,
+        "overall": "go",
+        "verdicts": [],
+        "inputs": _full_inputs(day=day),
+        "ground_truth": {"machine": machine, "human": None},
+    }
+
+
+def test_export_csv_includes_three_target_scales(tmp_path: Path):
+    """All three ground-truth label scales are emitted as separate columns.
+
+    The peak label only needs `peak_avg_knots`; duration/thermal additionally
+    need the buoy day-curve (or the legacy `samples_above_8kt` fallback).
+    Both columns must be present in the header even when empty, so the
+    ML notebook can address them by name without conditional loading.
+    """
+    store = LocalRunStore(tmp_path)
+    store.write("2026-04-22", _phase_a_record(
+        "2026-04-22", peak=14.0, samples_above_8kt=18, samples=None,
+    ))
+    out = tmp_path / "out.csv"
+    export_csv(out, store=store)
+    with out.open() as f:
+        rows = list(csv.DictReader(f))
+    row = rows[0]
+    # Peak label is always populated when the row exists at all (peak is
+    # the row's existence gate in `_row_for`). Legacy fallback (no raw
+    # curve) yields "go" because samples_above_8kt=18 ≥ the 6-sample
+    # ignition bar.
+    assert row["actual_verdict"] == "go"
+    assert row["actual_verdict_duration"] == "go"
+    assert row["actual_verdict_thermal"] == "go"  # legacy record → keep duration verdict
+
+    # Legacy record without samples_above_8kt → duration/thermal targets
+    # are empty (the cells exist but the value is the empty string from
+    # csv.DictWriter's None handling).
+    store.write("2022-08-15", _phase_a_record(
+        "2022-08-15", peak=5.0, samples_above_8kt=None, samples=None,
+    ))
+    export_csv(out, store=store)
+    with out.open() as f:
+        rows = list(csv.DictReader(f))
+    legacy = next(r for r in rows if r["day"] == "2022-08-15")
+    assert legacy["actual_verdict"] == "no_go"
+    assert legacy["actual_verdict_duration"] == ""
+    assert legacy["actual_verdict_thermal"] == ""
+
+
+def test_export_csv_thermal_label_rejects_foehn_onset(tmp_path: Path):
+    """Thermal label downgrades a day that fired (duration=go) but ignited
+    before the daytime window — a foehn/foehn-flank signature, not a
+    thermal session. Confirms the three target scales actually differ
+    on a real case, not just coexist as duplicate columns.
+    """
+    # Wind already blowing at 06:00 — same strong sustained wind as a
+    # successful thermal, but pre-ignition onset → foehn, not thermal.
+    samples = _timed_curve("06:00", [12] * 6, gust_factor=1.4)
+    store = LocalRunStore(tmp_path)
+    store.write("2023-06-15", _phase_a_record(
+        "2023-06-15", peak=14.0, samples_above_8kt=6, samples=samples,
+    ))
+    out = tmp_path / "out.csv"
+    export_csv(out, store=store)
+    with out.open() as f:
+        rows = list(csv.DictReader(f))
+    row = rows[0]
+    assert row["actual_verdict"] == "go"           # peak alone
+    assert row["actual_verdict_duration"] == "go"  # ~1 h sustained
+    assert row["actual_verdict_thermal"] == "no_go"  # onset gate rejected it
+
+
+def test_export_csv_emits_month_year_era_metadata(tmp_path: Path):
+    """Date metadata columns let the ML notebook apply the season filter
+    and the year-blocked CV split without re-parsing `day`.
+
+    `era` is "ifs" before config.ICON_ERA_START (2022-11-24) and "icon"
+    from it — mirrors `era_of()`. Verified explicitly for both boundaries.
+    """
+    store = LocalRunStore(tmp_path)
+    for iso in ("2021-07-04", "2022-11-23", "2022-11-24", "2026-04-22"):
+        store.write(iso, _phase_a_record(iso, peak=12.0, samples_above_8kt=6, samples=None))
+    out = tmp_path / "out.csv"
+    export_csv(out, store=store)
+    with out.open() as f:
+        rows = list(csv.DictReader(f))
+    by_day = {r["day"]: r for r in rows}
+    assert by_day["2021-07-04"]["month"] == "7" and by_day["2021-07-04"]["year"] == "2021"
+    assert by_day["2021-07-04"]["era"] == "ifs"
+    # Day before the ICON flip — still IFS.
+    assert by_day["2022-11-23"]["era"] == "ifs"
+    # ICON-ERA_START itself — first ICON day (boundary is inclusive per `era_of`).
+    assert by_day["2022-11-24"]["era"] == "icon"
+    assert by_day["2026-04-22"]["month"] == "4" and by_day["2026-04-22"]["era"] == "icon"
+
+
+def test_export_csv_months_filter_excludes_off_season(tmp_path: Path):
+    """`export_csv(months=...)` filters at the iteration layer; the new
+    metadata columns don't change that — verified by row count and by
+    the months on the kept rows.
+    """
+    store = LocalRunStore(tmp_path)
+    for iso in ("2023-04-15", "2023-06-15", "2023-10-31", "2023-12-15", "2024-02-15"):
+        store.write(iso, _phase_a_record(iso, peak=12.0, samples_above_8kt=6, samples=None))
+    out = tmp_path / "out.csv"
+    n = export_csv(out, store=store, months=frozenset({4, 5, 6, 7, 8, 9, 10}))
+    assert n == 3
+    with out.open() as f:
+        rows = list(csv.DictReader(f))
+    months = sorted(int(r["month"]) for r in rows)
+    assert months == [4, 6, 10]
+    # No off-season row leaked through the filter.
+    days = {r["day"] for r in rows}
+    assert "2023-12-15" not in days and "2024-02-15" not in days
