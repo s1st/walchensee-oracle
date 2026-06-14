@@ -101,13 +101,17 @@ reproduce a 200-tree ensemble's full +0.142 Peirce. We harvest
 layer inherited HGB's number.
 
 Order of attack (cheap → heavy):
-- [ ] **Cut 1 (logistic coefficients):** read the 11 signed standardized
-      LR weights — which features carry the discrimination, and in which
-      direction. Compare each against the current `config.py` threshold
-      for that signal. Output: a table of (feature, LR weight sign/mag,
-      current threshold, "does the rule use this signal consistently?").
-      This alone likely explains most of the edge as *threshold
-      mis-placement* → feeds the calibration backlog directly.
+- [x] **Cut 1 (logistic coefficients):** DONE 2026-06-14 →
+      `docs/findings/ml-distill-cut1-2026-06-14.md`. Binary-thermal LR on
+      the same split, standardized coefs cross-checked vs raw correlation
+      (the raw-corr check rejected 2 of 4 surprising signs as collinearity
+      artifacts — dew-spread + rained_yesterday; rule sign was right).
+      Robust findings: (1) `thermik_delta_hpa` direction looks inverted vs
+      the −1.0 soft-veto (headline; needs offender-list check, label-def
+      caveat); (2) daytime(75)/overnight(95) cloud vetoes too lenient →
+      tighten; (3) absolute pressure levels carry signal the delta-only
+      rules discard. Linear edge ≈ threshold mis-placement; binary LR test
+      acc 0.642 ≪ HGB → interactions unexplained, Cut 2 warranted.
 - [ ] **Cut 2 (interactions, only if Cut 1 leaves gain unexplained):**
       shallow surrogate tree (depth ≤3) and/or SHAP on HGB to find
       conjunctions the rules treat independently (e.g. "low Δp is
