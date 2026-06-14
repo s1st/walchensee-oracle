@@ -498,18 +498,24 @@ def evaluate(
         calibration_year=None,
     )
 
-    # Rule baseline = `forecast_overall_resimulated` if present, else
-    # `forecast_overall`. These are the same field in the project's
-    # current schema; the resimulated variant is the post-threshold-tune
-    # version that the dashboard's 'Re-scored' strip uses.
-    baseline_col = (
-        "forecast_overall_resimulated" if "forecast_overall_resimulated" in data.X.columns
-        else "forecast_overall"
-    )
-    # The forecast columns aren't part of FEATURE_COLS, so re-read them
-    # from the source CSV directly.
+    # Rule baseline = `forecast_overall_resimulated` if present in the
+    # source CSV, else `forecast_overall`. The resimulated variant is
+    # the post-threshold-tune version (set by `oracle rescore`); using
+    # it keeps the head-to-head apples-to-apples with the dashboard's
+    # 'Re-scored' strip. The check is against the *source* CSV's
+    # columns, not data.X — those are excluded from FEATURE_COLS so
+    # `col in data.X.columns` is always False here.
     import pandas as pd  # type: ignore[import-untyped]
     raw_df = pd.read_csv(csv)
+    if "forecast_overall_resimulated" in raw_df.columns:
+        baseline_col = "forecast_overall_resimulated"
+    elif "forecast_overall" in raw_df.columns:
+        baseline_col = "forecast_overall"
+    else:
+        raise typer.BadParameter(
+            "replay CSV is missing both 'forecast_overall_resimulated' and "
+            "'forecast_overall' — no rule baseline to score against"
+        )
     test_days = set(split.test.day.tolist())
     baseline_rows = raw_df[raw_df["day"].isin(test_days)][["day", baseline_col]].set_index("day")
     baseline_pred_str = [baseline_rows.loc[d, baseline_col] for d in split.test.day]
