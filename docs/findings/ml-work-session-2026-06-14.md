@@ -122,3 +122,10 @@ classifier does not (it only adds a block to future records).
   deliberately.
 - Merged branches `tune-overnight-cooling` and `feat-shadow-ml-classifier`
   can be deleted; `ml-classifier` is now merged.
+- **2026-06-15 follow-up**: re-tested the 11→13 feature restriction that
+  motivated the shadow. Branch `feat-icon-coverage-shadow` retrained the
+  shadow on ICON-only data (2023-2026, n=715) with 13 features (11 stable
+  + BLH + CAPE). Closes 26% of the 2026 dip and improves Peirce
+  +0.0309 on the year-blocked within-ICON holdout. See
+  `docs/findings/ml-icon-coverage-shadow-2026-06-15.md`. Not yet merged
+  to main — user reviews first.

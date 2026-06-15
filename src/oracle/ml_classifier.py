@@ -24,7 +24,10 @@ from dataclasses import dataclass
 
 from oracle.knowledge.ml_coeffs import ML_MODEL
 
-# Human-readable feature labels for the "why" line (EN / DE).
+# Human-readable feature labels for the "why" line (EN / DE). Keys are
+# the column names from the replay CSV / pressure+meteo snapshot dicts.
+# Adding a feature to the bundle requires adding its label here or the
+# scorer falls back to the raw column name.
 _FEATURE_LABEL_EN: dict[str, str] = {
     "munich_hpa": "Munich pressure",
     "innsbruck_hpa": "Innsbruck pressure",
@@ -37,6 +40,8 @@ _FEATURE_LABEL_EN: dict[str, str] = {
     "rained_yesterday": "rained yesterday",
     "yesterday_precipitation_mm": "yesterday rain",
     "max_daytime_low_cloud_pct": "daytime cloud",
+    "max_boundary_layer_height_m": "boundary-layer height",
+    "max_cape_j_kg": "CAPE",
 }
 _FEATURE_LABEL_DE: dict[str, str] = {
     "munich_hpa": "Druck München",
@@ -50,6 +55,8 @@ _FEATURE_LABEL_DE: dict[str, str] = {
     "rained_yesterday": "gestern Regen",
     "yesterday_precipitation_mm": "Regen gestern",
     "max_daytime_low_cloud_pct": "Bewölkung tags",
+    "max_boundary_layer_height_m": "Grenzschichthöhe",
+    "max_cape_j_kg": "CAPE",
 }
 
 _LABEL_EN = {"go": "GO", "maybe": "MAYBE", "no_go": "NO_GO"}

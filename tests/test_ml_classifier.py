@@ -20,6 +20,10 @@ from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureReading, PressureSnapshot
 
 # A real replay day (2026-06-12) whose sklearn output is known-good.
+# Bundle is the 13-feature ICON-only retrain (see
+# docs/findings/ml-icon-coverage-shadow-2026-06-15.md); the two new
+# ICON-coverage features are populated as they'd be in the 2026+
+# production regime.
 _PRESSURE = {
     "munich_hpa": 1023.9, "innsbruck_hpa": 1026.1, "bolzano_hpa": 1024.8,
     "thermik_delta_hpa": -2.2, "foehn_delta_hpa": -1.3,
@@ -28,6 +32,8 @@ _METEO = {
     "overnight_cloud_cover_pct": 91.0, "morning_solar_radiation_wm2": 112.0,
     "min_dew_point_spread_c": 0.4, "rained_yesterday": True,
     "yesterday_precipitation_mm": 2.1, "max_daytime_low_cloud_pct": 100.0,
+    "max_boundary_layer_height_m": 1200.0,
+    "max_cape_j_kg": 0.0,
 }
 
 
@@ -36,9 +42,9 @@ def test_classify_golden_vector():
     ml = classify(_PRESSURE, _METEO)
     assert ml is not None
     assert ml.verdict == "maybe"
-    assert ml.probabilities["go"] == pytest.approx(0.195, abs=1e-3)
-    assert ml.probabilities["maybe"] == pytest.approx(0.540, abs=1e-3)
-    assert ml.probabilities["no_go"] == pytest.approx(0.265, abs=1e-3)
+    assert ml.probabilities["go"] == pytest.approx(0.106, abs=1e-3)
+    assert ml.probabilities["maybe"] == pytest.approx(0.665, abs=1e-3)
+    assert ml.probabilities["no_go"] == pytest.approx(0.228, abs=1e-3)
 
 
 def test_probabilities_sum_to_one_and_verdict_is_argmax():
@@ -144,7 +150,7 @@ def test_dashboard_renders_ml_card(tmp_path, monkeypatch):
 
     en = client.get("/?day=2026-06-12&lang=en").text
     assert "ML Classifier" in en and "experimental" in en
-    assert "Learned model" in en and "maybe 54%" in en
+    assert "Learned model" in en and "maybe 67%" in en
     assert "ML classifier (exp.)" in en  # 30-day strip row
     de = client.get("/?day=2026-06-12&lang=de").text
     assert "Gelerntes Modell" in de
