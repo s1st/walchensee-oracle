@@ -28,7 +28,7 @@ should be retrained.
       (it does — MeteoSnapshot.to_dict includes them)
 - [x] Write `docs/findings/ml-icon-coverage-shadow-2026-06-15.md`
 - [x] `pytest` 248/248, `ruff check` clean, `mypy src` clean
-- [ ] Commit + push branch (not merged to main — user reviews first)
+- [x] Commit + push branch (not merged to main — user reviews first)
 
 # Deferred from this branch (documented in the writeup)
 - Live A/B between (c) and (d) — two parallel shadow cards
