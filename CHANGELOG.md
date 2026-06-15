@@ -30,6 +30,11 @@ One threshold per commit, so each effect is isolated in the rescore strip.
 - **post_rain_moisture: rained-yesterday veto dropped** (`0405c85`) — wrong on 13 of 17 calibration days; post-frontal days fire fine here. Soil-moisture branch (2/2 correct) kept. Resimulated accuracy 50% → 52%, two full sessions un-stuck from MAYBE
 - **SSE opposing-flow veto gated on 850 hPa speed ≥ 12 kt** (`941c326`) — direction-only veto was 0/4: light SSE drift (3–10 kt) never stopped a session. Accuracy 52% → 57%, NO_GO row shrunk 9 → 5 days
 
+### Shadow ML classifier
+An informational layer that runs alongside the rules without touching `overall`. The 14-rule + severity-tiered aggregator remains the production verdict; the shadow exists to accumulate a live ground-truth log for a future promote decision.
+- **Shadow ML classifier shipped** — multinomial logistic distilled to ~69 floats in pure Python (no sklearn/numpy in either prod image), scored at serialisation time so it is structurally incapable of influencing `overall`. Surfaces as an "experimental" card on the dashboard. (`023cd03`, writeup `docs/findings/ml-shadow-classifier-design-2026-06-14.md`)
+- **11 → 13 feature retrain on ICON-only data** (`bb4f9ed`, writeup `docs/findings/ml-icon-coverage-shadow-2026-06-15.md`) — the original 11-feature schema dropped 8 ICON-coverage columns to avoid a train/test era shift. Of those 8, 6 are 100% NaN even in the ICON era (truly unrecoverable); 2 (`max_boundary_layer_height_m` 45.7%, `max_cape_j_kg` 14.7% in ICON) have signal and map to rules the production layer uses (`boundary_layer_height`, `atmospheric_stability`). Re-trained the shadow on the 715 ICON in-season rows (2023-2026) with the 11 stable + 2 ICON-coverage features. Year-blocked 2025+2026 holdout: ML Peirce +0.094 over rule (vs +0.063 for the 11-feature ICON-only), cost penalty shrinks 4.7× (Δ +0.058 → +0.012). 2026 LOYO fold specifically (n=73, the live regime): +0.021 Peirce over the 11-feature ICON-only, closing 26% of the 2026 dip. Still informational, still doesn't touch `overall`; the shadow-invariant test still passes.
+
 ## Measuring the outcome
 
 ### Capturing ground truth
@@ -61,3 +66,13 @@ forecast rules themselves have only had a handful of thresholds data-fitted
 (`config.py` still flags most as placeholders). The natural next step is using
 the now-corrected 11-kt Actual labels to retune the *forecast* rules against
 them.
+
+The 2026-06-15 shadow retrain is the first step on the *promote* side: a logistic
+trained on the production regime (ICON, 2023-2026, n=715) with the 2 ICON-
+coverage features the rule layer uses. It is still informational — it does not
+touch `overall` — but it's the cleanest read we have on whether the rule layer's
+verdicts track the data ceiling in the production regime, and it closes 26% of
+the 2026 dip. The next decision is whether to (a) let the shadow keep logging
+and revisit at season end, (b) expand the ICON-coverage features as the archive
+exposes more, or (c) start the per-rider cost-thresholding conversation the
+ship/no-ship call already flagged.
