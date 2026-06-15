@@ -9,7 +9,6 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-import numpy as np
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
@@ -505,6 +504,7 @@ def evaluate(
     # 'Re-scored' strip. The check is against the *source* CSV's
     # columns, not data.X — those are excluded from FEATURE_COLS so
     # `col in data.X.columns` is always False here.
+    import numpy as np  # local: [ml] extra isn't installed in production images
     import pandas as pd  # type: ignore[import-untyped]
     raw_df = pd.read_csv(csv)
     if "forecast_overall_resimulated" in raw_df.columns:
