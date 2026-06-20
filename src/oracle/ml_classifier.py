@@ -59,7 +59,7 @@ _FEATURE_LABEL_DE: dict[str, str] = {
     "max_cape_j_kg": "CAPE",
 }
 
-_LABEL_EN = {"go": "GO", "maybe": "MAYBE", "no_go": "NO_GO"}
+_LABEL_DE = {"go": "GO", "maybe": "VIELLEICHT", "no_go": "FLAUTE"}
 
 
 @dataclass(frozen=True)
@@ -140,10 +140,13 @@ def classify(pressure: dict | None, meteo: dict | None) -> MLForecast | None:
 def _reasons(
     verdict: str, probs: dict[str, float], contributions: list[tuple[str, float]]
 ) -> tuple[str, str]:
-    pct = round(probs[verdict] * 100)
+    # The verdict + probability are already shown in the card's headline and
+    # the probs row — don't repeat them here. This line exists only to name
+    # the input measurements that moved the model most, so a reader can see
+    # *why* (and that it reads raw measurements, not the 14 rules).
     arrow = lambda v: "↑" if v > 0 else "↓"  # noqa: E731 — local one-liner
     top_en = ", ".join(f"{arrow(v)} {_FEATURE_LABEL_EN.get(f, f)}" for f, v in contributions)
     top_de = ", ".join(f"{arrow(v)} {_FEATURE_LABEL_DE.get(f, f)}" for f, v in contributions)
-    reason_en = f"Learned model: {pct}% {_LABEL_EN[verdict]} (top factors: {top_en})"
-    reason_de = f"Gelerntes Modell: {pct}% {_LABEL_EN[verdict]} (Hauptfaktoren: {top_de})"
+    reason_en = f"Strongest inputs: {top_en}."
+    reason_de = f"Stärkste Eingabemessgrößen: {top_de}."
     return reason_en, reason_de

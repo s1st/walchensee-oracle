@@ -26,8 +26,13 @@ from fastapi.templating import Jinja2Templates
 
 from oracle.calibration import Report, compile_report
 from oracle.config import PROJECT_FIRST_DAY
-from oracle.calibration import actual_verdict_duration as _actual_verdict_duration
-from oracle.calibration import storm_suspected as _storm_suspected
+from oracle.calibration import (
+    _label_record as _cal_label_record,
+    _empty_confusion as _cal_empty_confusion,
+    actual_verdict_duration as _actual_verdict_duration,
+    constant_baselines as _cal_constant_baselines,
+    storm_suspected as _storm_suspected,
+)
 from oracle.knowledge.rules import SIGNAL_ORDER, Severity, Signal
 from oracle.logger import RunStore, default_store
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
@@ -194,7 +199,10 @@ _UI: dict[str, dict[str, str]] = {
         "verdict_no_go": "FLAUTE",
         "ml_title": "🤖 ML-Klassifikator",
         "ml_experimental": "experimentell",
-        "ml_note": "Ein gelerntes Modell, das parallel zu den Regeln läuft — nicht die offizielle Vorhersage.",
+        "ml_note": "Zweitmeinung eines gelernten Modells, das parallel zu den 14 Regeln läuft. Wir sammeln Daten, um zu sehen, ob es den regelbasierten Ansatz langfristig schlägt. Die drei Werte sind seine Wahrscheinlichkeiten für GO / VIELLEICHT / FLAUTE.",
+        "ml_prob_go": "GO",
+        "ml_prob_maybe": "VIELLEICHT",
+        "ml_prob_no_go": "FLAUTE",
         "for_day": "Für",
         "last_30_days": "Letzte 30 Tage",
         "no_data": "Keine Daten — warte auf die nächste Vorhersage (ca. 08:00 Ortszeit).",
@@ -213,10 +221,16 @@ _UI: dict[str, dict[str, str]] = {
         "stats_sample_size": "Bewertete Tage",
         "stats_accuracy": "Treffergenauigkeit",
         "stats_accuracy_note": "Anteil der Tage, an denen die Vorhersage genau die richtige Kategorie (Session / marginal / kein Wind) getroffen hat.",
+        "stats_ml_header": "ML-Klassifikator (Parallelmodell)",
+        "stats_ml_note": "Dasselbe Tages-Set wie oben, aber Vorhersage = der experimentelle ML-Klassifikator. Treibt nie die offizielle Vorhersage — nur Vergleich.",
         "stats_baseline": "Naiver Vergleich",
         "stats_baseline_note": "Was ein stumpfer „immer dasselbe\"-Tipp (die häufigste Kategorie) träfe. Die Vorhersage muss das schlagen, um nützlich zu sein.",
         "stats_quarantined_note": "Gewittertage aus der Wertung ausgenommen",
         "stats_advanced_label": "Erweiterte Statistik",
+        "stats_advanced_rule_label": "Erweiterte Statistik — Regel-Ebene",
+        "stats_advanced_ml_label": "Erweiterte Statistik — ML (Parallelmodell)",
+        "stats_confusion_rule_header": "Konfusionsmatrix — Regel-Ebene",
+        "stats_confusion_ml_header": "Konfusionsmatrix — ML (Parallelmodell)",
         "stats_confusion_header": "Konfusionsmatrix",
         "stats_confusion_note": "Zeilen = was vorhergesagt wurde, Spalten = was tatsächlich am See passiert ist. Auf der Diagonalen liegen die Treffer.",
         "stats_axis_forecast": "Vorhersage",
@@ -233,6 +247,18 @@ _UI: dict[str, dict[str, str]] = {
         "footer_openmeteo": "Druck- & Wetterdaten via",
         "footer_chat": "Lokaler Wind-Chat (Login bei",
         "footer_chat_suffix": " erforderlich).",
+        "nav_today": "Heute",
+        "nav_history": "Verlauf",
+        "nav_stats": "Statistik",
+        "nav_about": "Erklärung",
+        "history_lead": "30 Tage Vorhersage vs. was am See passiert ist. Klick auf einen Tag fürs Detail.",
+        "stats_lead": "Wie gut das Orakel trifft — und wie viele es lesen.",
+        "about_lead": "Die vierzehn Regeln, mit denen das Orakel aus Druck, Wetter und Live-Messungen eine Thermik-Vorhersage baut.",
+        "about_rules_header": "Die 14 Regeln",
+        "advanced_label_history": "Details — vergangene Vorhersageart",
+        "index_history_link": "30-Tage-Verlauf",
+        "index_stats_link": "Statistik",
+        "index_about_link": "Wie das Orakel funktioniert",
     },
     "en": {
         "strip_forecast": "Forecast",
@@ -269,7 +295,10 @@ _UI: dict[str, dict[str, str]] = {
         "verdict_no_go": "NO GO",
         "ml_title": "🤖 ML Classifier",
         "ml_experimental": "experimental",
-        "ml_note": "A learned model run alongside the rules — not the official verdict.",
+        "ml_note": "A second opinion from a learned model running alongside the 14 rules. We collect data to see whether it beats the rule-based approach over time. The three values are its probabilities for GO / MAYBE / NO GO.",
+        "ml_prob_go": "GO",
+        "ml_prob_maybe": "MAYBE",
+        "ml_prob_no_go": "NO GO",
         "for_day": "For",
         "last_30_days": "Last 30 days",
         "no_data": "No data yet — next scheduled forecast runs at 08:00 CET.",
@@ -288,10 +317,16 @@ _UI: dict[str, dict[str, str]] = {
         "stats_sample_size": "Days scored",
         "stats_accuracy": "Accuracy",
         "stats_accuracy_note": "Share of days where the forecast hit exactly the right bucket (session / marginal / no wind).",
+        "stats_ml_header": "ML classifier (parallel model)",
+        "stats_ml_note": "Same day set as above, but forecast = the experimental ML classifier. Never drives the official verdict — comparison only.",
         "stats_baseline": "Naive baseline",
         "stats_baseline_note": "What a blunt \"always the same\" guess (the most common outcome) would score. The forecast has to beat this to be useful.",
         "stats_quarantined_note": "thunderstorm days excluded from scoring",
         "stats_advanced_label": "Advanced statistics",
+        "stats_advanced_rule_label": "Advanced statistics — rule layer",
+        "stats_advanced_ml_label": "Advanced statistics — ML (parallel model)",
+        "stats_confusion_rule_header": "Confusion matrix — rule layer",
+        "stats_confusion_ml_header": "Confusion matrix — ML (parallel model)",
         "stats_confusion_header": "Confusion matrix",
         "stats_confusion_note": "Rows = what was forecast, columns = what actually happened at the lake. The diagonal holds the hits.",
         "stats_axis_forecast": "Forecast",
@@ -308,6 +343,18 @@ _UI: dict[str, dict[str, str]] = {
         "footer_openmeteo": "Pressure & meteorology via",
         "footer_chat": "Local windsurf community chat (login at",
         "footer_chat_suffix": " required).",
+        "nav_today": "Today",
+        "nav_history": "History",
+        "nav_stats": "Stats",
+        "nav_about": "About",
+        "history_lead": "30 days of forecast vs. what actually happened at the lake. Click a day for the detail.",
+        "stats_lead": "How well the oracle calls it — and how many read it.",
+        "about_lead": "The fourteen rules the oracle uses to turn pressure, weather and live readings into a thermal forecast.",
+        "about_rules_header": "The 14 rules",
+        "advanced_label_history": "Advanced — previous forecast method",
+        "index_history_link": "30-day history",
+        "index_stats_link": "Statistics",
+        "index_about_link": "How the oracle works",
     },
 }
 
@@ -631,8 +678,65 @@ async def _forecast_stats() -> dict | None:
         _stats_at = now
         return _stats
     _stats = _stats_payload(report)
+    _stats["ml"] = _ml_report_payload(report)
     _stats_at = now
     return _stats
+
+
+def _ml_report_payload(report: Report) -> dict:
+    """Shadow ML classifier scored on the *same* day set as the rule report —
+    the apples-to-apples comparison that justifies keeping the shadow model.
+    Reads `ml_classifier.verdict` (written by `forecast_to_dict` since the
+    classifier shipped) against the same ground-truth label and the same
+    storm quarantine as the rule layer, and returns the SAME dict shape as
+    `_stats_payload` (confusion matrix, accuracy, baseline, sensitivity /
+    specificity) so the template can render an identical advanced panel.
+
+    n=0 when no scored day has an ML block yet (early in the project, or
+    before the classifier shipped) — the template renders "—". ML never
+    drives the verdict, so this is observation only.
+    """
+    valid = {s.value for s in SIGNAL_ORDER}
+    confusion = _cal_empty_confusion()
+    store = _store()
+    n = 0
+    for iso in report.days_with_ground_truth:
+        record = store.read(iso)
+        if not record:
+            continue
+        ml = (record.get("ml_classifier") or {}).get("verdict")
+        if ml not in valid:
+            continue
+        actual = _cal_label_record(record, report.label_mode)
+        if actual is None or actual not in valid:
+            continue
+        confusion[ml][actual] += 1
+        n += 1
+    if n == 0:
+        return {"n": 0, "accuracy": None, "baseline_class": None,
+                "baseline_accuracy": None, "quarantined": len(report.quarantined_days),
+                "matrix": [], "axis": [s.value for s in SIGNAL_ORDER],
+                "sensitivity": None, "specificity": None}
+    sens, spec = _binary_rates(confusion)
+    matrix = [
+        {"forecast": f.value,
+         "cells": [confusion[f.value][a.value] for a in SIGNAL_ORDER]}
+        for f in SIGNAL_ORDER
+    ]
+    baselines = _cal_constant_baselines(confusion)
+    best_class = max(baselines, key=lambda k: baselines[k]["accuracy"]) if baselines else None
+    hits = sum(confusion[s.value][s.value] for s in SIGNAL_ORDER)
+    return {
+        "n": n,
+        "accuracy": hits / n,
+        "baseline_class": best_class,
+        "baseline_accuracy": baselines[best_class]["accuracy"] if best_class else None,
+        "quarantined": len(report.quarantined_days),
+        "matrix": matrix,
+        "axis": [s.value for s in SIGNAL_ORDER],
+        "sensitivity": sens,
+        "specificity": spec,
+    }
 
 
 # Tooltip format per language. Kept compact so the browser's native tooltip
@@ -974,6 +1078,24 @@ def _public_view(record: dict | None) -> dict | None:
     return projection
 
 
+def _base_context(request: Request, active: str, lang: str | None = None) -> dict:
+    """Context every page shares: lang, UI strings, nav state, GitHub flag.
+
+    The GitHub repo carries the author's real name (commit authors, LICENSE),
+    so the source link is suppressed on the pseudonymous host (s1st.de) while
+    staying on the real-name face (simon-stieber.de) and in local/dev.
+    """
+    if lang is None:
+        lang = _resolve_lang(request)
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    return {
+        "lang": lang,
+        "t": _UI[lang],
+        "active": active,
+        "show_github": not host.endswith("s1st.de"),
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> Response:
     lang = _resolve_lang(request)
@@ -999,15 +1121,14 @@ async def index(request: Request) -> Response:
         view = "resimulated"
 
     # Warm the cache for every day this request will read (selected + horizon
-    # + 30-day strip + 7-day fallback for `_most_recent`) in one parallel
-    # fan-out, alongside the live-Urfeld fetch. After this gather, every
-    # subsequent `_cached_read` is a hit.
+    # + 7-day fallback for `_most_recent`) in one parallel fan-out, alongside
+    # the live-Urfeld fetch. The 30-day strip moved to /history, so its days
+    # are no longer prefetched here.
     horizon_isos = [(today + timedelta(days=i)).isoformat() for i in range(3)]
-    history_isos = [(today - timedelta(days=i)).isoformat() for i in range(30)]
     fallback_isos = [(today - timedelta(days=i)).isoformat() for i in range(8)]
-    all_isos = horizon_isos + history_isos + fallback_isos + [selected_day.isoformat()]
-    _, live, views, stats = await asyncio.gather(
-        _prefetch_days(all_isos), _fetch_urfeld_live(), _fetch_page_views(), _forecast_stats()
+    all_isos = horizon_isos + fallback_isos + [selected_day.isoformat()]
+    _, live = await asyncio.gather(
+        _prefetch_days(all_isos), _fetch_urfeld_live()
     )
 
     # Fall back to the most-recent-available record only when today's isn't yet
@@ -1026,12 +1147,9 @@ async def index(request: Request) -> Response:
         display_overall = None
         display_verdicts = []
 
-    # The GitHub repo carries the author's real name (commit authors, LICENSE),
-    # so suppress the source link on the pseudonymous host (s1st.de) while
-    # keeping it on the real-name face (simon-stieber.de) and in local/dev.
-    host = (request.headers.get("host") or "").split(":")[0].lower()
-    show_github = not host.endswith("s1st.de")
-
+    # The GitHub flag now lives in _base_context; the index page no longer
+    # renders the 30-day strip or the stats panel (those moved to /history and
+    # /stats), so their data is dropped from this route's context.
     # Shadow ML classifier (experimental extra; independent of the view toggle
     # since it's a single learned prediction, not a rescored rule verdict).
     ml_forecast = None
@@ -1044,40 +1162,98 @@ async def index(request: Request) -> Response:
         }
 
     summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
-    tooltips = _TOOLTIPS_BY_LANG[lang]
-    rule_labels = _LABELS_BY_LANG[lang]
     horizon = _horizon_days(today, lang, selected_day.isoformat(), view)
     is_today = selected_day == today
     historical = None if is_today else _historical_chart_payload(raw)
 
+    ctx = _base_context(request, active="index", lang=lang)
     response = templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
+            **ctx,
             "current": _public_view(raw),
             "display_overall": display_overall,
             "display_verdicts": display_verdicts,
             "view": view,
             "summary": summary,
             "ml_forecast": ml_forecast,
-            "history": _history(today, lang),
             "selected_date_label": _fmt_date(selected_day, lang, "full"),
             "today_iso": today.isoformat(),
             "selected_iso": selected_day.isoformat(),
             "horizon": horizon,
-            "rule_descriptions": tooltips,
-            "rule_labels": rule_labels,
             "live": live,
-            "views": views,
-            "stats": stats,
             "historical": historical,
             "is_today": is_today,
-            "t": _UI[lang],
-            "lang": lang,
-            "show_github": show_github,
         },
     )
     q = request.query_params.get("lang")
     if q in _UI:
         response.set_cookie("lang", q, max_age=365 * 24 * 3600, samesite="lax")
     return response
+
+
+@app.get("/history", response_class=HTMLResponse)
+async def history_page(request: Request) -> Response:
+    """30-day forecast-vs-actual strip. Cells link to /?day=... to inspect a
+    day on the landing page — no in-place SPA swap, just server navigation."""
+    lang = _resolve_lang(request)
+    today = date.today()
+    history_isos = [(today - timedelta(days=i)).isoformat() for i in range(30)]
+    await _prefetch_days(history_isos)
+    selected_iso = request.query_params.get("day") or today.isoformat()
+    ctx = _base_context(request, active="history", lang=lang)
+    response = templates.TemplateResponse(
+        request=request,
+        name="history.html",
+        context={
+            **ctx,
+            "history": _history(today, lang),
+            "selected_iso": selected_iso,
+        },
+    )
+    _set_lang_cookie(request, response)
+    return response
+
+
+@app.get("/stats", response_class=HTMLResponse)
+async def stats_page(request: Request) -> Response:
+    """Forecast-quality + visitor stats. The compile_report walk and the Cloud
+    Logging walk are both cached (1 h / 12 h), so a cold hit is slow but repeat
+    hits are instant."""
+    lang = _resolve_lang(request)
+    views, stats = await asyncio.gather(_fetch_page_views(), _forecast_stats())
+    ctx = _base_context(request, active="stats", lang=lang)
+    response = templates.TemplateResponse(
+        request=request,
+        name="stats.html",
+        context={**ctx, "views": views, "stats": stats},
+    )
+    _set_lang_cookie(request, response)
+    return response
+
+
+@app.get("/about", response_class=HTMLResponse)
+async def about_page(request: Request) -> Response:
+    """Long-form explanation of the 14 rules — the expanded form of the `?`
+    tooltips on the (now-removed) advanced panel."""
+    lang = _resolve_lang(request)
+    ctx = _base_context(request, active="about", lang=lang)
+    response = templates.TemplateResponse(
+        request=request,
+        name="about.html",
+        context={
+            **ctx,
+            "rule_descriptions": _TOOLTIPS_BY_LANG[lang],
+            "rule_labels": _LABELS_BY_LANG[lang],
+        },
+    )
+    _set_lang_cookie(request, response)
+    return response
+
+
+def _set_lang_cookie(request: Request, response: Response) -> None:
+    """Set the lang cookie when ?lang= was passed, on any route."""
+    q = request.query_params.get("lang")
+    if q in _UI:
+        response.set_cookie("lang", q, max_age=365 * 24 * 3600, samesite="lax")

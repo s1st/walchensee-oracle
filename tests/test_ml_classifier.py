@@ -75,8 +75,8 @@ def test_rained_yesterday_bool_is_accepted():
 
 def test_reasons_are_bilingual():
     ml = classify(_PRESSURE, _METEO)
-    assert "Learned model" in ml.reason_en and "MAYBE" in ml.reason_en
-    assert "Gelerntes Modell" in ml.reason_de
+    assert "Strongest inputs" in ml.reason_en
+    assert "Stärkste Eingabemessgrößen" in ml.reason_de
 
 
 # --- shadow invariant ------------------------------------------------------
@@ -150,8 +150,9 @@ def test_dashboard_renders_ml_card(tmp_path, monkeypatch):
 
     en = client.get("/?day=2026-06-12&lang=en").text
     assert "ML Classifier" in en and "experimental" in en
-    assert "Learned model" in en and "maybe 67%" in en
-    assert "ML classifier (exp.)" in en  # 30-day strip row
+    assert "Strongest inputs" in en and "MAYBE 67%" in en
     de = client.get("/?day=2026-06-12&lang=de").text
-    assert "Gelerntes Modell" in de
-    assert "ML-Klassifikator (exp.)" in de  # 30-day strip row
+    assert "Stärkste Eingabemessgrößen" in de
+    # The 30-day ML strip row moved to /history in the route split.
+    assert "ML classifier (exp.)" in client.get("/history?lang=en").text
+    assert "ML-Klassifikator (exp.)" in client.get("/history?lang=de").text

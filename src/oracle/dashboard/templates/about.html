@@ -1,0 +1,16 @@
+{% extends "_base.html" %}
+{% block title %}{{ t.nav_about }} · Walchi Oracle{% endblock %}
+{% block content %}
+<h1>{{ t.nav_about }}</h1>
+<p class="lead">{{ t.about_lead }}</p>
+
+<h3>{{ t.about_rules_header }}</h3>
+<ul class="rule-list">
+  {% for name, desc in rule_descriptions.items() %}
+  <li>
+    <div class="rule-name">{{ rule_labels[name] }}</div>
+    <div class="rule-desc">{{ desc }}</div>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}
