@@ -631,6 +631,7 @@ async def _fetch_page_views() -> dict | None:
 _STATS_TTL_S = 6 * 3600.0
 _stats: dict | None = None
 _stats_at: float = 0.0
+_stats_computing: bool = False  # guard against concurrent replay walks
 
 
 def _binary_rates(confusion: dict[str, dict[str, int]]) -> tuple[float | None, float | None]:
@@ -680,27 +681,29 @@ def _stats_payload(report: Report) -> dict:
 
 
 async def _forecast_stats() -> dict | None:
-    global _stats, _stats_at
+    """Return the cached stats payload, or None while the replay walk is in
+    progress. The walk is expensive (~60 s on GCS); concurrent callers get the
+    stale value immediately rather than all blocking on the same walk."""
+    global _stats, _stats_at, _stats_computing
     now = time.time()
     if _stats_at and now - _stats_at < _STATS_TTL_S:
         return _stats
+    if _stats_computing:
+        return _stats  # return stale (or None) — walk already in flight
+    _stats_computing = True
     try:
-        # Use the full 6-year replay archive for statistically meaningful
-        # sample sizes. replayed=True walks runs/replay/ and joins ground
-        # truth from the matching main records — the same join the CLI uses.
-        # resimulated=True scores with the current rule layer so the stats
-        # don't go stale after threshold tunes.
         report = await asyncio.to_thread(
             compile_report, _store(),
             label="duration", resimulated=True, replayed=True,
         )
-    except Exception:  # store hiccup — keep last good payload one more TTL
+        _stats = _stats_payload(report)
+        _stats["ml"] = _ml_report_payload(report, "ml_classifier", replayed=True)
+        _stats["hgb"] = _ml_report_payload(report, "hgb_classifier", replayed=True)
         _stats_at = now
-        return _stats
-    _stats = _stats_payload(report)
-    _stats["ml"] = _ml_report_payload(report, "ml_classifier", replayed=True)
-    _stats["hgb"] = _ml_report_payload(report, "hgb_classifier", replayed=True)
-    _stats_at = now
+    except Exception:
+        _stats_at = now  # suppress retry storm; keep last good payload
+    finally:
+        _stats_computing = False
     return _stats
 
 
