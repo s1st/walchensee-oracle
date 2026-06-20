@@ -18,6 +18,7 @@ from oracle.calibration import (
     Report,
     _empty_confusion as _cal_empty_confusion,
     _label_record as _cal_label_record,
+    _merged_replay_record as _cal_merged_replay_record,
     compile_report,
     constant_baselines as _cal_constant_baselines,
 )
@@ -78,7 +79,9 @@ def _model_payload(report: Report, field: str, store: RunStore) -> dict[str, Any
     confusion = _cal_empty_confusion()
     n = 0
     for iso in report.days_with_ground_truth:
-        record = store.read_replay(iso)
+        # Use the merged record (replay inputs + main-record ground truth),
+        # same join compile_report uses — raw replay records have machine=None.
+        record = _cal_merged_replay_record(store, iso)
         if not record:
             continue
         ml = (record.get(field) or {}).get("verdict")
