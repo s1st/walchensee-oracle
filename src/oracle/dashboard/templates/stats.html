@@ -18,26 +18,46 @@
   </dl>
   <p class="advanced-note">{{ t.stats_views_note }}</p>
 
-  {# Rule layer: headline + its own scoped advanced panel (confusion + sens/spec).
-     Each toggle+panel pair is wrapped in a <div> so the `~` sibling combinator
-     in .advanced-toggle:checked ~ .advanced-panel reaches only this panel —
-     otherwise one checkbox opens every panel in the section. #}
+  {# Rule layer: lead with rider-relevant binary metrics (sensitivity, specificity,
+     Peirce skill). Raw 3-class accuracy is misleading on an imbalanced 3-class
+     problem and lives in the Advanced panel instead. #}
   <h3 class="stats-header">{{ t.stats_forecast_header }}</h3>
   <dl class="stats-grid">
     <div><dt>{{ t.stats_sample_size }}</dt><dd>{{ stats.n if stats else t.stats_unavailable }}</dd></div>
-    <div><dt>{{ t.stats_accuracy }}</dt><dd>{% if stats and stats.accuracy is not none %}{{ '%.0f%%'|format(stats.accuracy * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
-    {% if stats and stats.baseline_accuracy is not none %}
-    <div><dt>{{ t.stats_baseline }}</dt><dd>{{ t['verdict_' ~ stats.baseline_class] }} · {{ '%.0f%%'|format(stats.baseline_accuracy * 100) }}</dd></div>
-    {% endif %}
+    <div>
+      <dt>{{ t.stats_skill }}</dt>
+      <dd>{% if stats and stats.get('peirce') is not none %}{{ '%+.2f'|format(stats.get('peirce')) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+    </div>
   </dl>
-  <p class="advanced-note">{{ t.stats_accuracy_note }}{% if stats and stats.quarantined %} ({{ stats.quarantined }} {{ t.stats_quarantined_note }}.){% endif %}</p>
-  {% if stats and stats.baseline_accuracy is not none %}<p class="advanced-note">{{ t.stats_baseline_note }}</p>{% endif %}
+  <p class="advanced-note">{{ t.stats_skill_note }}{% if stats and stats.quarantined %} ({{ stats.quarantined }} {{ t.stats_quarantined_note }}.){% endif %}</p>
 
   {% if stats and stats.n %}
+  <dl class="stats-grid stats-grid-cols" style="margin-top:12px">
+    <div>
+      <dt>{{ t.stats_sensitivity_headline }}</dt>
+      <dd>{% if stats.sensitivity is not none %}{{ '%.0f%%'|format(stats.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+      <dd class="note">{{ t.stats_sensitivity_headline_note }}</dd>
+    </div>
+    <div>
+      <dt>{{ t.stats_specificity_headline }}</dt>
+      <dd>{% if stats.specificity is not none %}{{ '%.0f%%'|format(stats.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+      <dd class="note">{{ t.stats_specificity_headline_note }}</dd>
+    </div>
+  </dl>
+
   <div class="advanced-group">
     <input type="checkbox" id="stats-advanced" class="advanced-toggle">
     <label for="stats-advanced" class="advanced-label">{{ t.stats_advanced_rule_label }}</label>
     <div class="advanced-panel">
+      <dl class="stats-grid" style="margin-bottom:12px">
+        <div><dt>{{ t.stats_accuracy }}</dt><dd>{{ '%.0f%%'|format(stats.accuracy * 100) }}</dd></div>
+        {% if stats.baseline_accuracy is not none %}
+        <div><dt>{{ t.stats_baseline }}</dt><dd>{{ t['verdict_' ~ stats.baseline_class] }} · {{ '%.0f%%'|format(stats.baseline_accuracy * 100) }}</dd></div>
+        {% endif %}
+      </dl>
+      <p class="advanced-note">{{ t.stats_accuracy_note }}</p>
+      {% if stats.baseline_accuracy is not none %}<p class="advanced-note">{{ t.stats_baseline_note }}</p>{% endif %}
+
       <h3 class="stats-header">{{ t.stats_confusion_rule_header }}</h3>
       <table class="confusion">
         <thead>
@@ -57,20 +77,7 @@
         </tbody>
       </table>
       <p class="advanced-note">{{ t.stats_confusion_note }}</p>
-
       <p class="advanced-note">{{ t.stats_binary_note }}</p>
-      <dl class="stats-grid stats-grid-cols">
-        <div>
-          <dt>{{ t.stats_sensitivity }}</dt>
-          <dd>{% if stats.sensitivity is not none %}{{ '%.0f%%'|format(stats.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-          <dd class="note">{{ t.stats_sensitivity_note }}</dd>
-        </div>
-        <div>
-          <dt>{{ t.stats_specificity }}</dt>
-          <dd>{% if stats.specificity is not none %}{{ '%.0f%%'|format(stats.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-          <dd class="note">{{ t.stats_specificity_note }}</dd>
-        </div>
-      </dl>
     </div>
   </div>
   {% endif %}
@@ -81,13 +88,19 @@
   <h3 class="stats-header">{{ t.stats_ml_header }}</h3>
   <dl class="stats-grid">
     <div><dt>{{ t.stats_sample_size }}</dt><dd>{{ stats.ml.n }}</dd></div>
-    <div><dt>{{ t.stats_accuracy }}</dt><dd>{{ '%.0f%%'|format(stats.ml.accuracy * 100) }}</dd></div>
-    {% if stats.ml.baseline_accuracy is not none %}
-    <div><dt>{{ t.stats_baseline }}</dt><dd>{{ t['verdict_' ~ stats.ml.baseline_class] }} · {{ '%.0f%%'|format(stats.ml.baseline_accuracy * 100) }}</dd></div>
-    {% endif %}
+    <div><dt>{{ t.stats_skill }}</dt><dd>{% if stats.ml.get('peirce') is not none %}{{ '%+.2f'|format(stats.ml.get('peirce')) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
+  </dl>
+  <dl class="stats-grid stats-grid-cols" style="margin-top:8px">
+    <div>
+      <dt>{{ t.stats_sensitivity_headline }}</dt>
+      <dd>{% if stats.ml.sensitivity is not none %}{{ '%.0f%%'|format(stats.ml.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+    </div>
+    <div>
+      <dt>{{ t.stats_specificity_headline }}</dt>
+      <dd>{% if stats.ml.specificity is not none %}{{ '%.0f%%'|format(stats.ml.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+    </div>
   </dl>
   <p class="advanced-note">{{ t.stats_ml_note }}</p>
-  {% if stats.ml.baseline_accuracy is not none %}<p class="advanced-note">{{ t.stats_baseline_note }}</p>{% endif %}
 
   <div class="advanced-group">
     <input type="checkbox" id="ml-advanced" class="advanced-toggle">
@@ -112,36 +125,29 @@
         </tbody>
       </table>
       <p class="advanced-note">{{ t.stats_confusion_note }}</p>
-
       <p class="advanced-note">{{ t.stats_binary_note }}</p>
-      <dl class="stats-grid stats-grid-cols">
-        <div>
-          <dt>{{ t.stats_sensitivity }}</dt>
-          <dd>{% if stats.ml.sensitivity is not none %}{{ '%.0f%%'|format(stats.ml.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-          <dd class="note">{{ t.stats_sensitivity_note }}</dd>
-        </div>
-        <div>
-          <dt>{{ t.stats_specificity }}</dt>
-          <dd>{% if stats.ml.specificity is not none %}{{ '%.0f%%'|format(stats.ml.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-          <dd class="note">{{ t.stats_specificity_note }}</dd>
-        </div>
-      </dl>
     </div>
   </div>
   {% endif %}
 
-  {# HGB parallel-model layer: same shape as the ML section above. #}
+  {# HGB parallel-model layer: same shape as ML section above. #}
   {% if stats and stats.hgb and stats.hgb.n %}
   <h3 class="stats-header">{{ t.stats_hgb_header }}</h3>
   <dl class="stats-grid">
     <div><dt>{{ t.stats_sample_size }}</dt><dd>{{ stats.hgb.n }}</dd></div>
-    <div><dt>{{ t.stats_accuracy }}</dt><dd>{{ '%.0f%%'|format(stats.hgb.accuracy * 100) }}</dd></div>
-    {% if stats.hgb.baseline_accuracy is not none %}
-    <div><dt>{{ t.stats_baseline }}</dt><dd>{{ t['verdict_' ~ stats.hgb.baseline_class] }} · {{ '%.0f%%'|format(stats.hgb.baseline_accuracy * 100) }}</dd></div>
-    {% endif %}
+    <div><dt>{{ t.stats_skill }}</dt><dd>{% if stats.hgb.get('peirce') is not none %}{{ '%+.2f'|format(stats.hgb.get('peirce')) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
+  </dl>
+  <dl class="stats-grid stats-grid-cols" style="margin-top:8px">
+    <div>
+      <dt>{{ t.stats_sensitivity_headline }}</dt>
+      <dd>{% if stats.hgb.sensitivity is not none %}{{ '%.0f%%'|format(stats.hgb.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+    </div>
+    <div>
+      <dt>{{ t.stats_specificity_headline }}</dt>
+      <dd>{% if stats.hgb.specificity is not none %}{{ '%.0f%%'|format(stats.hgb.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+    </div>
   </dl>
   <p class="advanced-note">{{ t.stats_hgb_note }}</p>
-  {% if stats.hgb.baseline_accuracy is not none %}<p class="advanced-note">{{ t.stats_baseline_note }}</p>{% endif %}
 
   <div class="advanced-group">
     <input type="checkbox" id="hgb-advanced" class="advanced-toggle">
@@ -166,20 +172,7 @@
         </tbody>
       </table>
       <p class="advanced-note">{{ t.stats_confusion_note }}</p>
-
       <p class="advanced-note">{{ t.stats_binary_note }}</p>
-      <dl class="stats-grid stats-grid-cols">
-        <div>
-          <dt>{{ t.stats_sensitivity }}</dt>
-          <dd>{% if stats.hgb.sensitivity is not none %}{{ '%.0f%%'|format(stats.hgb.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-          <dd class="note">{{ t.stats_sensitivity_note }}</dd>
-        </div>
-        <div>
-          <dt>{{ t.stats_specificity }}</dt>
-          <dd>{% if stats.hgb.specificity is not none %}{{ '%.0f%%'|format(stats.hgb.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-          <dd class="note">{{ t.stats_specificity_note }}</dd>
-        </div>
-      </dl>
     </div>
   </div>
   {% endif %}

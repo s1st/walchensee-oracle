@@ -53,6 +53,7 @@ def _rule_payload(report: Report) -> dict[str, Any]:
     ]
     baselines = report.baselines() if report.sample_size else {}
     best = max(baselines, key=lambda k: baselines[k]["accuracy"]) if baselines else None
+    peirce = (sens + spec - 1.0) if (sens is not None and spec is not None) else None
     return {
         "n": report.sample_size,
         "accuracy": report.overall_accuracy if report.sample_size else None,
@@ -63,6 +64,7 @@ def _rule_payload(report: Report) -> dict[str, Any]:
         "axis": [s.value for s in SIGNAL_ORDER],
         "sensitivity": sens,
         "specificity": spec,
+        "peirce": peirce,
     }
 
 
@@ -105,6 +107,7 @@ def _model_payload(report: Report, field: str, store: RunStore) -> dict[str, Any
             "sensitivity": None, "specificity": None,
         }
     sens, spec = _binary_rates(confusion)
+    peirce = (sens + spec - 1.0) if (sens is not None and spec is not None) else None
     matrix = [
         {"forecast": f.value, "cells": [confusion[f.value][a.value] for a in SIGNAL_ORDER]}
         for f in SIGNAL_ORDER
@@ -122,6 +125,7 @@ def _model_payload(report: Report, field: str, store: RunStore) -> dict[str, Any
         "axis": [s.value for s in SIGNAL_ORDER],
         "sensitivity": sens,
         "specificity": spec,
+        "peirce": peirce,
     }
 
 
