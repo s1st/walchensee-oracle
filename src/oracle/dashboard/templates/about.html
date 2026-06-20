@@ -4,6 +4,13 @@
 <h1>{{ t.nav_about }}</h1>
 <p class="lead">{{ t.about_lead }}</p>
 
+<p>{{ t.about_thermal_intro }}</p>
+{% if show_github %}
+<p class="advanced-note">{{ t.about_docs_link }}
+  <a href="https://github.com/s1st/walchensee-oracle/blob/main/docs/thermal-model.md" target="_blank" rel="noopener">docs/thermal-model.md</a>
+</p>
+{% endif %}
+
 <h3>{{ t.about_rules_header }}</h3>
 <ul class="rule-list">
   {% for name, desc in rule_descriptions.items() %}
