@@ -27,10 +27,20 @@
   h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; }
   .lead { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
 
-  /* Top nav: page links + lang toggle + GitHub. Plain link row, no burger. */
+  /* Top nav: page links + lang toggle + GitHub. Absolutely positioned on
+     desktop so it floats top-right beside the h1; on mobile it drops into
+     normal flow above the heading so the two never overlap. */
   .top-nav {
     display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
     position: absolute; top: 24px; right: 24px;
+  }
+  @media (max-width: 520px) {
+    body { position: static; }
+    .top-nav {
+      position: static;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
   }
   .top-nav .page-links { display: flex; gap: 2px; margin-right: 8px; }
   .top-nav a.page-link {
