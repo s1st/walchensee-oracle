@@ -1,0 +1,40 @@
+{# Verdict headline + shadow-ML card for the selected day. Shared by / and
+   /history; both pass the same `_day_detail_context` keys. #}
+{% if current %}
+  {% set v = display_overall %}
+  <section class="verdict-card {{ v }}">
+    <h2 class="verdict-word {{ v }}">
+      {% if v == 'go' %}{{ t.verdict_go }}{% elif v == 'maybe' %}{{ t.verdict_maybe }}{% else %}{{ t.verdict_no_go }}{% endif %}
+    </h2>
+    <p class="verdict-summary">{{ summary }}</p>
+    <div class="verdict-meta">
+      {{ t.for_day }} {{ selected_date_label }}{% if view == 'original' %} —
+      <span class="view-tag">{{ t.view_label_original }}</span>{% endif %}.
+    </div>
+  </section>
+
+  {% if ml_forecast %}
+  <section class="ml-card {{ ml_forecast.verdict }}" title="{{ t.ml_note }}">
+    <div class="ml-head">
+      <span class="ml-title">{{ t.ml_title }}</span>
+      <span class="ml-tag">{{ t.ml_experimental }}</span>
+      <span class="ml-verdict {{ ml_forecast.verdict }}">
+        {% if ml_forecast.verdict == 'go' %}{{ t.verdict_go }}{% elif ml_forecast.verdict == 'maybe' %}{{ t.verdict_maybe }}{% else %}{{ t.verdict_no_go }}{% endif %}
+      </span>
+      <span class="ml-probs">
+        {{ t.ml_prob_go }} {{ (ml_forecast.probabilities.go * 100) | round | int }}% ·
+        {{ t.ml_prob_maybe }} {{ (ml_forecast.probabilities.maybe * 100) | round | int }}% ·
+        {{ t.ml_prob_no_go }} {{ (ml_forecast.probabilities.no_go * 100) | round | int }}%
+      </span>
+    </div>
+    <p class="ml-reason">{{ ml_forecast.reason }}</p>
+    <p class="ml-note">{{ t.ml_note }}</p>
+  </section>
+  {% endif %}
+
+{% else %}
+  <section class="verdict-card">
+    <h2 class="verdict-word">{{ t.no_data_headline }}</h2>
+    <p class="verdict-summary">{{ t.no_data }}</p>
+  </section>
+{% endif %}

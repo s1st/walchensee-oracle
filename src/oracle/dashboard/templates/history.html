@@ -12,7 +12,7 @@
     {% for d in history %}
       {% if d.resimulated %}
         <a class="cell {{ d.resimulated }}{% if d.iso == selected_iso %} selected{% endif %}{% if d.storm %} storm{% endif %}"
-           href="/?day={{ d.iso }}&view=resimulated{% if lang != 'de' %}&lang={{ lang }}{% endif %}"
+           href="/history?day={{ d.iso }}&view=resimulated{% if lang != 'de' %}&lang={{ lang }}{% endif %}#day-detail"
            title="{{ d.day }} — {{ t.strip_forecast }}: {{ d.resimulated }}{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
       {% else %}
         <div class="cell empty{% if d.storm %} storm{% endif %}" title="{{ d.day }} — {{ t.strip_forecast }}: —{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></div>
@@ -27,7 +27,7 @@
     {% for d in history %}
       {% if d.ml %}
         <a class="cell {{ d.ml }}{% if d.iso == selected_iso %} selected{% endif %}{% if d.storm %} storm{% endif %}"
-           href="/?day={{ d.iso }}{% if lang != 'de' %}&lang={{ lang }}{% endif %}"
+           href="/history?day={{ d.iso }}{% if lang != 'de' %}&lang={{ lang }}{% endif %}#day-detail"
            title="{{ d.day }} — {{ t.strip_ml }}: {{ d.ml }}{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
       {% else %}
         <div class="cell empty{% if d.storm %} storm{% endif %}" title="{{ d.day }} — {{ t.strip_ml }}: —"></div>
@@ -42,11 +42,11 @@
     {% for d in history %}
       {% if d.actual %}
         <a class="cell {{ d.actual }}{% if d.iso == selected_iso %} selected{% endif %}{% if d.storm %} storm{% endif %}"
-           href="/?day={{ d.iso }}{% if lang != 'de' %}&lang={{ lang }}{% endif %}"
+           href="/history?day={{ d.iso }}{% if lang != 'de' %}&lang={{ lang }}{% endif %}#day-detail"
            title="{{ d.day }} — {{ t.strip_actual }}: {% if d.peak_avg_knots %}{{ '%.1f'|format(d.peak_avg_knots) }} kt peak{% else %}—{% endif %}{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
       {% else %}
         <a class="cell empty{% if d.iso == selected_iso %} selected{% endif %}{% if d.storm %} storm{% endif %}"
-           href="/?day={{ d.iso }}{% if lang != 'de' %}&lang={{ lang }}{% endif %}"
+           href="/history?day={{ d.iso }}{% if lang != 'de' %}&lang={{ lang }}{% endif %}#day-detail"
            title="{{ d.day }} — {{ t.strip_actual }}: —{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
       {% endif %}
     {% endfor %}
@@ -66,6 +66,27 @@
   <span><i class="storm"></i>{{ t.strip_legend_storm }}</span>
 </div>
 
+{# Selected-day detail: the verdict + wind curve you'd see on Heute, rendered
+   inline so browsing the strip never leaves this page. Cells link here with
+   #day-detail so a click reloads and jumps straight to it. #}
+<section id="day-detail" class="day-detail">
+  <h3>{{ selected_date_label }}</h3>
+  {% if historical and historical.chart_svg[lang] %}
+  <div class="wind-chart-row" aria-label="{{ t.chart_aria_historical }}">
+    {{ historical.chart_svg[lang]|safe }}
+    {% if historical.has_data %}
+    <div class="wind-chart-legend">
+      <span><i class="avg"></i>{{ t.chart_legend_avg }}</span>
+      <span><i class="gust"></i>{{ t.chart_legend_gust }}</span>
+      <span><i class="ref8"></i>{{ t.chart_legend_ignition }}</span>
+      <span><i class="ref12"></i>{{ t.chart_legend_session }}</span>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% include "_verdict_card.html" %}
+</section>
+
 {# Previous forecast method: how the day was called before recalibration. #}
 <input type="checkbox" id="original" class="advanced-toggle">
 <label for="original" class="advanced-label">{{ t.advanced_label_history }}</label>
@@ -76,7 +97,7 @@
       {% for d in history %}
         {% if d.verdict %}
           <a class="cell {{ d.verdict }}{% if d.iso == selected_iso %} selected{% endif %}{% if d.storm %} storm{% endif %}"
-             href="/?day={{ d.iso }}&view=original{% if lang != 'de' %}&lang={{ lang }}{% endif %}"
+             href="/history?day={{ d.iso }}&view=original{% if lang != 'de' %}&lang={{ lang }}{% endif %}#day-detail"
              title="{{ d.day }} — {{ t.strip_forecast_original }}: {{ d.verdict }}{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
         {% else %}
           <div class="cell empty{% if d.storm %} storm{% endif %}" title="{{ d.day }} — {{ t.strip_forecast_original }}: —{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></div>

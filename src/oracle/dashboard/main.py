@@ -165,11 +165,11 @@ _RULE_I18N: dict[str, RuleI18n] = {
 # need a proper refactor of the rules module to emit bilingual reasons.
 _UI: dict[str, dict[str, str]] = {
     "de": {
-        "strip_forecast": "Vorhersage",
-        "strip_ml": "ML-Klassifikator (exp.)",
+        "strip_forecast": "Regelbasierte Vorhersage (tatsächlich genutzt)",
+        "strip_ml": "ML-basierte Vorhersage (experimentell)",
         "strip_forecast_original": "Vergangene Vorhersageart",
         "strip_forecast_original_note": "Wie der Tag damals vorhergesagt wurde, vor der Nachkalibrierung der Regeln — nur zum Vergleich.",
-        "strip_actual": "Tatsächlich (Session ≥ 1 h)",
+        "strip_actual": "Tatsächliche Messwerte (Session ≥ 1 h)",
         "strip_legend_go": "Session (≥ 1 h ≥ 11 kt)",
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
         "strip_legend_no_go": "kein Wind",
@@ -251,7 +251,7 @@ _UI: dict[str, dict[str, str]] = {
         "nav_history": "Verlauf",
         "nav_stats": "Statistik",
         "nav_about": "Erklärung",
-        "history_lead": "30 Tage Vorhersage vs. was am See passiert ist. Klick auf einen Tag fürs Detail.",
+        "history_lead": "30 Tage Vorhersage vs. was am See passiert ist. Klicke auf einen einzelnen Tag um Details zu sehen.",
         "stats_lead": "Wie gut das Orakel trifft — und wie viele es lesen.",
         "about_lead": "Die vierzehn Regeln, mit denen das Orakel aus Druck, Wetter und Live-Messungen eine Thermik-Vorhersage baut.",
         "about_rules_header": "Die 14 Regeln",
@@ -261,11 +261,11 @@ _UI: dict[str, dict[str, str]] = {
         "index_about_link": "Wie das Orakel funktioniert",
     },
     "en": {
-        "strip_forecast": "Forecast",
-        "strip_ml": "ML classifier (exp.)",
+        "strip_forecast": "Rule-based forecast (actually used)",
+        "strip_ml": "ML-based forecast (experimental)",
         "strip_forecast_original": "Previous forecast method",
         "strip_forecast_original_note": "How the day was forecast at the time, before the rules were recalibrated — shown for comparison only.",
-        "strip_actual": "Actual (session ≥ 1 h)",
+        "strip_actual": "Actual measurements (session ≥ 1 h)",
         "strip_legend_go": "session (≥ 1 h ≥ 11 kt)",
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
         "strip_legend_no_go": "no wind",
@@ -347,7 +347,7 @@ _UI: dict[str, dict[str, str]] = {
         "nav_history": "History",
         "nav_stats": "Stats",
         "nav_about": "About",
-        "history_lead": "30 days of forecast vs. what actually happened at the lake. Click a day for the detail.",
+        "history_lead": "30 days of forecast vs. what actually happened at the lake. Click a single day to see its details.",
         "stats_lead": "How well the oracle calls it — and how many read it.",
         "about_lead": "The fourteen rules the oracle uses to turn pressure, weather and live readings into a thermal forecast.",
         "about_rules_header": "The 14 rules",
@@ -1078,6 +1078,76 @@ def _public_view(record: dict | None) -> dict | None:
     return projection
 
 
+def _selected_day(request: Request, today: date) -> date:
+    """Parse ?day=YYYY-MM-DD, clamped to [today-30, today+2] so strip cells can
+    inspect any logged day in the calibration window. Falls back to today."""
+    requested = request.query_params.get("day")
+    if requested:
+        try:
+            parsed = date.fromisoformat(requested)
+            if timedelta(days=-30) <= parsed - today <= timedelta(days=2):
+                return parsed
+        except ValueError:
+            pass
+    return today
+
+
+def _selected_view(request: Request) -> str:
+    """Verdict layer: ?view=original|resimulated, default resimulated."""
+    view = request.query_params.get("view")
+    return view if view in ("original", "resimulated") else "resimulated"
+
+
+def _day_detail_context(selected_day: date, today: date, lang: str, view: str) -> dict:
+    """Per-day detail block shared by `/` and `/history`: the verdict card, the
+    shadow-ML card, the historical wind chart, and the labels they need.
+
+    Both routes warm `_cache` for `selected_day` before calling this (and for
+    the 7-day fallback window `_most_recent` walks), so every read here is a
+    cache hit.
+    """
+    raw = _cached_read(selected_day.isoformat())
+    if raw is None and selected_day == today:
+        raw = _most_recent(today)
+
+    if raw and view == "original":
+        display_overall = raw.get("overall")
+        display_verdicts = raw.get("verdicts", [])
+    elif raw:
+        display_overall = raw.get("overall_resimulated") or raw.get("overall")
+        display_verdicts = raw.get("verdicts_resimulated") or raw.get("verdicts", [])
+    else:
+        display_overall = None
+        display_verdicts = []
+
+    # Shadow ML classifier (experimental extra; independent of the view toggle
+    # since it's a single learned prediction, not a rescored rule verdict).
+    ml_forecast = None
+    if raw and raw.get("ml_classifier"):
+        _ml = raw["ml_classifier"]
+        ml_forecast = {
+            "verdict": _ml.get("verdict"),
+            "probabilities": _ml.get("probabilities", {}),
+            "reason": _ml.get("reason_de" if lang == "de" else "reason_en"),
+        }
+
+    summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
+    is_today = selected_day == today
+    historical = None if is_today else _historical_chart_payload(raw)
+    return {
+        "current": _public_view(raw),
+        "display_overall": display_overall,
+        "display_verdicts": display_verdicts,
+        "view": view,
+        "summary": summary,
+        "ml_forecast": ml_forecast,
+        "selected_date_label": _fmt_date(selected_day, lang, "full"),
+        "selected_iso": selected_day.isoformat(),
+        "historical": historical,
+        "is_today": is_today,
+    }
+
+
 def _base_context(request: Request, active: str, lang: str | None = None) -> dict:
     """Context every page shares: lang, UI strings, nav state, GitHub flag.
 
@@ -1100,25 +1170,8 @@ def _base_context(request: Request, active: str, lang: str | None = None) -> dic
 async def index(request: Request) -> Response:
     lang = _resolve_lang(request)
     today = date.today()
-
-    # Which day? ?day=YYYY-MM-DD; allow [today-30, today+2] so strip cells can
-    # be clicked to inspect any logged historical day in the calibration window.
-    selected_day = today
-    requested = request.query_params.get("day")
-    if requested:
-        try:
-            parsed = date.fromisoformat(requested)
-            if timedelta(days=-30) <= parsed - today <= timedelta(days=2):
-                selected_day = parsed
-        except ValueError:
-            pass
-
-    # Which verdict layer? ?view=original|resimulated. Default is the rescored
-    # one (current aggregator's call). `original` shows what was actually
-    # written on the day, useful for seeing how calibration has shifted.
-    view = request.query_params.get("view")
-    if view not in ("original", "resimulated"):
-        view = "resimulated"
+    selected_day = _selected_day(request, today)
+    view = _selected_view(request)
 
     # Warm the cache for every day this request will read (selected + horizon
     # + 7-day fallback for `_most_recent`) in one parallel fan-out, alongside
@@ -1131,40 +1184,8 @@ async def index(request: Request) -> Response:
         _prefetch_days(all_isos), _fetch_urfeld_live()
     )
 
-    # Fall back to the most-recent-available record only when today's isn't yet
-    # written (early in the morning before the scheduled job has run).
-    raw = _cached_read(selected_day.isoformat())
-    if raw is None and selected_day == today:
-        raw = _most_recent(today)
-
-    if raw and view == "original":
-        display_overall = raw.get("overall")
-        display_verdicts = raw.get("verdicts", [])
-    elif raw:
-        display_overall = raw.get("overall_resimulated") or raw.get("overall")
-        display_verdicts = raw.get("verdicts_resimulated") or raw.get("verdicts", [])
-    else:
-        display_overall = None
-        display_verdicts = []
-
-    # The GitHub flag now lives in _base_context; the index page no longer
-    # renders the 30-day strip or the stats panel (those moved to /history and
-    # /stats), so their data is dropped from this route's context.
-    # Shadow ML classifier (experimental extra; independent of the view toggle
-    # since it's a single learned prediction, not a rescored rule verdict).
-    ml_forecast = None
-    if raw and raw.get("ml_classifier"):
-        _ml = raw["ml_classifier"]
-        ml_forecast = {
-            "verdict": _ml.get("verdict"),
-            "probabilities": _ml.get("probabilities", {}),
-            "reason": _ml.get("reason_de" if lang == "de" else "reason_en"),
-        }
-
-    summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
+    detail = _day_detail_context(selected_day, today, lang, view)
     horizon = _horizon_days(today, lang, selected_day.isoformat(), view)
-    is_today = selected_day == today
-    historical = None if is_today else _historical_chart_payload(raw)
 
     ctx = _base_context(request, active="index", lang=lang)
     response = templates.TemplateResponse(
@@ -1172,19 +1193,10 @@ async def index(request: Request) -> Response:
         name="index.html",
         context={
             **ctx,
-            "current": _public_view(raw),
-            "display_overall": display_overall,
-            "display_verdicts": display_verdicts,
-            "view": view,
-            "summary": summary,
-            "ml_forecast": ml_forecast,
-            "selected_date_label": _fmt_date(selected_day, lang, "full"),
+            **detail,
             "today_iso": today.isoformat(),
-            "selected_iso": selected_day.isoformat(),
             "horizon": horizon,
             "live": live,
-            "historical": historical,
-            "is_today": is_today,
         },
     )
     q = request.query_params.get("lang")
@@ -1195,21 +1207,29 @@ async def index(request: Request) -> Response:
 
 @app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request) -> Response:
-    """30-day forecast-vs-actual strip. Cells link to /?day=... to inspect a
-    day on the landing page — no in-place SPA swap, just server navigation."""
+    """30-day forecast-vs-actual strip with the selected day's detail rendered
+    inline. Cells link back to /history?day=... so browsing the strip never
+    leaves the page — server navigation, no in-place SPA swap."""
     lang = _resolve_lang(request)
     today = date.today()
+    selected_day = _selected_day(request, today)
+    view = _selected_view(request)
+
+    # Warm the 30-day strip plus the selected day (if it falls outside the
+    # strip, e.g. a +2 horizon day) and the 7-day fallback `_most_recent` walks.
     history_isos = [(today - timedelta(days=i)).isoformat() for i in range(30)]
-    await _prefetch_days(history_isos)
-    selected_iso = request.query_params.get("day") or today.isoformat()
+    fallback_isos = [(today - timedelta(days=i)).isoformat() for i in range(8)]
+    await _prefetch_days(history_isos + fallback_isos + [selected_day.isoformat()])
+
+    detail = _day_detail_context(selected_day, today, lang, view)
     ctx = _base_context(request, active="history", lang=lang)
     response = templates.TemplateResponse(
         request=request,
         name="history.html",
         context={
             **ctx,
+            **detail,
             "history": _history(today, lang),
-            "selected_iso": selected_iso,
         },
     )
     _set_lang_cookie(request, response)
