@@ -25,7 +25,6 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from oracle.calibration import Report, compile_report
-from oracle.config import PROJECT_FIRST_DAY
 from oracle.calibration import (
     _label_record as _cal_label_record,
     _empty_confusion as _cal_empty_confusion,
@@ -473,6 +472,13 @@ _LABELS_BY_LANG = _per_lang(lambda e: e.label, fallback="rule")
 
 app = FastAPI(title="Walchi Oracle")
 
+
+@app.on_event("startup")
+async def _startup_prewarm() -> None:
+    """Kick off the stats compilation in the background at startup so the
+    first visitor never pays the 30–60 s cold GCS walk."""
+    asyncio.create_task(_forecast_stats())
+
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
@@ -617,11 +623,12 @@ async def _fetch_page_views() -> dict | None:
     return _views
 
 
-# Forecast-quality stats cache — 1 h TTL. compile_report walks every stored
-# day via store.read() (bypassing the per-day request cache), so it must not
-# run on the request hot path more than once per TTL. Stale-on-error: a
-# failed refresh keeps the last good payload for another TTL.
-_STATS_TTL_S = 3600.0
+# Forecast-quality stats cache — 6 h TTL. compile_report(replayed=True) walks
+# ~3,300 GCS replay records; against GCS that takes 30–60 s on a cold hit.
+# 6 h amortises that cost acceptably; the cache is also pre-warmed at startup
+# so the first visitor never pays it. Stale-on-error: a failed refresh keeps
+# the last good payload for another TTL.
+_STATS_TTL_S = 6 * 3600.0
 _stats: dict | None = None
 _stats_at: float = 0.0
 
@@ -678,27 +685,28 @@ async def _forecast_stats() -> dict | None:
     if _stats_at and now - _stats_at < _STATS_TTL_S:
         return _stats
     try:
-        # The bucket also holds ~3,600 historical buoy stub records without
-        # forecast verdicts; an unrestricted `compile_report` walk reads
-        # every one of them from GCS per refresh (multi-minute hang).
-        # Restrict to the project's own days — the stats panel is about the
-        # project's verdict accuracy.
+        # Use the full 6-year replay archive for statistically meaningful
+        # sample sizes. replayed=True walks runs/replay/ and joins ground
+        # truth from the matching main records — the same join the CLI uses.
+        # resimulated=True scores with the current rule layer so the stats
+        # don't go stale after threshold tunes.
         report = await asyncio.to_thread(
             compile_report, _store(),
-            since=PROJECT_FIRST_DAY,
-            label="duration", resimulated=True,
+            label="duration", resimulated=True, replayed=True,
         )
     except Exception:  # store hiccup — keep last good payload one more TTL
         _stats_at = now
         return _stats
     _stats = _stats_payload(report)
-    _stats["ml"] = _ml_report_payload(report, "ml_classifier")
-    _stats["hgb"] = _ml_report_payload(report, "hgb_classifier")
+    _stats["ml"] = _ml_report_payload(report, "ml_classifier", replayed=True)
+    _stats["hgb"] = _ml_report_payload(report, "hgb_classifier", replayed=True)
     _stats_at = now
     return _stats
 
 
-def _ml_report_payload(report: Report, field: str = "ml_classifier") -> dict:
+def _ml_report_payload(
+    report: Report, field: str = "ml_classifier", replayed: bool = False
+) -> dict:
     """Score a shadow classifier on the same day set as the rule report.
 
     `field` selects which record key to read: "ml_classifier" (logistic) or
@@ -706,17 +714,32 @@ def _ml_report_payload(report: Report, field: str = "ml_classifier") -> dict:
     "verdict" key. Returns the SAME dict shape as `_stats_payload` so the
     template renders an identical advanced panel for each model.
 
+    In replayed mode the ISOs in `report.days_with_ground_truth` are replay
+    record keys, so we read from the replay namespace. If the replay record
+    lacks a pre-computed ml_classifier block (common — backfill hasn't run),
+    we score the logistic on-the-fly from the stored inputs (pure Python, no
+    extra deps). HGB requires sklearn so it stays "—" until hgb-backfill
+    --replayed has been run.
+
     n=0 when no scored day has the block — the template renders "—".
     """
+    from oracle.ml_classifier import classify as _classify_logistic
+
     valid = {s.value for s in SIGNAL_ORDER}
     confusion = _cal_empty_confusion()
     store = _store()
     n = 0
     for iso in report.days_with_ground_truth:
-        record = store.read(iso)
+        record = store.read_replay(iso) if replayed else store.read(iso)
         if not record:
             continue
         ml = (record.get(field) or {}).get("verdict")
+        # For the logistic classifier in replay mode: score on-the-fly from
+        # stored inputs when no pre-computed block is present.
+        if ml is None and field == "ml_classifier" and replayed:
+            inputs = record.get("inputs") or {}
+            result = _classify_logistic(inputs.get("pressure"), inputs.get("meteo"))
+            ml = result.verdict if result else None
         if ml not in valid:
             continue
         actual = _cal_label_record(record, report.label_mode)

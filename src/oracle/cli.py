@@ -233,17 +233,17 @@ def hgb_backfill(
     since: str = typer.Option(None, help="ISO date — only backfill days from this date forward."),
     until: str = typer.Option(None, help="ISO date — only backfill days up to this date."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Don't write; just report what would change."),
+    replayed: bool = typer.Option(False, "--replayed", help="Backfill the replay records (runs/replay/) instead of the live forecasts."),
     pkl: str = typer.Option(None, help="Path to the ML bundle pkl (default: data/ml/replay_full.pkl)."),
 ) -> None:
-    """Score the HGB model on all logged run records and write `hgb_classifier`.
+    """Score the HGB model on logged run records and write `hgb_classifier`.
 
-    Reads `inputs.pressure` + `inputs.meteo` from each stored record (the
-    same fields the training CSV was built from), scores the HGB from the
-    bundle pkl, and merges an `hgb_classifier` block into the record without
-    touching any other field. Requires the [ml] extra (sklearn).
+    Reads `inputs.pressure` + `inputs.meteo` from each stored record,
+    scores the HGB from the bundle pkl, and merges an `hgb_classifier` block
+    without touching any other field. Requires the [ml] extra (sklearn).
 
-    Run this after training a new model (`oracle ml train`) to backfill the
-    full history. The dashboard reads `hgb_classifier` on /history and /stats.
+    Use --replayed to backfill the replay archive (runs/replay/) so the
+    /stats page can show HGB accuracy on the full 6-year dataset.
     """
     from pathlib import Path
     from oracle.hgb_shadow import classify_hgb
@@ -252,7 +252,7 @@ def hgb_backfill(
 
     pkl_path = Path(pkl) if pkl else None
     store = default_store()
-    since_d = date.fromisoformat(since) if since else PROJECT_FIRST_DAY
+    since_d = date.fromisoformat(since) if since else (PROJECT_FIRST_DAY if not replayed else date(2016, 1, 1))
     until_d = date.fromisoformat(until) if until else date.today()
 
     written = skipped = already = 0
@@ -260,7 +260,7 @@ def hgb_backfill(
     while cur <= until_d:
         iso = cur.isoformat()
         cur += timedelta(days=1)
-        record = store.read(iso)
+        record = store.read_replay(iso) if replayed else store.read(iso)
         if not record:
             continue
         inputs = record.get("inputs") or {}
@@ -275,7 +275,10 @@ def hgb_backfill(
             continue
         if not dry_run:
             record["hgb_classifier"] = result
-            store.write(iso, record)
+            if replayed:
+                store.write_replay(iso, record)
+            else:
+                store.write(iso, record)
             written += 1
         else:
             already += 1
