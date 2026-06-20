@@ -1279,10 +1279,17 @@ async def history_page(request: Request) -> Response:
 
 @app.get("/stats", response_class=HTMLResponse)
 async def stats_page(request: Request) -> Response:
-    """Forecast-quality + visitor stats. The compile_report walk and the Cloud
-    Logging walk are both cached (1 h / 12 h), so a cold hit is slow but repeat
-    hits are instant."""
+    """Forecast-quality + visitor stats.
+
+    The replay walk takes 30–60 s on GCS — longer than the Cloud Run request
+    timeout. We never block a request on it: _forecast_stats() returns the
+    cached value (or None) immediately and ensures the walk is running as a
+    background task. The template auto-reloads every 8 s when stats are None
+    so the user sees data once the walk completes."""
     lang = _resolve_lang(request)
+    # Fire the walk as a detached background task so it outlives this request.
+    # _forecast_stats() is also called directly to pick up any already-cached result.
+    asyncio.create_task(_forecast_stats())
     views, stats = await asyncio.gather(_fetch_page_views(), _forecast_stats())
     ctx = _base_context(request, active="stats", lang=lang)
     response = templates.TemplateResponse(

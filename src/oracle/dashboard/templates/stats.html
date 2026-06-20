@@ -3,6 +3,12 @@
 {% block content %}
 <h1>{{ t.nav_stats }}</h1>
 <p class="lead">{{ t.stats_lead }}</p>
+{% if not stats or stats.n == 0 %}
+<p class="advanced-note" id="stats-loading">
+  {% if lang == 'de' %}Statistik wird berechnet — Seite lädt in Kürze nach…{% else %}Statistics are being computed — page will reload shortly…{% endif %}
+</p>
+<script>setTimeout(function(){ location.reload(); }, 8000);</script>
+{% endif %}
 
 <section class="stats-section">
   <h3 class="stats-header">{{ t.stats_views_header }}</h3>
