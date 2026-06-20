@@ -166,7 +166,8 @@ _RULE_I18N: dict[str, RuleI18n] = {
 _UI: dict[str, dict[str, str]] = {
     "de": {
         "strip_forecast": "Regelbasierte Vorhersage (tatsächlich genutzt)",
-        "strip_ml": "ML-basierte Vorhersage (experimentell)",
+        "strip_ml": "ML-basierte Vorhersage — Logistisch (experimentell)",
+        "strip_hgb": "ML-basierte Vorhersage — HGB (experimentell)",
         "strip_forecast_original": "Vergangene Vorhersageart",
         "strip_forecast_original_note": "Wie der Tag damals vorhergesagt wurde, vor der Nachkalibrierung der Regeln — nur zum Vergleich.",
         "strip_actual": "Tatsächliche Messwerte (Session ≥ 1 h)",
@@ -221,16 +222,20 @@ _UI: dict[str, dict[str, str]] = {
         "stats_sample_size": "Bewertete Tage",
         "stats_accuracy": "Treffergenauigkeit",
         "stats_accuracy_note": "Anteil der Tage, an denen die Vorhersage genau die richtige Kategorie (Session / marginal / kein Wind) getroffen hat.",
-        "stats_ml_header": "ML-Klassifikator (Parallelmodell)",
-        "stats_ml_note": "Dasselbe Tages-Set wie oben, aber Vorhersage = der experimentelle ML-Klassifikator. Treibt nie die offizielle Vorhersage — nur Vergleich.",
+        "stats_ml_header": "ML-Klassifikator — Logistisch (Parallelmodell)",
+        "stats_ml_note": "Dasselbe Tages-Set wie oben, aber Vorhersage = der experimentelle logistische ML-Klassifikator. Treibt nie die offizielle Vorhersage — nur Vergleich.",
+        "stats_hgb_header": "ML-Klassifikator — HGB (Parallelmodell)",
+        "stats_hgb_note": "Dasselbe Tages-Set, aber Vorhersage = HistGradientBoosting. Das stärkste Offline-Modell (Peirce +0.142), aber Blackbox und ohne Prod-Deployment. Nur Vergleich.",
         "stats_baseline": "Naiver Vergleich",
         "stats_baseline_note": "Was ein stumpfer „immer dasselbe\"-Tipp (die häufigste Kategorie) träfe. Die Vorhersage muss das schlagen, um nützlich zu sein.",
         "stats_quarantined_note": "Gewittertage aus der Wertung ausgenommen",
         "stats_advanced_label": "Erweiterte Statistik",
         "stats_advanced_rule_label": "Erweiterte Statistik — Regel-Ebene",
-        "stats_advanced_ml_label": "Erweiterte Statistik — ML (Parallelmodell)",
+        "stats_advanced_ml_label": "Erweiterte Statistik — ML Logistisch (Parallelmodell)",
+        "stats_advanced_hgb_label": "Erweiterte Statistik — HGB (Parallelmodell)",
         "stats_confusion_rule_header": "Konfusionsmatrix — Regel-Ebene",
-        "stats_confusion_ml_header": "Konfusionsmatrix — ML (Parallelmodell)",
+        "stats_confusion_ml_header": "Konfusionsmatrix — ML Logistisch (Parallelmodell)",
+        "stats_confusion_hgb_header": "Konfusionsmatrix — HGB (Parallelmodell)",
         "stats_confusion_header": "Konfusionsmatrix",
         "stats_confusion_note": "Zeilen = was vorhergesagt wurde, Spalten = was tatsächlich am See passiert ist. Auf der Diagonalen liegen die Treffer.",
         "stats_axis_forecast": "Vorhersage",
@@ -262,7 +267,8 @@ _UI: dict[str, dict[str, str]] = {
     },
     "en": {
         "strip_forecast": "Rule-based forecast (actually used)",
-        "strip_ml": "ML-based forecast (experimental)",
+        "strip_ml": "ML-based forecast — logistic (experimental)",
+        "strip_hgb": "ML-based forecast — HGB (experimental)",
         "strip_forecast_original": "Previous forecast method",
         "strip_forecast_original_note": "How the day was forecast at the time, before the rules were recalibrated — shown for comparison only.",
         "strip_actual": "Actual measurements (session ≥ 1 h)",
@@ -317,16 +323,20 @@ _UI: dict[str, dict[str, str]] = {
         "stats_sample_size": "Days scored",
         "stats_accuracy": "Accuracy",
         "stats_accuracy_note": "Share of days where the forecast hit exactly the right bucket (session / marginal / no wind).",
-        "stats_ml_header": "ML classifier (parallel model)",
-        "stats_ml_note": "Same day set as above, but forecast = the experimental ML classifier. Never drives the official verdict — comparison only.",
+        "stats_ml_header": "ML classifier — logistic (parallel model)",
+        "stats_ml_note": "Same day set as above, but forecast = the experimental logistic ML classifier. Never drives the official verdict — comparison only.",
+        "stats_hgb_header": "ML classifier — HGB (parallel model)",
+        "stats_hgb_note": "Same day set, but forecast = HistGradientBoosting. The strongest offline model (Peirce +0.142), but a black box with no prod deployment. Comparison only.",
         "stats_baseline": "Naive baseline",
         "stats_baseline_note": "What a blunt \"always the same\" guess (the most common outcome) would score. The forecast has to beat this to be useful.",
         "stats_quarantined_note": "thunderstorm days excluded from scoring",
         "stats_advanced_label": "Advanced statistics",
         "stats_advanced_rule_label": "Advanced statistics — rule layer",
-        "stats_advanced_ml_label": "Advanced statistics — ML (parallel model)",
+        "stats_advanced_ml_label": "Advanced statistics — ML logistic (parallel model)",
+        "stats_advanced_hgb_label": "Advanced statistics — HGB (parallel model)",
         "stats_confusion_rule_header": "Confusion matrix — rule layer",
-        "stats_confusion_ml_header": "Confusion matrix — ML (parallel model)",
+        "stats_confusion_ml_header": "Confusion matrix — ML logistic (parallel model)",
+        "stats_confusion_hgb_header": "Confusion matrix — HGB (parallel model)",
         "stats_confusion_header": "Confusion matrix",
         "stats_confusion_note": "Rows = what was forecast, columns = what actually happened at the lake. The diagonal holds the hits.",
         "stats_axis_forecast": "Forecast",
@@ -678,23 +688,21 @@ async def _forecast_stats() -> dict | None:
         _stats_at = now
         return _stats
     _stats = _stats_payload(report)
-    _stats["ml"] = _ml_report_payload(report)
+    _stats["ml"] = _ml_report_payload(report, "ml_classifier")
+    _stats["hgb"] = _ml_report_payload(report, "hgb_classifier")
     _stats_at = now
     return _stats
 
 
-def _ml_report_payload(report: Report) -> dict:
-    """Shadow ML classifier scored on the *same* day set as the rule report —
-    the apples-to-apples comparison that justifies keeping the shadow model.
-    Reads `ml_classifier.verdict` (written by `forecast_to_dict` since the
-    classifier shipped) against the same ground-truth label and the same
-    storm quarantine as the rule layer, and returns the SAME dict shape as
-    `_stats_payload` (confusion matrix, accuracy, baseline, sensitivity /
-    specificity) so the template can render an identical advanced panel.
+def _ml_report_payload(report: Report, field: str = "ml_classifier") -> dict:
+    """Score a shadow classifier on the same day set as the rule report.
 
-    n=0 when no scored day has an ML block yet (early in the project, or
-    before the classifier shipped) — the template renders "—". ML never
-    drives the verdict, so this is observation only.
+    `field` selects which record key to read: "ml_classifier" (logistic) or
+    "hgb_classifier" (HGB). Both must have the same schema: a dict with a
+    "verdict" key. Returns the SAME dict shape as `_stats_payload` so the
+    template renders an identical advanced panel for each model.
+
+    n=0 when no scored day has the block — the template renders "—".
     """
     valid = {s.value for s in SIGNAL_ORDER}
     confusion = _cal_empty_confusion()
@@ -704,7 +712,7 @@ def _ml_report_payload(report: Report) -> dict:
         record = store.read(iso)
         if not record:
             continue
-        ml = (record.get("ml_classifier") or {}).get("verdict")
+        ml = (record.get(field) or {}).get("verdict")
         if ml not in valid:
             continue
         actual = _cal_label_record(record, report.label_mode)
@@ -928,6 +936,7 @@ def _history(today: date, lang: str, days: int = 30) -> list[dict]:
         verdict = None
         resimulated = None
         ml = None
+        hgb = None
         machine: dict | None = None
         if record:
             machine = (record.get("ground_truth") or {}).get("machine") or {}
@@ -938,15 +947,17 @@ def _history(today: date, lang: str, days: int = 30) -> list[dict]:
             # records too incomplete to re-score) still show *something* in the
             # row instead of an empty cell.
             resimulated = record.get("overall_resimulated") or verdict
-            # Shadow ML classifier verdict (only present on records written
-            # after it shipped — earlier days show an empty cell).
+            # Shadow ML verdicts — only present on records after each respective
+            # backfill; earlier days show an empty cell.
             ml = (record.get("ml_classifier") or {}).get("verdict")
+            hgb = (record.get("hgb_classifier") or {}).get("verdict")
         items.append({
             "iso": d.isoformat(),
             "day": _fmt_date(d, lang, "strip"),
             "verdict": verdict,
             "resimulated": resimulated,
             "ml": ml,
+            "hgb": hgb,
             "peak_avg_knots": peak,
             "actual": _actual_verdict_duration(machine),
             "storm": _storm_suspected(record) if record else False,

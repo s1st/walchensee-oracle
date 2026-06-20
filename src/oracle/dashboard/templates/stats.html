@@ -123,5 +123,59 @@
     </div>
   </div>
   {% endif %}
+
+  {# HGB parallel-model layer: same shape as the ML section above. #}
+  {% if stats and stats.hgb and stats.hgb.n %}
+  <h3 class="stats-header">{{ t.stats_hgb_header }}</h3>
+  <dl class="stats-grid">
+    <div><dt>{{ t.stats_sample_size }}</dt><dd>{{ stats.hgb.n }}</dd></div>
+    <div><dt>{{ t.stats_accuracy }}</dt><dd>{{ '%.0f%%'|format(stats.hgb.accuracy * 100) }}</dd></div>
+    {% if stats.hgb.baseline_accuracy is not none %}
+    <div><dt>{{ t.stats_baseline }}</dt><dd>{{ t['verdict_' ~ stats.hgb.baseline_class] }} · {{ '%.0f%%'|format(stats.hgb.baseline_accuracy * 100) }}</dd></div>
+    {% endif %}
+  </dl>
+  <p class="advanced-note">{{ t.stats_hgb_note }}</p>
+  {% if stats.hgb.baseline_accuracy is not none %}<p class="advanced-note">{{ t.stats_baseline_note }}</p>{% endif %}
+
+  <div class="advanced-group">
+    <input type="checkbox" id="hgb-advanced" class="advanced-toggle">
+    <label for="hgb-advanced" class="advanced-label">{{ t.stats_advanced_hgb_label }}</label>
+    <div class="advanced-panel">
+      <h3 class="stats-header">{{ t.stats_confusion_hgb_header }}</h3>
+      <table class="confusion">
+        <thead>
+          <tr>
+            <th>{{ t.stats_axis_forecast }} ↓&nbsp;&nbsp;{{ t.stats_axis_actual }} →</th>
+            {% for a in stats.hgb.axis %}<th class="signal {{ a }}">{{ t['verdict_' ~ a] }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in stats.hgb.matrix %}
+          {% set ri = loop.index0 %}
+          <tr>
+            <td class="signal {{ row.forecast }}">{{ t['verdict_' ~ row.forecast] }}</td>
+            {% for c in row.cells %}<td{% if loop.index0 == ri %} class="diag"{% endif %}>{{ c }}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="advanced-note">{{ t.stats_confusion_note }}</p>
+
+      <p class="advanced-note">{{ t.stats_binary_note }}</p>
+      <dl class="stats-grid stats-grid-cols">
+        <div>
+          <dt>{{ t.stats_sensitivity }}</dt>
+          <dd>{% if stats.hgb.sensitivity is not none %}{{ '%.0f%%'|format(stats.hgb.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+          <dd class="note">{{ t.stats_sensitivity_note }}</dd>
+        </div>
+        <div>
+          <dt>{{ t.stats_specificity }}</dt>
+          <dd>{% if stats.hgb.specificity is not none %}{{ '%.0f%%'|format(stats.hgb.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+          <dd class="note">{{ t.stats_specificity_note }}</dd>
+        </div>
+      </dl>
+    </div>
+  </div>
+  {% endif %}
 </section>
 {% endblock %}

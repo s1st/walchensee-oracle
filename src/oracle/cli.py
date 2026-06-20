@@ -228,6 +228,66 @@ def rescore(
         console.print("[dim]no overall verdicts changed[/dim]")
 
 
+@app.command(name="hgb-backfill")
+def hgb_backfill(
+    since: str = typer.Option(None, help="ISO date — only backfill days from this date forward."),
+    until: str = typer.Option(None, help="ISO date — only backfill days up to this date."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Don't write; just report what would change."),
+    pkl: str = typer.Option(None, help="Path to the ML bundle pkl (default: data/ml/replay_full.pkl)."),
+) -> None:
+    """Score the HGB model on all logged run records and write `hgb_classifier`.
+
+    Reads `inputs.pressure` + `inputs.meteo` from each stored record (the
+    same fields the training CSV was built from), scores the HGB from the
+    bundle pkl, and merges an `hgb_classifier` block into the record without
+    touching any other field. Requires the [ml] extra (sklearn).
+
+    Run this after training a new model (`oracle ml train`) to backfill the
+    full history. The dashboard reads `hgb_classifier` on /history and /stats.
+    """
+    from pathlib import Path
+    from oracle.hgb_shadow import classify_hgb
+    from oracle.logger import default_store
+    from oracle.config import PROJECT_FIRST_DAY
+
+    pkl_path = Path(pkl) if pkl else None
+    store = default_store()
+    since_d = date.fromisoformat(since) if since else PROJECT_FIRST_DAY
+    until_d = date.fromisoformat(until) if until else date.today()
+
+    written = skipped = already = 0
+    cur = since_d
+    while cur <= until_d:
+        iso = cur.isoformat()
+        cur += timedelta(days=1)
+        record = store.read(iso)
+        if not record:
+            continue
+        inputs = record.get("inputs") or {}
+        pressure = inputs.get("pressure")
+        meteo = inputs.get("meteo")
+        if not pressure or not meteo:
+            skipped += 1
+            continue
+        result = classify_hgb(pressure, meteo, pkl_path=pkl_path)
+        if result is None:
+            skipped += 1
+            continue
+        if not dry_run:
+            record["hgb_classifier"] = result
+            store.write(iso, record)
+            written += 1
+        else:
+            already += 1
+
+    if dry_run:
+        console.print(f"would write hgb_classifier to {already} records")
+    else:
+        console.print(f"wrote hgb_classifier to {written} records")
+    if skipped:
+        console.print(f"[yellow]skipped (missing inputs): {skipped}[/yellow]")
+
+
 @app.command()
 def calibrate(
     since: str = typer.Option(None, help="ISO date — only consider days from this date forward."),
