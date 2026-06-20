@@ -228,6 +228,22 @@ def rescore(
         console.print("[dim]no overall verdicts changed[/dim]")
 
 
+@app.command(name="stats-update")
+def stats_update() -> None:
+    """Pre-compute the /stats page payload and write it to the store.
+
+    Runs the full calibration walk (replayed=True, resimulated=True) and
+    caches the result as _stats_cache.json. Called by the oracle-forecast
+    Cloud Run job after each morning forecast so the dashboard never needs
+    to run the expensive GCS walk on a live request.
+    """
+    from oracle.stats_cache import write_cache
+    from oracle.logger import default_store
+
+    payload = write_cache(default_store())
+    console.print(f"stats cache written — n={payload.get('n', 0)} days")
+
+
 @app.command(name="hgb-backfill")
 def hgb_backfill(
     since: str = typer.Option(None, help="ISO date — only backfill days from this date forward."),

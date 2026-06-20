@@ -24,15 +24,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from oracle.calibration import Report, compile_report
 from oracle.calibration import (
-    _label_record as _cal_label_record,
-    _empty_confusion as _cal_empty_confusion,
     actual_verdict_duration as _actual_verdict_duration,
-    constant_baselines as _cal_constant_baselines,
     storm_suspected as _storm_suspected,
 )
-from oracle.knowledge.rules import SIGNAL_ORDER, Severity, Signal
+from oracle.knowledge.rules import Severity, Signal
 from oracle.logger import RunStore, default_store
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
 from oracle.traffic import real_browser_hit
@@ -475,8 +471,7 @@ app = FastAPI(title="Walchi Oracle")
 
 @app.on_event("startup")
 async def _startup_prewarm() -> None:
-    """Kick off the stats compilation in the background at startup so the
-    first visitor never pays the 30–60 s cold GCS walk."""
+    """Pre-load the stats cache from the store on startup (fast — one GCS read)."""
     asyncio.create_task(_forecast_stats())
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -634,147 +629,33 @@ _stats_at: float = 0.0
 _stats_computing: bool = False  # guard against concurrent replay walks
 
 
-def _binary_rates(confusion: dict[str, dict[str, int]]) -> tuple[float | None, float | None]:
-    """Sensitivity/specificity under a binary collapse of the 3×3 matrix.
-
-    Positive = the day actually fired (actual go|maybe, i.e. ≥ 1 h above
-    8 kt); forecast-positive = forecast go|maybe. None when the denominator
-    class is empty (template renders "—").
-    """
-    pos = (Signal.GO.value, Signal.MAYBE.value)
-    neg = Signal.NO_GO.value
-    tp = sum(confusion[f][a] for f in pos for a in pos)
-    fn = sum(confusion[neg][a] for a in pos)
-    tn = confusion[neg][neg]
-    fp = sum(confusion[f][neg] for f in pos)
-    sens = tp / (tp + fn) if tp + fn else None
-    spec = tn / (tn + fp) if tn + fp else None
-    return sens, spec
-
-
-def _stats_payload(report: Report) -> dict:
-    """Project a calibration Report into a template-ready dict."""
-    sens, spec = _binary_rates(report.confusion)
-    matrix = [
-        {
-            "forecast": f.value,
-            "cells": [report.confusion[f.value][a.value] for a in SIGNAL_ORDER],
-        }
-        for f in SIGNAL_ORDER
-    ]
-    # Honesty companion to raw accuracy: the best "always the same verdict"
-    # guess. Accuracy alone is beatable by a constant on imbalanced classes; we
-    # show that constant's score so a visitor can see the forecast beats it.
-    baselines = report.baselines() if report.sample_size else {}
-    best_class = max(baselines, key=lambda k: baselines[k]["accuracy"]) if baselines else None
-    return {
-        "n": report.sample_size,
-        "accuracy": report.overall_accuracy if report.sample_size else None,
-        "baseline_class": best_class,
-        "baseline_accuracy": baselines[best_class]["accuracy"] if best_class else None,
-        "quarantined": len(report.quarantined_days),
-        "matrix": matrix,
-        "axis": [s.value for s in SIGNAL_ORDER],
-        "sensitivity": sens,
-        "specificity": spec,
-    }
-
-
 async def _forecast_stats() -> dict | None:
-    """Return the cached stats payload, or None while the replay walk is in
-    progress. The walk is expensive (~60 s on GCS); concurrent callers get the
-    stale value immediately rather than all blocking on the same walk."""
+    """Return the pre-computed stats payload from the store cache.
+
+    The expensive calibration walk (~60 s on GCS) runs once a day in the
+    oracle-forecast job via `oracle stats-update`, which writes _stats_cache.json
+    to the store. The dashboard reads it here and keeps it in memory for 6 h.
+    Returns None when the cache hasn't been written yet (first deploy, or
+    before the first morning job run) — the template shows "—" in that case.
+    """
     global _stats, _stats_at, _stats_computing
     now = time.time()
     if _stats_at and now - _stats_at < _STATS_TTL_S:
         return _stats
     if _stats_computing:
-        return _stats  # return stale (or None) — walk already in flight
+        return _stats
     _stats_computing = True
     try:
-        report = await asyncio.to_thread(
-            compile_report, _store(),
-            label="duration", resimulated=True, replayed=True,
-        )
-        _stats = _stats_payload(report)
-        _stats["ml"] = _ml_report_payload(report, "ml_classifier", replayed=True)
-        _stats["hgb"] = _ml_report_payload(report, "hgb_classifier", replayed=True)
+        from oracle.stats_cache import read_cache
+        fresh = await asyncio.to_thread(read_cache, _store())
+        if fresh is not None:
+            _stats = fresh
         _stats_at = now
     except Exception:
-        _stats_at = now  # suppress retry storm; keep last good payload
+        _stats_at = now
     finally:
         _stats_computing = False
     return _stats
-
-
-def _ml_report_payload(
-    report: Report, field: str = "ml_classifier", replayed: bool = False
-) -> dict:
-    """Score a shadow classifier on the same day set as the rule report.
-
-    `field` selects which record key to read: "ml_classifier" (logistic) or
-    "hgb_classifier" (HGB). Both must have the same schema: a dict with a
-    "verdict" key. Returns the SAME dict shape as `_stats_payload` so the
-    template renders an identical advanced panel for each model.
-
-    In replayed mode the ISOs in `report.days_with_ground_truth` are replay
-    record keys, so we read from the replay namespace. If the replay record
-    lacks a pre-computed ml_classifier block (common — backfill hasn't run),
-    we score the logistic on-the-fly from the stored inputs (pure Python, no
-    extra deps). HGB requires sklearn so it stays "—" until hgb-backfill
-    --replayed has been run.
-
-    n=0 when no scored day has the block — the template renders "—".
-    """
-    from oracle.ml_classifier import classify as _classify_logistic
-
-    valid = {s.value for s in SIGNAL_ORDER}
-    confusion = _cal_empty_confusion()
-    store = _store()
-    n = 0
-    for iso in report.days_with_ground_truth:
-        record = store.read_replay(iso) if replayed else store.read(iso)
-        if not record:
-            continue
-        ml = (record.get(field) or {}).get("verdict")
-        # For the logistic classifier in replay mode: score on-the-fly from
-        # stored inputs when no pre-computed block is present.
-        if ml is None and field == "ml_classifier" and replayed:
-            inputs = record.get("inputs") or {}
-            result = _classify_logistic(inputs.get("pressure"), inputs.get("meteo"))
-            ml = result.verdict if result else None
-        if ml not in valid:
-            continue
-        actual = _cal_label_record(record, report.label_mode)
-        if actual is None or actual not in valid:
-            continue
-        confusion[ml][actual] += 1
-        n += 1
-    if n == 0:
-        return {"n": 0, "accuracy": None, "baseline_class": None,
-                "baseline_accuracy": None, "quarantined": len(report.quarantined_days),
-                "matrix": [], "axis": [s.value for s in SIGNAL_ORDER],
-                "sensitivity": None, "specificity": None}
-    sens, spec = _binary_rates(confusion)
-    matrix = [
-        {"forecast": f.value,
-         "cells": [confusion[f.value][a.value] for a in SIGNAL_ORDER]}
-        for f in SIGNAL_ORDER
-    ]
-    baselines = _cal_constant_baselines(confusion)
-    best_class = max(baselines, key=lambda k: baselines[k]["accuracy"]) if baselines else None
-    hits = sum(confusion[s.value][s.value] for s in SIGNAL_ORDER)
-    return {
-        "n": n,
-        "accuracy": hits / n,
-        "baseline_class": best_class,
-        "baseline_accuracy": baselines[best_class]["accuracy"] if best_class else None,
-        "quarantined": len(report.quarantined_days),
-        "matrix": matrix,
-        "axis": [s.value for s in SIGNAL_ORDER],
-        "sensitivity": sens,
-        "specificity": spec,
-    }
 
 
 # Tooltip format per language. Kept compact so the browser's native tooltip
@@ -1287,9 +1168,6 @@ async def stats_page(request: Request) -> Response:
     background task. The template auto-reloads every 8 s when stats are None
     so the user sees data once the walk completes."""
     lang = _resolve_lang(request)
-    # Fire the walk as a detached background task so it outlives this request.
-    # _forecast_stats() is also called directly to pick up any already-cached result.
-    asyncio.create_task(_forecast_stats())
     views, stats = await asyncio.gather(_fetch_page_views(), _forecast_stats())
     ctx = _base_context(request, active="stats", lang=lang)
     response = templates.TemplateResponse(
