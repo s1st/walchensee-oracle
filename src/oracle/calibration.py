@@ -577,7 +577,7 @@ def rescore_all(
         new_overall, new_verdicts = result
         record["overall_resimulated"] = new_overall
         record["verdicts_resimulated"] = [verdict_to_dict(v) for v in new_verdicts]
-        old_overall = record.get("overall")
+        old_overall = record.get("overall") or ""
         if old_overall != new_overall:
             flipped.append((iso, old_overall, new_overall))
         if not dry_run:

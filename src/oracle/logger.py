@@ -99,7 +99,7 @@ class GCSRunStore:
 
     def __post_init__(self) -> None:
         # Import lazily so CI / local runs don't need the package loaded.
-        from google.cloud import storage
+        from google.cloud import storage  # type: ignore[attr-defined]  # stubs not installed
 
         self._client = storage.Client()
         self._bucket = self._client.bucket(self.bucket_name)
