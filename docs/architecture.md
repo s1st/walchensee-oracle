@@ -64,13 +64,18 @@ Fourteen heuristic rules turn pillar data into `Verdict{rule, signal, severity, 
 
 ### Dashboard (`src/oracle/dashboard/main.py`)
 
-FastAPI app reading the same `RunStore`. In-memory 60 s cache per-day file and a 5-minute cache for the live-Urfeld panel so visitor traffic doesn't thrash GCS or the Addicted-Sports endpoint. Renders:
+FastAPI + Jinja2 app reading the same `RunStore`, split into four routes:
 
-- a three-day tab picker (today + two forecast days)
-- live webcam + current/last-hour/trend panel
-- the selected day's verdict card with a bilingual one-line summary
-- 30-day forecast-vs-actual strip with the same go/maybe/no_go colour scale on both rows
-- advanced panel (checkbox-toggled) with the full rule table
+- **`/`** — landing page: three-day tab picker, live webcam + wind panel, verdict card with a bilingual one-line summary, and the experimental logistic-ML card.
+- **`/history`** — 30-day strip with **four rows** on the shared go/maybe/no_go colour scale: rule-based forecast (re-scored), logistic ML (experimental), HGB ML (experimental black-box), and actual session outcome (≥ 1 h from Urfeld). Clicking a strip cell renders the selected day's wind chart + verdict inline on the same page.
+- **`/stats`** — forecast quality metrics (accuracy, confusion matrix, sensitivity/specificity) for all three model layers (rule, logistic, HGB).
+- **`/about`** — the 14 rules explained with `?` tooltips.
+
+In-memory caches: 60 s per-day file, 5 min for the live-Urfeld panel, 1 h for stats, 12 h for Cloud Logging visitor counts.
+
+**Shadow ML classifiers** — two models run alongside the rules in shadow mode (never drive the verdict):
+- `ml_classifier` (logistic regression): distilled to ~69 pure-Python floats in `ml_coeffs.py`; scored at forecast time in `forecast_to_dict`; shown on the landing page and the history strip.
+- `hgb_classifier` (HistGradientBoosting): scored offline via `oracle hgb-backfill` (requires `[ml]` extra, not in prod Docker images); shown on `/history` and `/stats` only.
 
 The footer carries a friendly link to the windinfo.eu Wind-Wetter-Chat (login required at windinfo.eu) for users who want community context — but the project itself does **not** scrape, store, or republish that chat. A previous chat-pillar that did so was removed for DSGVO + § 87b UrhG (Datenbankschutz) reasons; do not reintroduce.
 

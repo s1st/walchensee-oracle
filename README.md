@@ -35,26 +35,23 @@ translation.
 ## Public dashboard
 
 Deployed at **https://walchensee.simon-stieber.de** (Cloud Run + custom
-domain via Cloudflare DNS). Shows:
+domain via Cloudflare DNS). Split into four routes:
 
-- **Live webcam + wind panel** pinned on top — embedded Addicted-Sports
-  Urfeld webcam, current wind speed, peak gust, last-hour average, and a
-  trend indicator.
-- **Three-day picker** (today / tomorrow / day after). Each tab shows a
-  colour dot for its verdict. The scheduled job writes all three days'
-  forecasts every morning.
-- **Verdict card** with a single-line summary (top blocking reason for
-  NO_GO, counter of green rules for GO).
-- **30-day strip** with three rows on a shared colour scale so forecast
-  misses jump out visually: the oracle's **forecast** verdict (toggle
-  between the as-written verdict and one re-scored under the current rules),
-  an **experimental ML-classifier** line (see below), and the **actual**
-  session outcome (a sustained session ≥ 1 h, from the Urfeld wind curve).
-- **Experimental ML classifier** — a learned logistic model (distilled to a
-  pure-Python scorer, no extra runtime deps) runs alongside the rules in
-  *shadow mode*: it's logged and shown (a card + the strip row above) for
-  comparison, but it **never drives the official verdict**. It exists to
-  gather live evidence on whether a model could eventually beat the rules.
+- **`/` (landing)** — live webcam + wind panel, three-day picker (today /
+  tomorrow / day after, each tab colour-coded by verdict), verdict card with
+  a single-line summary, and the experimental logistic-ML card.
+- **`/history`** — 30-day strip with four rows on a shared GO/MAYBE/NO_GO
+  colour scale: rule-based forecast (re-scored under current rules), logistic
+  ML forecast (experimental), HistGradientBoosting ML forecast (experimental
+  black-box), and actual session outcome (≥ 1 h from the Urfeld wind curve).
+  Clicking any cell shows the selected day's verdict and wind chart inline.
+- **`/stats`** — forecast quality metrics (accuracy, confusion matrix,
+  sensitivity/specificity) for all three model layers side by side.
+- **`/about`** — the 14 rules explained.
+- **Experimental ML classifier card** — a distilled logistic regression
+  (pure-Python scorer, no extra runtime deps) runs alongside the rules in
+  *shadow mode* on the landing page: logged, shown for comparison, but it
+  **never drives the official verdict**.
 - **Advanced panel** (checkbox-toggled) with the full rule table and `?`
   tooltips explaining each rule.
 - **DE / EN language toggle** in the top right corner, with auto-detection
@@ -97,6 +94,7 @@ oracle backfill                      # merge today's Urfeld wind curve as ground
 oracle backfill --day 2026-05-15     # backfill a specific past day
 oracle rescore                       # re-run the rule layer on logged records under the current aggregator
 oracle calibrate                     # score logged forecasts against Urfeld ground truth
+oracle hgb-backfill                  # score the HGB model on logged records and write hgb_classifier blocks (requires [ml] extra)
 ```
 
 Each forecast writes `data/runs/<YYYY-MM-DD>.json` with the raw inputs, the
@@ -112,7 +110,8 @@ src/oracle/
 ├── pillars/           # one module per data source
 ├── knowledge/rules.py # heuristics
 ├── engine.py          # aggregates pillars → forecast
-├── ml_classifier.py   # shadow ML classifier (pure-Python scorer)
+├── ml_classifier.py   # logistic shadow classifier (pure-Python scorer, in prod)
+├── hgb_shadow.py      # HGB shadow classifier (requires [ml] extra, backfill only)
 ├── ml/                # offline ML research (train/evaluate; behind the [ml] extra)
 └── cli.py             # entry point
 ```
