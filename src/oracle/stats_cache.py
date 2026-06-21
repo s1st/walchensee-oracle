@@ -142,7 +142,19 @@ def _clean(obj: Any) -> Any:
 
 
 def build_payload(store: RunStore | None = None) -> dict[str, Any]:
-    """Run the full calibration walk and return the dashboard stats payload."""
+    """Run the full calibration walk and return the dashboard stats payload.
+
+    Scored on the thermal season only (`config.ACTIVE_SEASON_MONTHS`, Apr–Oct) —
+    the product never serves Nov–Mar, and including those trivial winter
+    no-wind days inflates the count and flatters specificity.
+
+    Uses the resimulated verdicts (`resimulated=True`) so the panel reflects
+    the *current* rule layer, not whatever the aggregator said when each
+    replay record was written. This requires the replay archive to have been
+    rescored — run `oracle rescore --replayed` (and `oracle hgb-backfill
+    --replayed` for the HGB column) before `stats-update`, or every record
+    lacks `overall_resimulated` and the walk scores zero days.
+    """
     store = store or default_store()
     report = compile_report(
         store, label="duration", resimulated=True, replayed=True,
