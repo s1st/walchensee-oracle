@@ -20,4 +20,13 @@
   </li>
   {% endfor %}
 </ul>
+
+<h3 id="glossar">{{ t.about_glossary_header }}</h3>
+<p class="advanced-note">{{ t.about_glossary_intro }}</p>
+<dl class="glossary">
+  {% for g in glossary %}
+  <dt id="glos-{{ g.id }}">{{ g.term }}</dt>
+  <dd>{{ g.def }}</dd>
+  {% endfor %}
+</dl>
 {% endblock %}

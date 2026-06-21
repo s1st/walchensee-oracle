@@ -11,6 +11,9 @@
       {{ t.for_day }} {{ selected_date_label }}{% if view == 'original' %} —
       <span class="view-tag">{{ t.view_label_original }}</span>{% endif %}.
     </div>
+    <p class="verdict-glossary">
+      <a href="/about{% if lang != 'de' %}?lang={{ lang }}{% endif %}#glossar">{{ t.glossary_hint }} →</a>
+    </p>
   </section>
 
   {% if ml_forecast %}

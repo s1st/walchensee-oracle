@@ -71,7 +71,9 @@
 
 {% block content %}
 <h1>{{ t.nav_stats }}</h1>
-<p class="lead">{{ t.stats_lead }}</p>
+<p class="lead">{{ t.stats_lead }}
+  <a href="/about{% if lang != 'de' %}?lang={{ lang }}{% endif %}#glos-peirce">{{ t.glossary_hint }} →</a>
+</p>
 {% if not stats or stats.n == 0 %}
 <p class="advanced-note" id="stats-loading">
   {% if lang == 'de' %}Statistik wird berechnet — Seite lädt in Kürze nach…{% else %}Statistics are being computed — page will reload shortly…{% endif %}
