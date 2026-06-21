@@ -13,10 +13,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import numpy as np
-
 _DEFAULT_PKL = Path(__file__).parent.parent.parent / "data" / "ml" / "replay_full.pkl"
-_CLASS_MAP = {0: "no_go", 1: "maybe", 2: "go"}
 
 _FEATURE_LABEL_EN: dict[str, str] = {
     "munich_hpa": "Munich pressure",
@@ -91,8 +88,14 @@ def classify_hgb(
     )
     proba = model.predict_proba(X)[0]
 
-    # classes_ are ints {0,1,2} — map to our string labels
-    classes = [_CLASS_MAP.get(int(c), str(c)) for c in model.classes_]
+    # classes_ are ints {0,1,2}. Map back through the SAME encoding training
+    # used (oracle.ml.dataset.INT_TO_LABEL: 0=go, 1=maybe, 2=no_go) — a
+    # hand-written reverse map here previously swapped go/no_go, which flipped
+    # the two extreme classes and drove the HGB column to a worse-than-chance
+    # Peirce. See docs/findings/stats-panel-season-scoping-2026-06-21.md.
+    from oracle.ml.dataset import INT_TO_LABEL
+
+    classes = [INT_TO_LABEL[int(c)] for c in model.classes_]
     probs = {cls: float(p) for cls, p in zip(classes, proba)}
     verdict = max(probs, key=probs.__getitem__)
 

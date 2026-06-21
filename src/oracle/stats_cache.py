@@ -28,6 +28,15 @@ from oracle.logger import RunStore, default_store
 
 _STATS_KEY = "_stats_cache"
 
+# The HGB bundle (`data/ml/replay_full.pkl`) is trained on the year-blocked
+# split (≤2022) and its published +0.208 Peirce is the ≥2023 out-of-sample
+# holdout — see docs/findings/ml-classifier-2026-06-13.md and
+# docs/findings/stats-panel-season-scoping-2026-06-21.md. Scoring it over the
+# whole replay archive mixes its own training years in and is not comparable,
+# so the HGB column is restricted to its test era. The distilled logistic
+# (ml_coeffs.py) and the rule layer are full-history backtests, not held out.
+_HGB_HOLDOUT_SINCE = "2023-01-01"
+
 
 def _binary_rates(
     confusion: dict[str, dict[str, int]],
@@ -69,12 +78,18 @@ def _rule_payload(report: Report) -> dict[str, Any]:
     }
 
 
-def _model_payload(report: Report, field: str, store: RunStore) -> dict[str, Any]:
+def _model_payload(
+    report: Report, field: str, store: RunStore, since: str | None = None
+) -> dict[str, Any]:
     """Score a shadow classifier against the ground-truth days in the report.
 
     For replay records lacking a pre-computed block (logistic only — pure
     Python, safe to score on-the-fly) we score from stored inputs. HGB
     requires sklearn so it stays 0 until hgb-backfill --replayed has run.
+
+    `since` (ISO date string) restricts scoring to days on or after that date —
+    used to hold the HGB model out to its ≥2023 test era (`_HGB_HOLDOUT_SINCE`).
+    ISO `YYYY-MM-DD` keys sort lexicographically, so a string compare suffices.
     """
     from oracle.ml_classifier import classify as _classify_logistic
 
@@ -82,6 +97,8 @@ def _model_payload(report: Report, field: str, store: RunStore) -> dict[str, Any
     confusion = _cal_empty_confusion()
     n = 0
     for iso in report.days_with_ground_truth:
+        if since is not None and iso < since:
+            continue
         # Use the merged record (replay inputs + main-record ground truth),
         # same join compile_report uses — raw replay records have machine=None.
         record = _cal_merged_replay_record(store, iso)
@@ -154,15 +171,24 @@ def build_payload(store: RunStore | None = None) -> dict[str, Any]:
     rescored — run `oracle rescore --replayed` (and `oracle hgb-backfill
     --replayed` for the HGB column) before `stats-update`, or every record
     lacks `overall_resimulated` and the walk scores zero days.
+
+    Grades against the `thermal` label — the same target `oracle ml train`
+    defaults to — so the rule and both ML models are scored on what they were
+    built to predict (foehn/frontal days relabelled NO_GO). The HGB column is
+    held out to its ≥2023 test era (`_HGB_HOLDOUT_SINCE`); the rule and the
+    distilled logistic are full-history backtests. See
+    docs/findings/stats-panel-season-scoping-2026-06-21.md.
     """
     store = store or default_store()
     report = compile_report(
-        store, label="duration", resimulated=True, replayed=True,
+        store, label="thermal", resimulated=True, replayed=True,
         months=config.ACTIVE_SEASON_MONTHS,
     )
     payload = _rule_payload(report)
     payload["ml"] = _model_payload(report, "ml_classifier", store)
-    payload["hgb"] = _model_payload(report, "hgb_classifier", store)
+    payload["hgb"] = _model_payload(
+        report, "hgb_classifier", store, since=_HGB_HOLDOUT_SINCE
+    )
     return _clean(payload)
 
 
