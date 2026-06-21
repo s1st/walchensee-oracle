@@ -7,6 +7,9 @@
       {% if v == 'go' %}{{ t.verdict_go }}{% elif v == 'maybe' %}{{ t.verdict_maybe }}{% else %}{{ t.verdict_no_go }}{% endif %}
     </h2>
     <p class="verdict-summary">{{ summary }}</p>
+    {% if is_storm %}
+    <p class="verdict-storm">{{ t.storm_verdict_note }}</p>
+    {% endif %}
     <div class="verdict-meta">
       {{ t.for_day }} {{ selected_date_label }}{% if view == 'original' %} —
       <span class="view-tag">{{ t.view_label_original }}</span>{% endif %}.

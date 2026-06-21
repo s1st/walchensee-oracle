@@ -173,6 +173,7 @@ _UI: dict[str, dict[str, str]] = {
         "strip_legend_empty": "keine Daten",
         "strip_legend_storm": "Gewitter (aus Kalibrierung ausgenommen)",
         "storm_hint": "⚡ Gewitter-Risiko — kein Thermik-Tag",
+        "storm_verdict_note": "⚡ Ausschlaggebend ist die Gewittergefahr — zur Sicherheit. Sobald Gewitter im Spiel ist, sagt der Regelansatz immer FLAUTE, egal wie gut die Thermik sonst wäre. Sicherheit geht vor; zum Abwägen dienen die gelernten Modelle.",
         "live_header": "Aktuell in Urfeld",
         "live_now": "jetzt",
         "live_gust_label": "Böe",
@@ -298,6 +299,7 @@ _UI: dict[str, dict[str, str]] = {
         "strip_legend_empty": "no data",
         "strip_legend_storm": "thunderstorm (excluded from calibration)",
         "storm_hint": "⚡ thunderstorm risk — not a thermal day",
+        "storm_verdict_note": "⚡ The decisive factor here is thunderstorm risk — a hard safety veto. Whenever storms are in play the rule-based forecast always says NO GO, however good the thermal would otherwise be. Safety first; use the learned models to weigh it up.",
         "live_header": "Live at Urfeld",
         "live_now": "now",
         "live_gust_label": "gust",
@@ -1209,12 +1211,19 @@ def _day_detail_context(selected_day: date, today: date, lang: str, view: str) -
     summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
     is_today = selected_day == today
     historical = None if is_today else _historical_chart_payload(raw)
+    # Whether this day's NO_GO is driven by the thunderstorm HARD veto. Same
+    # `is_storm_risk` trigger as the rule veto, the calibration quarantine and
+    # the strip's storm border (single source of truth) — so the card can spell
+    # out that storm risk alone is decisive here. Gated on a NO_GO display so the
+    # callout never contradicts a GO/MAYBE headline (e.g. in the 'original' view).
+    is_storm = bool(raw) and display_overall == Signal.NO_GO and _storm_suspected(raw)
     return {
         "current": _public_view(raw),
         "display_overall": display_overall,
         "display_verdicts": display_verdicts,
         "view": view,
         "summary": summary,
+        "is_storm": is_storm,
         "ml_forecast": ml_forecast,
         "hgb_forecast": hgb_forecast,
         "selected_date_label": _fmt_date(selected_day, lang, "full"),
