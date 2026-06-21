@@ -37,6 +37,14 @@ ml = [
     "numpy>=1.24",
     "matplotlib>=3.7",
 ]
+# Lean runtime extra for serving the HGB shadow at forecast time in the Cloud
+# Run job. scikit-learn (+ scipy/numpy transitively) only — NO pandas/matplotlib,
+# which the numpy-only serve path in hgb_shadow.py doesn't need. Keeps the job
+# image small (~+45 MB compressed). Dockerfile.job installs ".[hgb]".
+hgb = [
+    "scikit-learn>=1.4",
+    "numpy>=1.24",
+]
 
 [project.scripts]
 oracle = "oracle.cli:app"

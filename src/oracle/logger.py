@@ -228,6 +228,20 @@ def forecast_to_dict(result: Forecast, target_day: date) -> dict[str, Any]:
     ml = classify(pressure_d, meteo_d)
     if ml is not None:
         d["ml_classifier"] = ml.to_dict()
+    # HGB shadow: same contract as ml_classifier (logged, shown, NEVER fed into
+    # `overall`). Gated on ENABLE_HGB_SHADOW so it only runs where the image
+    # ships scikit-learn + the pkl (the Cloud Run job); local/dashboard/test
+    # runs without it behave exactly as before — no block, no sklearn import.
+    # A failed shadow model must never break the critical forecast write.
+    if os.environ.get("ENABLE_HGB_SHADOW"):
+        try:
+            from oracle.hgb_shadow import classify_hgb
+
+            hgb = classify_hgb(pressure_d, meteo_d)
+            if hgb is not None:
+                d["hgb_classifier"] = hgb
+        except Exception:  # noqa: BLE001 — shadow model is non-critical
+            pass
     if result.replay_day is not None:
         d["replay_day"] = result.replay_day.isoformat()
         d["replay_source"] = result.replay_source

@@ -125,6 +125,33 @@ def test_shadow_invariant_ml_does_not_change_overall():
         assert d["ml_classifier"]["verdict"] == "maybe"
 
 
+def test_hgb_shadow_gated_off_by_default(monkeypatch):
+    """Without ENABLE_HGB_SHADOW, forecast_to_dict attaches no hgb_classifier
+    (and never imports sklearn) — preserving local/dashboard/test behaviour."""
+    monkeypatch.delenv("ENABLE_HGB_SHADOW", raising=False)
+    d = forecast_to_dict(_forecast(Signal.NO_GO), date(2026, 6, 12))
+    assert "hgb_classifier" not in d
+
+
+def test_hgb_shadow_when_enabled_does_not_change_overall(monkeypatch):
+    """With the gate on (the Cloud Run job's config), the HGB block is attached
+    and well-formed, but `overall` still equals the rule verdict."""
+    import os.path as _osp
+
+    pytest.importorskip("sklearn")
+    pkl = _osp.join(_osp.dirname(_osp.dirname(__file__)), "data", "ml", "replay_full.pkl")
+    if not _osp.exists(pkl):
+        pytest.skip("HGB bundle not present")
+    monkeypatch.setenv("ENABLE_HGB_SHADOW", "1")
+    monkeypatch.setenv("ML_PKL", pkl)
+    for sig in (Signal.GO, Signal.MAYBE, Signal.NO_GO):
+        d = forecast_to_dict(_forecast(sig), date(2026, 6, 12))
+        assert d["overall"] == sig.value                       # shadow invariant
+        block = d["hgb_classifier"]
+        assert block["verdict"] in {"go", "maybe", "no_go"}
+        assert set(block["probabilities"]) == {"go", "maybe", "no_go"}
+
+
 def test_dashboard_renders_ml_card(tmp_path, monkeypatch):
     """The experimental ML card appears (both languages) when the record
     carries an `ml_classifier` block."""

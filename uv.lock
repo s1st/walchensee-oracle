@@ -2132,6 +2132,10 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
+hgb = [
+    { name = "numpy" },
+    { name = "scikit-learn" },
+]
 ml = [
     { name = "matplotlib" },
     { name = "numpy" },
@@ -2148,6 +2152,7 @@ requires-dist = [
     { name = "jinja2", marker = "extra == 'dashboard'", specifier = ">=3.1" },
     { name = "matplotlib", marker = "extra == 'ml'", specifier = ">=3.7" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+    { name = "numpy", marker = "extra == 'hgb'", specifier = ">=1.24" },
     { name = "numpy", marker = "extra == 'ml'", specifier = ">=1.24" },
     { name = "pandas", marker = "extra == 'ml'", specifier = ">=2.0" },
     { name = "pydantic", specifier = ">=2.7" },
@@ -2156,11 +2161,12 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "rich", specifier = ">=13.7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
+    { name = "scikit-learn", marker = "extra == 'hgb'", specifier = ">=1.4" },
     { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.4" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'dashboard'", specifier = ">=0.30" },
 ]
-provides-extras = ["dev", "dashboard", "ml"]
+provides-extras = ["dev", "dashboard", "ml", "hgb"]
 
 [[package]]
 name = "watchfiles"

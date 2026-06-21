@@ -13,4 +13,11 @@ build/
 .vscode/
 .playwright-mcp/
 .claude/
-data/
+data/*
+# ...except the HGB model bundle, which Dockerfile.job ships into the job image
+# so the forecast can score the HGB shadow at write time (see hgb_shadow.py).
+# `data/*` (not `data/`) lets git descend so these negations apply: re-include
+# the ml dir, re-ignore its other contents (reports/plots), keep the pkl.
+!data/ml/
+data/ml/*
+!data/ml/replay_full.pkl

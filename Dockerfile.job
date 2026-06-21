@@ -1,6 +1,12 @@
 # Minimal image for the scheduled Cloud Run Job.
 # No OpenClaw, no dashboard — just the oracle CLI and its runtime deps.
 # Invoked by Cloud Run Jobs as `oracle forecast` or `oracle backfill`.
+#
+# Ships the `[hgb]` extra (scikit-learn; numpy-only serve path — no pandas) plus
+# the HGB model bundle, so the morning forecast attaches the `hgb_classifier`
+# block at write time (ENABLE_HGB_SHADOW=1) rather than needing a manual
+# `oracle hgb-backfill`. ~+45 MB compressed — see
+# docs/findings/stats-panel-season-scoping-2026-06-21.md.
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -9,10 +15,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install package first (copied source into the image).
+# Install package + lean ML serve deps (copied source into the image).
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --upgrade pip && pip install .
+RUN pip install --upgrade pip && pip install ".[hgb]"
+
+# HGB model bundle + enable the forecast-time shadow. ML_PKL pins the path so
+# the loader resolves it regardless of the installed package location.
+COPY data/ml/replay_full.pkl ./data/ml/replay_full.pkl
+ENV ML_PKL=/app/data/ml/replay_full.pkl \
+    ENABLE_HGB_SHADOW=1
 
 # Non-root runtime user. Cloud Run honours this.
 RUN useradd --system --uid 1001 --create-home oracle

@@ -1,8 +1,14 @@
 """HGB shadow classifier — HistGradientBoostingClassifier run alongside the rules.
 
-Loaded from the same pkl bundle as the offline ML evaluation; scored at
-backfill time (not at forecast time) via `oracle hgb-backfill`. Requires
-the `[ml]` extra (sklearn). Never runs in the prod Docker images.
+Loaded from the same pkl bundle as the offline ML evaluation. Two ways in:
+  - offline, over the whole archive, via `oracle hgb-backfill`;
+  - at forecast time in the Cloud Run job, when `Dockerfile.job` ships the
+    `[hgb]` extra (scikit-learn) + the pkl and sets `ENABLE_HGB_SHADOW=1` —
+    `logger.forecast_to_dict` then attaches the block like `ml_classifier`.
+
+Requires scikit-learn (the `[hgb]` or `[ml]` extra). The serve path is
+numpy-only — pandas is *not* needed — to keep the image small. The model
+bundle is loaded once and cached (`functools.lru_cache`).
 
 Output schema mirrors `ml_classifier` in run records so the dashboard can
 render it identically, but stored as `hgb_classifier` to keep the two
@@ -10,6 +16,7 @@ models clearly distinct.
 """
 from __future__ import annotations
 
+import functools
 import os
 from pathlib import Path
 
@@ -43,15 +50,20 @@ _FEATURE_LABEL_DE: dict[str, str] = {
 }
 
 
-def _load_hgb(pkl_path: Path | None = None):
-    """Load the HGB model from the bundle pkl. Requires sklearn ([ml] extra)."""
+@functools.lru_cache(maxsize=4)
+def _load_hgb(pkl_path: str | None = None):
+    """Load + cache the HGB model from the bundle pkl. Requires scikit-learn.
+
+    Cached so the 2 MB bundle is unpickled once per process, not per forecast.
+    `pkl_path` is a str (not Path) so the result is hashable/cacheable.
+    """
     import pickle
 
-    path = pkl_path or Path(os.environ.get("ML_PKL", str(_DEFAULT_PKL)))
+    path = pkl_path or os.environ.get("ML_PKL", str(_DEFAULT_PKL))
     with open(path, "rb") as f:
         bundle = pickle.load(f)
     fitted = bundle["models"]["hgb"]
-    return fitted.model, list(fitted.model.feature_names_in_)
+    return fitted.model, tuple(fitted.model.feature_names_in_)
 
 
 def classify_hgb(
@@ -67,26 +79,31 @@ def classify_hgb(
     if not pressure or not meteo:
         return None
 
-    model, features = _load_hgb(pkl_path)
+    model, features = _load_hgb(str(pkl_path) if pkl_path else None)
 
-    row: list[float | None] = []
+    row: list[float] = []
     for name in features:
         raw = pressure.get(name, meteo.get(name))
         if isinstance(raw, bool):
             raw = float(raw)
         try:
-            v = float(raw) if raw is not None else None
+            v = float(raw) if raw is not None else float("nan")
         except (TypeError, ValueError):
-            v = None
+            v = float("nan")
         row.append(v)
 
-    import pandas as pd
+    import warnings
 
-    # sklearn HGB handles NaN natively for missing values
-    X = pd.DataFrame(
-        [[v if v is not None else float("nan") for v in row]], columns=features
-    )
-    proba = model.predict_proba(X)[0]
+    import numpy as np
+
+    # numpy-only serve path (no pandas) — keeps the prod image lean. The row is
+    # built in `feature_names_in_` order, so positional scoring is correct;
+    # sklearn HGB handles NaN natively. The model was fit on a named DataFrame,
+    # so a bare array triggers a harmless "no feature names" UserWarning we mute.
+    X = np.asarray([row], dtype=float)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=UserWarning)
+        proba = model.predict_proba(X)[0]
 
     # classes_ are ints {0,1,2}. Map back through the SAME encoding training
     # used (oracle.ml.dataset.INT_TO_LABEL: 0=go, 1=maybe, 2=no_go) — a
@@ -112,7 +129,7 @@ def classify_hgb(
     deviations = []
     for i, name in enumerate(features):
         v = row[i]
-        if v is not None:
+        if not np.isnan(v):
             med = medians.get(name, 0.0)
             deviations.append((name, abs(v - med)))
     top3 = sorted(deviations, key=lambda t: -t[1])[:3]
