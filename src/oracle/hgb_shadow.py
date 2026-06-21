@@ -20,7 +20,16 @@ import functools
 import os
 from pathlib import Path
 
+from oracle.knowledge.rules import SIGNAL_ORDER
+
 _DEFAULT_PKL = Path(__file__).parent.parent.parent / "data" / "ml" / "replay_full.pkl"
+
+# Map the model's int classes back to verdict strings. Derived from SIGNAL_ORDER
+# (GO, MAYBE, NO_GO) — the SAME source oracle.ml.dataset.LABEL_ORDER uses at
+# train time, so {0: go, 1: maybe, 2: no_go} can't drift from training. Defined
+# locally (not imported from oracle.ml.dataset) because that module pulls in
+# pandas, which the lean [hgb] prod image deliberately doesn't ship.
+_INT_TO_LABEL = {i: s.value for i, s in enumerate(SIGNAL_ORDER)}
 
 _FEATURE_LABEL_EN: dict[str, str] = {
     "munich_hpa": "Munich pressure",
@@ -105,14 +114,12 @@ def classify_hgb(
         warnings.simplefilter("ignore", category=UserWarning)
         proba = model.predict_proba(X)[0]
 
-    # classes_ are ints {0,1,2}. Map back through the SAME encoding training
-    # used (oracle.ml.dataset.INT_TO_LABEL: 0=go, 1=maybe, 2=no_go) — a
-    # hand-written reverse map here previously swapped go/no_go, which flipped
-    # the two extreme classes and drove the HGB column to a worse-than-chance
-    # Peirce. See docs/findings/stats-panel-season-scoping-2026-06-21.md.
-    from oracle.ml.dataset import INT_TO_LABEL
-
-    classes = [INT_TO_LABEL[int(c)] for c in model.classes_]
+    # classes_ are ints {0,1,2}. Map back through _INT_TO_LABEL (0=go, 1=maybe,
+    # 2=no_go, from SIGNAL_ORDER — the training encoding). A hand-written reverse
+    # map here previously swapped go/no_go, flipping the two extreme classes and
+    # driving the HGB column to a worse-than-chance Peirce. See
+    # docs/findings/stats-panel-season-scoping-2026-06-21.md.
+    classes = [_INT_TO_LABEL[int(c)] for c in model.classes_]
     probs = {cls: float(p) for cls, p in zip(classes, proba)}
     verdict = max(probs, key=probs.__getitem__)
 

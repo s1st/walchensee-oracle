@@ -152,6 +152,30 @@ def test_hgb_shadow_when_enabled_does_not_change_overall(monkeypatch):
         assert set(block["probabilities"]) == {"go", "maybe", "no_go"}
 
 
+def test_hgb_serve_path_needs_no_pandas(monkeypatch):
+    """Guards the lean [hgb] prod image: classify_hgb must score without pandas
+    (directly or transitively via oracle.ml.dataset, which imports pandas).
+    Regression — importing the label map from oracle.ml.dataset raised
+    ImportError in the Cloud Run job, silently dropping the HGB block."""
+    import os.path as _osp
+    import sys
+
+    pytest.importorskip("sklearn")
+    pkl = _osp.join(_osp.dirname(_osp.dirname(__file__)), "data", "ml", "replay_full.pkl")
+    if not _osp.exists(pkl):
+        pytest.skip("HGB bundle not present")
+    monkeypatch.setenv("ML_PKL", pkl)
+    # Make pandas (and the not-yet-imported oracle.ml.* tree) unavailable.
+    monkeypatch.setitem(sys.modules, "pandas", None)
+    for mod in [m for m in list(sys.modules) if m == "oracle.ml" or m.startswith("oracle.ml.")]:
+        monkeypatch.delitem(sys.modules, mod, raising=False)
+
+    from oracle.hgb_shadow import classify_hgb
+
+    res = classify_hgb({"munich_hpa": 1013.0}, {"overnight_cloud_cover_pct": 50.0})
+    assert res is not None and res["verdict"] in {"go", "maybe", "no_go"}
+
+
 def test_dashboard_renders_ml_card(tmp_path, monkeypatch):
     """The experimental ML card appears (both languages) when the record
     carries an `ml_classifier` block."""
