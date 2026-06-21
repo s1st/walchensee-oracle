@@ -36,7 +36,7 @@ from oracle.calibration import (
     actual_verdict_thermal,
     parse_months,
 )
-from oracle.knowledge.ignition_timing import Band, estimate_from_inputs
+from oracle.research.ignition_timing import Band, estimate_from_inputs
 from oracle.logger import LocalRunStore
 
 _BANDS = (Band.EARLY, Band.MIDDAY, Band.LATE)

@@ -23,7 +23,7 @@ Warm-season (Apr–Oct) thermal sessions: **1 103** over 2016–2026, **653** fo
 
 ## Stage 0 — early/midday/late band from morning aggregates
 
-`src/oracle/knowledge/ignition_timing.py`: signed "lateness" score from the
+`src/oracle/research/ignition_timing.py`: signed "lateness" score from the
 existing snapshot (gradient dominant → counter-gradient delays; + instability,
 midday low cloud, weak solar/BLH earlier-pulls). Validate with
 `scripts/validate_ignition_timing.py [--replayed]`.

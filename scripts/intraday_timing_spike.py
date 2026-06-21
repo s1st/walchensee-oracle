@@ -43,7 +43,7 @@ from oracle.calibration import (
     actual_verdict_thermal,
 )
 from oracle.config import OPEN_METEO_HISTORICAL_FORECAST_URL as HF
-from oracle.knowledge.ignition_timing import estimate_from_inputs
+from oracle.research.ignition_timing import estimate_from_inputs
 from oracle.logger import LocalRunStore
 from oracle.pillars import meteo
 from oracle.research.intraday_timing import intraday_features

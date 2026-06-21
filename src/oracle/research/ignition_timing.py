@@ -1,4 +1,10 @@
-"""Ignition-timing band (Stage 0 prototype, informational only).
+"""Ignition-timing band (Stage 0 — research, NO-BUILD).
+
+Conclusion (2026-06-21, see docs/findings/ignition-timing-2026-06-21.md): onset
+time is not predictable from day-ahead meteo at useful precision — this band
+scores a weak Spearman ~0.17 vs the real onset on 10 y of labels, and the
+follow-up Stage-1 intraday spike confirmed the ceiling is too low to ship. Kept
+re-runnable, never wired into prod.
 
 The 14-rule forecaster answers *whether* the thermal fires; it says nothing
 about *when*. Riders pay for that gap — waiting out a dead morning on a day
@@ -22,9 +28,9 @@ Physics, in order of signal strength:
 * **Morning solar / boundary-layer depth** are weak *earlier* pulls — a strong,
   already-deep mixed layer by midday means the engine is hot sooner.
 
-NOTE: this never touches `overall`. Like the shadow ML classifier, it rides
-alongside the verdict. Cutoffs in `_EARLY_MAX` / `_LATE_MIN` are first-pass and
-validated by `scripts/validate_ignition_timing.py` against `first_ignition_at`.
+NOTE: this never touches `overall`. Cutoffs in `_EARLY_MAX` / `_LATE_MIN` are
+first-pass; `scripts/validate_ignition_timing.py` scores the band against the
+sustained daytime onset (not `first_ignition_at`, which catches night wind).
 """
 from __future__ import annotations
 

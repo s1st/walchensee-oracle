@@ -1,6 +1,6 @@
 """Stage-1 ignition-timing features — intraday, not morning-aggregate.
 
-The Stage-0 heuristic (`oracle.knowledge.ignition_timing`) scored a weak
+The Stage-0 heuristic (`oracle.research.ignition_timing`) scored a weak
 Spearman ~0.17 against onset on 10 years of clean labels: a thermal's *onset
 time* doesn't live in the 10:30–15:00 morning maxima. It should live in the
 **intraday shape** — when solar crosses an ignition-capable level, when the
