@@ -127,9 +127,15 @@ def classify(pressure: dict | None, meteo: dict | None) -> MLForecast | None:
     probs = {labels[k]: exps[k] / total for k in range(len(labels))}
     verdict = max(probs, key=probs.__getitem__)
 
-    k = labels.index(verdict)
+    # Frame contributions for *wind*, not for the winning class, so a green (+)
+    # always reads "spoke for a rideable day" regardless of the verdict (a red
+    # (−) on a FLAUTE card = a point in favour of wind that got outvoted). The
+    # wind/calm axis is the no_go logit — lowering it argues for wind — so we
+    # take the negated no_go contribution as the "for-wind" term, and rank the
+    # top-3 by how much each input moved that axis.
+    kc = labels.index("no_go") if "no_go" in labels else labels.index(verdict)
     contributions = sorted(
-        ((feats[i], coef[k][i] * z[i]) for i in range(len(z))),
+        ((feats[i], -coef[kc][i] * z[i]) for i in range(len(z))),
         key=lambda t: -abs(t[1]),
     )[:3]
 
@@ -141,11 +147,13 @@ def reason_groups(
     contributions: list[tuple[str, float]] | list[list], lang: str
 ) -> dict[str, list[str]]:
     """Split the top contributions into human-readable feature labels that
-    pushed *toward* the verdict ("for") vs. *against* it ("against").
+    spoke *for* wind vs. *against* it.
 
-    A positive signed term supported the displayed verdict, a negative one
-    contradicted it. Accepts the in-memory tuples or the stored [feature, value]
-    lists, so the dashboard can colour the same split it logs as plain text.
+    The signed terms are framed on the wind/calm axis (see `classify`): a
+    positive term argued for a rideable day, a negative one against it —
+    independent of the verdict the model landed on. Accepts the in-memory tuples
+    or the stored [feature, value] lists, so the dashboard can colour the same
+    split it logs as plain text.
     """
     labels = _FEATURE_LABEL_DE if lang == "de" else _FEATURE_LABEL_EN
     return {
@@ -162,19 +170,19 @@ def _reasons(
     # the input measurements that moved the model most, so a reader can see
     # *why* (and that it reads raw measurements, not the 14 rules).
     #
-    # A positive signed term pushed *toward* the displayed verdict, a negative
-    # one *against* it. We spell that out as "dafür"/"dagegen" rather than ↑/↓
-    # arrows, which read as a wind trend (and clash with the live panel's ↗/↘).
-    # The dashboard colours the same split green/red via reason_groups().
-    def _clause(lang: str, for_lbl: str, against_lbl: str) -> str:
+    # A positive signed term spoke *for* wind, a negative one *against* it (the
+    # wind/calm framing is set in `classify`). We mark that with (+)/(−) rather
+    # than ↑/↓ arrows, which read as a wind trend (and clash with the live
+    # panel's ↗/↘). The dashboard colours the same split green/red.
+    def _clause(lang: str) -> str:
         g = reason_groups(contributions, lang)
         parts = []
         if g["for"]:
-            parts.append(f"{for_lbl}: {', '.join(g['for'])}")
+            parts.append(f"(+) {', '.join(g['for'])}")
         if g["against"]:
-            parts.append(f"{against_lbl}: {', '.join(g['against'])}")
+            parts.append(f"(−) {', '.join(g['against'])}")
         return "; ".join(parts)
 
-    reason_en = f"Strongest inputs — {_clause('en', 'for the verdict', 'against it')}."
-    reason_de = f"Stärkste Eingabemessgrößen — {_clause('de', 'dafür', 'dagegen')}."
+    reason_en = f"Strongest inputs — {_clause('en')}."
+    reason_de = f"Stärkste Eingabemessgrößen — {_clause('de')}."
     return reason_en, reason_de

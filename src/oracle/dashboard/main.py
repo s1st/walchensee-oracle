@@ -194,15 +194,17 @@ _UI: dict[str, dict[str, str]] = {
         "verdict_go": "LÄUFT",
         "verdict_maybe": "VIELLEICHT",
         "verdict_no_go": "FLAUTE",
-        "ml_title": "🤖 ML-Klassifikator",
+        "ml_title": "🤖 ML-Klassifikator (Logistisch)",
         "ml_experimental": "experimentell",
-        "ml_note": "Zweitmeinung eines gelernten Modells, das parallel zu den 14 Regeln läuft. Wir sammeln Daten, um zu sehen, ob es den regelbasierten Ansatz langfristig schlägt. Die drei Werte sind seine Wahrscheinlichkeiten für GO / VIELLEICHT / FLAUTE. Die Begründung darunter nennt die drei einflussreichsten Messwerte — „dafür“ bzw. „dagegen“ zeigt, ob ein Wert dieses Urteil gestützt oder ihm widersprochen hat.",
+        "ml_note": "Zweitmeinung eines gelernten Modells, das parallel zu den 14 Regeln läuft. Wir sammeln Daten, um zu sehen, ob es den regelbasierten Ansatz langfristig schlägt. Die drei Werte sind seine Wahrscheinlichkeiten für GO / VIELLEICHT / FLAUTE. Die Begründung darunter nennt die drei einflussreichsten Messwerte — (+) grün heißt, der Wert spricht für Wind, (−) rot heißt, er spricht dagegen (unabhängig vom angezeigten Urteil).",
+        "hgb_title": "🤖 ML-Klassifikator (HGB · Blackbox)",
+        "hgb_note": "Ein stärkeres, aber undurchsichtiges Modell (Gradient Boosting), das ebenfalls nur mitläuft und das Urteil nie beeinflusst. Die drei Werte sind seine Wahrscheinlichkeiten für GO / VIELLEICHT / FLAUTE. Eine gerichtete Für/Gegen-Begründung kann es nicht liefern — stattdessen nennt es die auffälligsten Eingaben des Tages (am weitesten vom Normalwert).",
         "ml_prob_go": "GO",
         "ml_prob_maybe": "VIELLEICHT",
         "ml_prob_no_go": "FLAUTE",
         "ml_reason_lead": "Stärkste Eingabemessgrößen",
-        "ml_reason_for": "dafür",
-        "ml_reason_against": "dagegen",
+        "ml_reason_for": "(+)",
+        "ml_reason_against": "(−)",
         "for_day": "Für",
         "last_30_days": "Letzte 30 Tage",
         "no_data": "Keine Daten — warte auf die nächste Vorhersage (ca. 08:00 Ortszeit).",
@@ -317,15 +319,17 @@ _UI: dict[str, dict[str, str]] = {
         "verdict_go": "GO",
         "verdict_maybe": "MAYBE",
         "verdict_no_go": "NO GO",
-        "ml_title": "🤖 ML Classifier",
+        "ml_title": "🤖 ML Classifier (logistic)",
         "ml_experimental": "experimental",
-        "ml_note": "A second opinion from a learned model running alongside the 14 rules. We collect data to see whether it beats the rule-based approach over time. The three values are its probabilities for GO / MAYBE / NO GO. The reason below names the three most influential measurements — “for the verdict” vs. “against it” shows whether each one supported or contradicted this call.",
+        "ml_note": "A second opinion from a learned model running alongside the 14 rules. We collect data to see whether it beats the rule-based approach over time. The three values are its probabilities for GO / MAYBE / NO GO. The reason below names the three most influential measurements — (+) green means the value argues for wind, (−) red means it argues against (regardless of the verdict shown).",
+        "hgb_title": "🤖 ML Classifier (HGB · black box)",
+        "hgb_note": "A stronger but opaque model (gradient boosting) that also just runs along and never drives the verdict. The three values are its probabilities for GO / MAYBE / NO GO. It can't give a directed for/against reason — instead it names the day's most unusual inputs (furthest from normal).",
         "ml_prob_go": "GO",
         "ml_prob_maybe": "MAYBE",
         "ml_prob_no_go": "NO GO",
         "ml_reason_lead": "Strongest inputs",
-        "ml_reason_for": "for the verdict",
-        "ml_reason_against": "against it",
+        "ml_reason_for": "(+)",
+        "ml_reason_against": "(−)",
         "for_day": "For",
         "last_30_days": "Last 30 days",
         "no_data": "No data yet — next scheduled forecast runs at 08:00 CET.",
@@ -1191,6 +1195,17 @@ def _day_detail_context(selected_day: date, today: date, lang: str, view: str) -
             ),
         }
 
+    # HGB shadow (black box): same schema, but its reason is undirected ("most
+    # distinctive inputs") — no for/against groups, so we render the plain text.
+    hgb_forecast = None
+    if raw and raw.get("hgb_classifier"):
+        _hgb = raw["hgb_classifier"]
+        hgb_forecast = {
+            "verdict": _hgb.get("verdict"),
+            "probabilities": _hgb.get("probabilities", {}),
+            "reason": _hgb.get("reason_de" if lang == "de" else "reason_en"),
+        }
+
     summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
     is_today = selected_day == today
     historical = None if is_today else _historical_chart_payload(raw)
@@ -1201,6 +1216,7 @@ def _day_detail_context(selected_day: date, today: date, lang: str, view: str) -
         "view": view,
         "summary": summary,
         "ml_forecast": ml_forecast,
+        "hgb_forecast": hgb_forecast,
         "selected_date_label": _fmt_date(selected_day, lang, "full"),
         "selected_iso": selected_day.isoformat(),
         "historical": historical,

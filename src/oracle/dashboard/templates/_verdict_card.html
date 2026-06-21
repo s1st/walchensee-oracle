@@ -32,12 +32,31 @@
     </div>
     {% if ml_forecast.groups %}
     <p class="ml-reason">{{ t.ml_reason_lead }} —
-      {% if ml_forecast.groups['for'] %}<span class="ml-for">{{ t.ml_reason_for }}: {{ ml_forecast.groups['for']|join(', ') }}</span>{% endif %}{% if ml_forecast.groups['for'] and ml_forecast.groups['against'] %}; {% endif %}{% if ml_forecast.groups['against'] %}<span class="ml-against">{{ t.ml_reason_against }}: {{ ml_forecast.groups['against']|join(', ') }}</span>{% endif %}.
+      {% if ml_forecast.groups['for'] %}<span class="ml-for">{{ t.ml_reason_for }} {{ ml_forecast.groups['for']|join(', ') }}</span>{% endif %}{% if ml_forecast.groups['for'] and ml_forecast.groups['against'] %}; {% endif %}{% if ml_forecast.groups['against'] %}<span class="ml-against">{{ t.ml_reason_against }} {{ ml_forecast.groups['against']|join(', ') }}</span>{% endif %}.
     </p>
     {% else %}
     <p class="ml-reason">{{ ml_forecast.reason }}</p>
     {% endif %}
     <p class="ml-note">{{ t.ml_note }}</p>
+  </section>
+  {% endif %}
+
+  {% if hgb_forecast %}
+  <section class="ml-card {{ hgb_forecast.verdict }}" title="{{ t.hgb_note }}">
+    <div class="ml-head">
+      <span class="ml-title">{{ t.hgb_title }}</span>
+      <span class="ml-tag">{{ t.ml_experimental }}</span>
+      <span class="ml-verdict {{ hgb_forecast.verdict }}">
+        {% if hgb_forecast.verdict == 'go' %}{{ t.verdict_go }}{% elif hgb_forecast.verdict == 'maybe' %}{{ t.verdict_maybe }}{% else %}{{ t.verdict_no_go }}{% endif %}
+      </span>
+      <span class="ml-probs">
+        {{ t.ml_prob_go }} {{ (hgb_forecast.probabilities.go * 100) | round | int }}% ·
+        {{ t.ml_prob_maybe }} {{ (hgb_forecast.probabilities.maybe * 100) | round | int }}% ·
+        {{ t.ml_prob_no_go }} {{ (hgb_forecast.probabilities.no_go * 100) | round | int }}%
+      </span>
+    </div>
+    <p class="ml-reason">{{ hgb_forecast.reason }}</p>
+    <p class="ml-note">{{ t.hgb_note }}</p>
   </section>
   {% endif %}
 
