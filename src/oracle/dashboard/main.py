@@ -30,6 +30,7 @@ from oracle.calibration import (
 )
 from oracle.knowledge.rules import Severity, Signal
 from oracle.logger import RunStore, default_store
+from oracle.ml_classifier import reason_groups
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
 from oracle.traffic import real_browser_hit
 
@@ -195,10 +196,13 @@ _UI: dict[str, dict[str, str]] = {
         "verdict_no_go": "FLAUTE",
         "ml_title": "🤖 ML-Klassifikator",
         "ml_experimental": "experimentell",
-        "ml_note": "Zweitmeinung eines gelernten Modells, das parallel zu den 14 Regeln läuft. Wir sammeln Daten, um zu sehen, ob es den regelbasierten Ansatz langfristig schlägt. Die drei Werte sind seine Wahrscheinlichkeiten für GO / VIELLEICHT / FLAUTE.",
+        "ml_note": "Zweitmeinung eines gelernten Modells, das parallel zu den 14 Regeln läuft. Wir sammeln Daten, um zu sehen, ob es den regelbasierten Ansatz langfristig schlägt. Die drei Werte sind seine Wahrscheinlichkeiten für GO / VIELLEICHT / FLAUTE. Die Begründung darunter nennt die drei einflussreichsten Messwerte — „dafür“ bzw. „dagegen“ zeigt, ob ein Wert dieses Urteil gestützt oder ihm widersprochen hat.",
         "ml_prob_go": "GO",
         "ml_prob_maybe": "VIELLEICHT",
         "ml_prob_no_go": "FLAUTE",
+        "ml_reason_lead": "Stärkste Eingabemessgrößen",
+        "ml_reason_for": "dafür",
+        "ml_reason_against": "dagegen",
         "for_day": "Für",
         "last_30_days": "Letzte 30 Tage",
         "no_data": "Keine Daten — warte auf die nächste Vorhersage (ca. 08:00 Ortszeit).",
@@ -315,10 +319,13 @@ _UI: dict[str, dict[str, str]] = {
         "verdict_no_go": "NO GO",
         "ml_title": "🤖 ML Classifier",
         "ml_experimental": "experimental",
-        "ml_note": "A second opinion from a learned model running alongside the 14 rules. We collect data to see whether it beats the rule-based approach over time. The three values are its probabilities for GO / MAYBE / NO GO.",
+        "ml_note": "A second opinion from a learned model running alongside the 14 rules. We collect data to see whether it beats the rule-based approach over time. The three values are its probabilities for GO / MAYBE / NO GO. The reason below names the three most influential measurements — “for the verdict” vs. “against it” shows whether each one supported or contradicted this call.",
         "ml_prob_go": "GO",
         "ml_prob_maybe": "MAYBE",
         "ml_prob_no_go": "NO GO",
+        "ml_reason_lead": "Strongest inputs",
+        "ml_reason_for": "for the verdict",
+        "ml_reason_against": "against it",
         "for_day": "For",
         "last_30_days": "Last 30 days",
         "no_data": "No data yet — next scheduled forecast runs at 08:00 CET.",
@@ -1175,6 +1182,13 @@ def _day_detail_context(selected_day: date, today: date, lang: str, view: str) -
             "verdict": _ml.get("verdict"),
             "probabilities": _ml.get("probabilities", {}),
             "reason": _ml.get("reason_de" if lang == "de" else "reason_en"),
+            # Coloured for/against split of the same top contributions the
+            # plain-text reason lists. None on legacy records without
+            # `contributions`, where the template falls back to `reason`.
+            "groups": (
+                reason_groups(_ml["contributions"], lang)
+                if _ml.get("contributions") else None
+            ),
         }
 
     summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""

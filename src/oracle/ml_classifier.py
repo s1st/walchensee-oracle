@@ -137,6 +137,23 @@ def classify(pressure: dict | None, meteo: dict | None) -> MLForecast | None:
     return MLForecast(verdict, probs, contributions, reason_en, reason_de)
 
 
+def reason_groups(
+    contributions: list[tuple[str, float]] | list[list], lang: str
+) -> dict[str, list[str]]:
+    """Split the top contributions into human-readable feature labels that
+    pushed *toward* the verdict ("for") vs. *against* it ("against").
+
+    A positive signed term supported the displayed verdict, a negative one
+    contradicted it. Accepts the in-memory tuples or the stored [feature, value]
+    lists, so the dashboard can colour the same split it logs as plain text.
+    """
+    labels = _FEATURE_LABEL_DE if lang == "de" else _FEATURE_LABEL_EN
+    return {
+        "for": [labels.get(f, f) for f, v in contributions if v > 0],
+        "against": [labels.get(f, f) for f, v in contributions if v <= 0],
+    }
+
+
 def _reasons(
     verdict: str, probs: dict[str, float], contributions: list[tuple[str, float]]
 ) -> tuple[str, str]:
@@ -144,9 +161,20 @@ def _reasons(
     # the probs row — don't repeat them here. This line exists only to name
     # the input measurements that moved the model most, so a reader can see
     # *why* (and that it reads raw measurements, not the 14 rules).
-    arrow = lambda v: "↑" if v > 0 else "↓"  # noqa: E731 — local one-liner
-    top_en = ", ".join(f"{arrow(v)} {_FEATURE_LABEL_EN.get(f, f)}" for f, v in contributions)
-    top_de = ", ".join(f"{arrow(v)} {_FEATURE_LABEL_DE.get(f, f)}" for f, v in contributions)
-    reason_en = f"Strongest inputs: {top_en}."
-    reason_de = f"Stärkste Eingabemessgrößen: {top_de}."
+    #
+    # A positive signed term pushed *toward* the displayed verdict, a negative
+    # one *against* it. We spell that out as "dafür"/"dagegen" rather than ↑/↓
+    # arrows, which read as a wind trend (and clash with the live panel's ↗/↘).
+    # The dashboard colours the same split green/red via reason_groups().
+    def _clause(lang: str, for_lbl: str, against_lbl: str) -> str:
+        g = reason_groups(contributions, lang)
+        parts = []
+        if g["for"]:
+            parts.append(f"{for_lbl}: {', '.join(g['for'])}")
+        if g["against"]:
+            parts.append(f"{against_lbl}: {', '.join(g['against'])}")
+        return "; ".join(parts)
+
+    reason_en = f"Strongest inputs — {_clause('en', 'for the verdict', 'against it')}."
+    reason_de = f"Stärkste Eingabemessgrößen — {_clause('de', 'dafür', 'dagegen')}."
     return reason_en, reason_de

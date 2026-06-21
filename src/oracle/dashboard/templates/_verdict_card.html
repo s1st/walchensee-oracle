@@ -30,7 +30,13 @@
         {{ t.ml_prob_no_go }} {{ (ml_forecast.probabilities.no_go * 100) | round | int }}%
       </span>
     </div>
+    {% if ml_forecast.groups %}
+    <p class="ml-reason">{{ t.ml_reason_lead }} —
+      {% if ml_forecast.groups['for'] %}<span class="ml-for">{{ t.ml_reason_for }}: {{ ml_forecast.groups['for']|join(', ') }}</span>{% endif %}{% if ml_forecast.groups['for'] and ml_forecast.groups['against'] %}; {% endif %}{% if ml_forecast.groups['against'] %}<span class="ml-against">{{ t.ml_reason_against }}: {{ ml_forecast.groups['against']|join(', ') }}</span>{% endif %}.
+    </p>
+    {% else %}
     <p class="ml-reason">{{ ml_forecast.reason }}</p>
+    {% endif %}
     <p class="ml-note">{{ t.ml_note }}</p>
   </section>
   {% endif %}
