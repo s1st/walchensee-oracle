@@ -60,35 +60,40 @@ _FEATURE_LABEL_DE: dict[str, str] = {
 
 
 @functools.lru_cache(maxsize=4)
-def _load_hgb(pkl_path: str | None = None):
-    """Load + cache the HGB model from the bundle pkl. Requires scikit-learn.
+def _load_bundle_model(which: str = "hgb", pkl_path: str | None = None):
+    """Load + cache a model (`hgb` or `logistic`) from the bundle pkl.
 
-    Cached so the 2 MB bundle is unpickled once per process, not per forecast.
-    `pkl_path` is a str (not Path) so the result is hashable/cacheable.
+    Both bundle models are year-blocked (trained ≤2022) — used at forecast time
+    for the HGB shadow, and offline for the stats page's ≥2023 holdout head-to-
+    head. Cached so the 2 MB bundle is unpickled once per (model, path), not per
+    call. `pkl_path` is a str (not Path) so the result is hashable/cacheable.
+    Requires scikit-learn.
     """
     import pickle
 
     path = pkl_path or os.environ.get("ML_PKL", str(_DEFAULT_PKL))
     with open(path, "rb") as f:
         bundle = pickle.load(f)
-    fitted = bundle["models"]["hgb"]
+    fitted = bundle["models"][which]
     return fitted.model, tuple(fitted.model.feature_names_in_)
 
 
-def classify_hgb(
+def classify_bundle(
+    which: str,
     pressure: dict | None,
     meteo: dict | None,
     pkl_path: Path | None = None,
 ) -> dict | None:
-    """Score HGB from the serialised inputs dicts. Returns None on missing inputs.
+    """Score a bundle model (`hgb` or `logistic`) from the serialised inputs.
 
-    Returns a dict with the same shape as `ml_classifier` in run records:
-      verdict, probabilities {go/maybe/no_go}, reason_en, reason_de.
+    Returns None on missing inputs, else a dict with the same shape as
+    `ml_classifier` in run records: verdict, probabilities {go/maybe/no_go},
+    reason_en, reason_de.
     """
     if not pressure or not meteo:
         return None
 
-    model, features = _load_hgb(str(pkl_path) if pkl_path else None)
+    model, features = _load_bundle_model(which, str(pkl_path) if pkl_path else None)
 
     row: list[float] = []
     for name in features:
@@ -150,3 +155,13 @@ def classify_hgb(
         "reason_en": f"Most distinctive inputs: {top_en}.",
         "reason_de": f"Auffälligste Eingaben: {top_de}.",
     }
+
+
+def classify_hgb(
+    pressure: dict | None,
+    meteo: dict | None,
+    pkl_path: Path | None = None,
+) -> dict | None:
+    """Score the HGB shadow (forecast-time entry point + hgb-backfill). Thin
+    wrapper over `classify_bundle("hgb", ...)`."""
+    return classify_bundle("hgb", pressure, meteo, pkl_path)

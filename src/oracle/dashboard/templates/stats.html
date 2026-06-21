@@ -1,5 +1,74 @@
 {% extends "_base.html" %}
 {% block title %}{{ t.nav_stats }} · Walchi Oracle{% endblock %}
+
+{# One model's card: headline skill (n, Peirce, sensitivity, specificity) plus an
+   advanced toggle with accuracy/baseline and the confusion matrix. Used for all
+   blocks in both panels so they render identically. `t` is passed in because
+   macros don't see the render context. #}
+{% macro stat_block(t, m, name, note, conf_header, adv_label, toggle_id) %}
+{% if m and m.n %}
+<div class="stat-block">
+  <h3 class="stats-header">{{ name }}</h3>
+  <dl class="stats-grid">
+    <div><dt>{{ t.stats_sample_size }}</dt><dd>{{ m.n }}</dd></div>
+    <div>
+      <dt>{{ t.stats_skill }}</dt>
+      <dd>{% if m.get('peirce') is not none %}{{ '%+.2f'|format(m.get('peirce')) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+    </div>
+  </dl>
+  <dl class="stats-grid stats-grid-cols" style="margin-top:8px">
+    <div>
+      <dt>{{ t.stats_sensitivity_headline }}</dt>
+      <dd>{% if m.sensitivity is not none %}{{ '%.0f%%'|format(m.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+      <dd class="note">{{ t.stats_sensitivity_headline_note }}</dd>
+    </div>
+    <div>
+      <dt>{{ t.stats_specificity_headline }}</dt>
+      <dd>{% if m.specificity is not none %}{{ '%.0f%%'|format(m.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
+      <dd class="note">{{ t.stats_specificity_headline_note }}</dd>
+    </div>
+  </dl>
+  <p class="advanced-note">{{ note }}{% if m.quarantined %} ({{ m.quarantined }} {{ t.stats_quarantined_note }}.){% endif %}</p>
+
+  <div class="advanced-group">
+    <input type="checkbox" id="{{ toggle_id }}" class="advanced-toggle">
+    <label for="{{ toggle_id }}" class="advanced-label">{{ adv_label }}</label>
+    <div class="advanced-panel">
+      <dl class="stats-grid" style="margin-bottom:12px">
+        <div><dt>{{ t.stats_accuracy }}</dt><dd>{{ '%.0f%%'|format(m.accuracy * 100) }}</dd></div>
+        {% if m.baseline_accuracy is not none %}
+        <div><dt>{{ t.stats_baseline }}</dt><dd>{{ t['verdict_' ~ m.baseline_class] }} · {{ '%.0f%%'|format(m.baseline_accuracy * 100) }}</dd></div>
+        {% endif %}
+      </dl>
+      <p class="advanced-note">{{ t.stats_accuracy_note }}</p>
+      {% if m.baseline_accuracy is not none %}<p class="advanced-note">{{ t.stats_baseline_note }}</p>{% endif %}
+
+      <h3 class="stats-header">{{ conf_header }}</h3>
+      <table class="confusion">
+        <thead>
+          <tr>
+            <th>{{ t.stats_axis_forecast }} ↓&nbsp;&nbsp;{{ t.stats_axis_actual }} →</th>
+            {% for a in m.axis %}<th class="signal {{ a }}">{{ t['verdict_' ~ a] }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in m.matrix %}
+          {% set ri = loop.index0 %}
+          <tr>
+            <td class="signal {{ row.forecast }}">{{ t['verdict_' ~ row.forecast] }}</td>
+            {% for c in row.cells %}<td{% if loop.index0 == ri %} class="diag"{% endif %}>{{ c }}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="advanced-note">{{ t.stats_confusion_note }}</p>
+      <p class="advanced-note">{{ t.stats_binary_note }}</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endmacro %}
+
 {% block content %}
 <h1>{{ t.nav_stats }}</h1>
 <p class="lead">{{ t.stats_lead }}</p>
@@ -17,164 +86,31 @@
     <div><dt>{{ t.stats_total_hits }}</dt><dd>{{ views.total_hits if views else t.stats_unavailable }}</dd></div>
   </dl>
   <p class="advanced-note">{{ t.stats_views_note }}</p>
-
-  {# Rule layer: lead with rider-relevant binary metrics (sensitivity, specificity,
-     Peirce skill). Raw 3-class accuracy is misleading on an imbalanced 3-class
-     problem and lives in the Advanced panel instead. #}
-  <h3 class="stats-header">{{ t.stats_forecast_header }}</h3>
-  <dl class="stats-grid">
-    <div><dt>{{ t.stats_sample_size }}</dt><dd>{{ stats.n if stats else t.stats_unavailable }}</dd></div>
-    <div>
-      <dt>{{ t.stats_skill }}</dt>
-      <dd>{% if stats and stats.get('peirce') is not none %}{{ '%+.2f'|format(stats.get('peirce')) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-    </div>
-  </dl>
-  <p class="advanced-note">{{ t.stats_skill_note }}{% if stats and stats.quarantined %} ({{ stats.quarantined }} {{ t.stats_quarantined_note }}.){% endif %}</p>
-
-  {% if stats and stats.n %}
-  <dl class="stats-grid stats-grid-cols" style="margin-top:12px">
-    <div>
-      <dt>{{ t.stats_sensitivity_headline }}</dt>
-      <dd>{% if stats.sensitivity is not none %}{{ '%.0f%%'|format(stats.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-      <dd class="note">{{ t.stats_sensitivity_headline_note }}</dd>
-    </div>
-    <div>
-      <dt>{{ t.stats_specificity_headline }}</dt>
-      <dd>{% if stats.specificity is not none %}{{ '%.0f%%'|format(stats.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-      <dd class="note">{{ t.stats_specificity_headline_note }}</dd>
-    </div>
-  </dl>
-
-  <div class="advanced-group">
-    <input type="checkbox" id="stats-advanced" class="advanced-toggle">
-    <label for="stats-advanced" class="advanced-label">{{ t.stats_advanced_rule_label }}</label>
-    <div class="advanced-panel">
-      <dl class="stats-grid" style="margin-bottom:12px">
-        <div><dt>{{ t.stats_accuracy }}</dt><dd>{{ '%.0f%%'|format(stats.accuracy * 100) }}</dd></div>
-        {% if stats.baseline_accuracy is not none %}
-        <div><dt>{{ t.stats_baseline }}</dt><dd>{{ t['verdict_' ~ stats.baseline_class] }} · {{ '%.0f%%'|format(stats.baseline_accuracy * 100) }}</dd></div>
-        {% endif %}
-      </dl>
-      <p class="advanced-note">{{ t.stats_accuracy_note }}</p>
-      {% if stats.baseline_accuracy is not none %}<p class="advanced-note">{{ t.stats_baseline_note }}</p>{% endif %}
-
-      <h3 class="stats-header">{{ t.stats_confusion_rule_header }}</h3>
-      <table class="confusion">
-        <thead>
-          <tr>
-            <th>{{ t.stats_axis_forecast }} ↓&nbsp;&nbsp;{{ t.stats_axis_actual }} →</th>
-            {% for a in stats.axis %}<th class="signal {{ a }}">{{ t['verdict_' ~ a] }}</th>{% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in stats.matrix %}
-          {% set ri = loop.index0 %}
-          <tr>
-            <td class="signal {{ row.forecast }}">{{ t['verdict_' ~ row.forecast] }}</td>
-            {% for c in row.cells %}<td{% if loop.index0 == ri %} class="diag"{% endif %}>{{ c }}</td>{% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <p class="advanced-note">{{ t.stats_confusion_note }}</p>
-      <p class="advanced-note">{{ t.stats_binary_note }}</p>
-    </div>
-  </div>
-  {% endif %}
-
-  {# ML parallel-model layer: same shape, independently scoped toggle. Never drives
-     the verdict — comparison only. Hidden until a scored day has an ML block. #}
-  {% if stats and stats.ml and stats.ml.n %}
-  <h3 class="stats-header">{{ t.stats_ml_header }}</h3>
-  <dl class="stats-grid">
-    <div><dt>{{ t.stats_sample_size }}</dt><dd>{{ stats.ml.n }}</dd></div>
-    <div><dt>{{ t.stats_skill }}</dt><dd>{% if stats.ml.get('peirce') is not none %}{{ '%+.2f'|format(stats.ml.get('peirce')) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
-  </dl>
-  <dl class="stats-grid stats-grid-cols" style="margin-top:8px">
-    <div>
-      <dt>{{ t.stats_sensitivity_headline }}</dt>
-      <dd>{% if stats.ml.sensitivity is not none %}{{ '%.0f%%'|format(stats.ml.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-    </div>
-    <div>
-      <dt>{{ t.stats_specificity_headline }}</dt>
-      <dd>{% if stats.ml.specificity is not none %}{{ '%.0f%%'|format(stats.ml.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-    </div>
-  </dl>
-  <p class="advanced-note">{{ t.stats_ml_note }}</p>
-
-  <div class="advanced-group">
-    <input type="checkbox" id="ml-advanced" class="advanced-toggle">
-    <label for="ml-advanced" class="advanced-label">{{ t.stats_advanced_ml_label }}</label>
-    <div class="advanced-panel">
-      <h3 class="stats-header">{{ t.stats_confusion_ml_header }}</h3>
-      <table class="confusion">
-        <thead>
-          <tr>
-            <th>{{ t.stats_axis_forecast }} ↓&nbsp;&nbsp;{{ t.stats_axis_actual }} →</th>
-            {% for a in stats.ml.axis %}<th class="signal {{ a }}">{{ t['verdict_' ~ a] }}</th>{% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in stats.ml.matrix %}
-          {% set ri = loop.index0 %}
-          <tr>
-            <td class="signal {{ row.forecast }}">{{ t['verdict_' ~ row.forecast] }}</td>
-            {% for c in row.cells %}<td{% if loop.index0 == ri %} class="diag"{% endif %}>{{ c }}</td>{% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <p class="advanced-note">{{ t.stats_confusion_note }}</p>
-      <p class="advanced-note">{{ t.stats_binary_note }}</p>
-    </div>
-  </div>
-  {% endif %}
-
-  {# HGB parallel-model layer: same shape as ML section above. #}
-  {% if stats and stats.hgb and stats.hgb.n %}
-  <h3 class="stats-header">{{ t.stats_hgb_header }}</h3>
-  <dl class="stats-grid">
-    <div><dt>{{ t.stats_sample_size }}</dt><dd>{{ stats.hgb.n }}</dd></div>
-    <div><dt>{{ t.stats_skill }}</dt><dd>{% if stats.hgb.get('peirce') is not none %}{{ '%+.2f'|format(stats.hgb.get('peirce')) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd></div>
-  </dl>
-  <dl class="stats-grid stats-grid-cols" style="margin-top:8px">
-    <div>
-      <dt>{{ t.stats_sensitivity_headline }}</dt>
-      <dd>{% if stats.hgb.sensitivity is not none %}{{ '%.0f%%'|format(stats.hgb.sensitivity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-    </div>
-    <div>
-      <dt>{{ t.stats_specificity_headline }}</dt>
-      <dd>{% if stats.hgb.specificity is not none %}{{ '%.0f%%'|format(stats.hgb.specificity * 100) }}{% else %}{{ t.stats_unavailable }}{% endif %}</dd>
-    </div>
-  </dl>
-  <p class="advanced-note">{{ t.stats_hgb_note }}</p>
-
-  <div class="advanced-group">
-    <input type="checkbox" id="hgb-advanced" class="advanced-toggle">
-    <label for="hgb-advanced" class="advanced-label">{{ t.stats_advanced_hgb_label }}</label>
-    <div class="advanced-panel">
-      <h3 class="stats-header">{{ t.stats_confusion_hgb_header }}</h3>
-      <table class="confusion">
-        <thead>
-          <tr>
-            <th>{{ t.stats_axis_forecast }} ↓&nbsp;&nbsp;{{ t.stats_axis_actual }} →</th>
-            {% for a in stats.hgb.axis %}<th class="signal {{ a }}">{{ t['verdict_' ~ a] }}</th>{% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in stats.hgb.matrix %}
-          {% set ri = loop.index0 %}
-          <tr>
-            <td class="signal {{ row.forecast }}">{{ t['verdict_' ~ row.forecast] }}</td>
-            {% for c in row.cells %}<td{% if loop.index0 == ri %} class="diag"{% endif %}>{{ c }}</td>{% endfor %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <p class="advanced-note">{{ t.stats_confusion_note }}</p>
-      <p class="advanced-note">{{ t.stats_binary_note }}</p>
-    </div>
-  </div>
-  {% endif %}
 </section>
+
+{% if stats and stats.n %}
+{# Panel 1 — the deployed models, scored over the full seasonal history. #}
+<section class="stats-section">
+  <h2 class="stats-panel-header">{{ t.stats_panel_live_header }}</h2>
+  <p class="advanced-note">{{ t.stats_panel_live_note }}</p>
+  {{ stat_block(t, stats, t.stats_name_rule, t.stats_skill_note,
+                t.stats_confusion_rule_header, t.stats_advanced_rule_label, 'rule-adv') }}
+  {{ stat_block(t, stats.ml, t.stats_name_ml, t.stats_ml_note,
+                t.stats_confusion_ml_header, t.stats_advanced_ml_label, 'ml-adv') }}
+</section>
+{% endif %}
+
+{% if stats and stats.holdout and stats.holdout.hgb and stats.holdout.hgb.n %}
+{# Panel 2 — like-for-like ≥2023 holdout, all three out-of-sample on one set. #}
+<section class="stats-section">
+  <h2 class="stats-panel-header">{{ t.stats_panel_holdout_header }}</h2>
+  <p class="advanced-note">{{ t.stats_panel_holdout_note }}</p>
+  {{ stat_block(t, stats.holdout.rule, t.stats_name_rule, t.stats_skill_note,
+                t.stats_confusion_rule_header, t.stats_advanced_rule_label, 'hrule-adv') }}
+  {{ stat_block(t, stats.holdout.ml, t.stats_name_ml, t.stats_ml_note,
+                t.stats_confusion_ml_header, t.stats_advanced_ml_label, 'hml-adv') }}
+  {{ stat_block(t, stats.holdout.hgb, t.stats_name_hgb, t.stats_hgb_note,
+                t.stats_confusion_hgb_header, t.stats_advanced_hgb_label, 'hhgb-adv') }}
+</section>
+{% endif %}
 {% endblock %}

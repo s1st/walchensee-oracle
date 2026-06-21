@@ -12,7 +12,8 @@ are included in the same payload so the dashboard gets everything in one read.
 from __future__ import annotations
 
 import math
-from typing import Any
+from datetime import date
+from typing import Any, Callable
 
 from oracle import config
 from oracle.calibration import (
@@ -28,14 +29,14 @@ from oracle.logger import RunStore, default_store
 
 _STATS_KEY = "_stats_cache"
 
-# The HGB bundle (`data/ml/replay_full.pkl`) is trained on the year-blocked
-# split (≤2022) and its published +0.208 Peirce is the ≥2023 out-of-sample
-# holdout — see docs/findings/ml-classifier-2026-06-13.md and
-# docs/findings/stats-panel-season-scoping-2026-06-21.md. Scoring it over the
-# whole replay archive mixes its own training years in and is not comparable,
-# so the HGB column is restricted to its test era. The distilled logistic
-# (ml_coeffs.py) and the rule layer are full-history backtests, not held out.
-_HGB_HOLDOUT_SINCE = "2023-01-01"
+# The bundle (`data/ml/replay_full.pkl`) is trained on the year-blocked split
+# (≤2022); its published +0.208 HGB Peirce is the ≥2023 out-of-sample holdout —
+# see docs/findings/ml-classifier-2026-06-13.md and
+# docs/findings/stats-panel-season-scoping-2026-06-21.md. The dashboard's
+# `holdout` panel scores all three models on this same ≥2023 window so the
+# comparison is apples-to-apples; the `live` panel is a full-history backtest of
+# the deployed rule + distilled logistic (trained on all years, not held out).
+_HGB_HOLDOUT_FROM = (2023, 1, 1)
 
 
 def _binary_rates(
@@ -79,17 +80,24 @@ def _rule_payload(report: Report) -> dict[str, Any]:
 
 
 def _model_payload(
-    report: Report, field: str, store: RunStore, since: str | None = None
+    report: Report,
+    field: str,
+    store: RunStore,
+    since: str | None = None,
+    scorer: "Callable[[dict], str | None] | None" = None,
 ) -> dict[str, Any]:
     """Score a shadow classifier against the ground-truth days in the report.
 
-    For replay records lacking a pre-computed block (logistic only — pure
-    Python, safe to score on-the-fly) we score from stored inputs. HGB
-    requires sklearn so it stays 0 until hgb-backfill --replayed has run.
+    Two modes:
+      - `scorer` given: compute the verdict from the merged record on the fly
+        (used for the ≥2023 holdout, where we score the bundle's ≤2022 logistic
+        and HGB so all three columns share one out-of-sample day set).
+      - else, read the stored `field` block; for `ml_classifier` fall back to
+        scoring the distilled logistic on the fly (pure Python).
 
     `since` (ISO date string) restricts scoring to days on or after that date —
-    used to hold the HGB model out to its ≥2023 test era (`_HGB_HOLDOUT_SINCE`).
-    ISO `YYYY-MM-DD` keys sort lexicographically, so a string compare suffices.
+    used to hold the bundle models out to their ≥2023 test era. ISO
+    `YYYY-MM-DD` keys sort lexicographically, so a string compare suffices.
     """
     from oracle.ml_classifier import classify as _classify_logistic
 
@@ -104,11 +112,14 @@ def _model_payload(
         record = _cal_merged_replay_record(store, iso)
         if not record:
             continue
-        ml = (record.get(field) or {}).get("verdict")
-        if ml is None and field == "ml_classifier":
-            inputs = record.get("inputs") or {}
-            result = _classify_logistic(inputs.get("pressure"), inputs.get("meteo"))
-            ml = result.verdict if result else None
+        if scorer is not None:
+            ml = scorer(record)
+        else:
+            ml = (record.get(field) or {}).get("verdict")
+            if ml is None and field == "ml_classifier":
+                inputs = record.get("inputs") or {}
+                result = _classify_logistic(inputs.get("pressure"), inputs.get("meteo"))
+                ml = result.verdict if result else None
         if ml not in valid:
             continue
         actual = _cal_label_record(record, report.label_mode)
@@ -158,37 +169,64 @@ def _clean(obj: Any) -> Any:
     return obj
 
 
+def _bundle_scorer(which: str) -> "Callable[[dict], str | None]":
+    """A scorer that runs a bundle model (`hgb`/`logistic`, both trained ≤2022)
+    on a record's stored inputs — for the ≥2023 holdout head-to-head."""
+    from oracle.hgb_shadow import classify_bundle
+
+    def score(record: dict) -> str | None:
+        inputs = record.get("inputs") or {}
+        res = classify_bundle(which, inputs.get("pressure"), inputs.get("meteo"))
+        return res["verdict"] if res else None
+
+    return score
+
+
 def build_payload(store: RunStore | None = None) -> dict[str, Any]:
-    """Run the full calibration walk and return the dashboard stats payload.
+    """Run the calibration walk and return the two-panel dashboard stats payload.
 
-    Scored on the thermal season only (`config.ACTIVE_SEASON_MONTHS`, Apr–Oct) —
-    the product never serves Nov–Mar, and including those trivial winter
-    no-wind days inflates the count and flatters specificity.
+    Everything is scored on the thermal season (`config.ACTIVE_SEASON_MONTHS`,
+    Apr–Oct) against the `thermal` label (the target `oracle ml train` and the
+    distilled logistic are trained on — foehn/frontal days relabelled NO_GO),
+    with the *current* rule layer (`resimulated=True`). This requires the replay
+    archive to have been rescored — run `oracle rescore --replayed` (and
+    `oracle hgb-backfill --replayed`) before `stats-update`, or the walk scores
+    zero days.
 
-    Uses the resimulated verdicts (`resimulated=True`) so the panel reflects
-    the *current* rule layer, not whatever the aggregator said when each
-    replay record was written. This requires the replay archive to have been
-    rescored — run `oracle rescore --replayed` (and `oracle hgb-backfill
-    --replayed` for the HGB column) before `stats-update`, or every record
-    lacks `overall_resimulated` and the walk scores zero days.
+    Two panels, so every confusion matrix in a panel shares one day set:
+      - `live`: the deployed models over the whole archive — the rule and the
+        distilled logistic (`ml_coeffs.py`, trained on all years). Full-history
+        backtest (~1900 days).
+      - `holdout`: a fair three-way head-to-head on the ≥2023 test era
+        (`_HGB_HOLDOUT_FROM`), all genuinely out-of-sample — the rule plus the
+        bundle's ≤2022 logistic and HGB (`replay_full.pkl`). ~715 days,
+        matching docs/findings/ml-classifier-2026-06-13.md.
 
-    Grades against the `thermal` label — the same target `oracle ml train`
-    defaults to — so the rule and both ML models are scored on what they were
-    built to predict (foehn/frontal days relabelled NO_GO). The HGB column is
-    held out to its ≥2023 test era (`_HGB_HOLDOUT_SINCE`); the rule and the
-    distilled logistic are full-history backtests. See
+    Top-level keys mirror `live` (rule fields + `ml`) for backward compatibility
+    with the loading/empty-state checks. See
     docs/findings/stats-panel-season-scoping-2026-06-21.md.
     """
     store = store or default_store()
+    months = config.ACTIVE_SEASON_MONTHS
+    # Panel 1 — live models, full-history.
     report = compile_report(
-        store, label="thermal", resimulated=True, replayed=True,
-        months=config.ACTIVE_SEASON_MONTHS,
+        store, label="thermal", resimulated=True, replayed=True, months=months,
     )
     payload = _rule_payload(report)
     payload["ml"] = _model_payload(report, "ml_classifier", store)
-    payload["hgb"] = _model_payload(
-        report, "hgb_classifier", store, since=_HGB_HOLDOUT_SINCE
+    # Panel 2 — ≥2023 holdout: one shared out-of-sample day set, all three
+    # scored on it (rule + the bundle's ≤2022 logistic + HGB).
+    holdout = compile_report(
+        store, label="thermal", resimulated=True, replayed=True, months=months,
+        since=date(*_HGB_HOLDOUT_FROM),
     )
+    payload["holdout"] = {
+        "rule": _rule_payload(holdout),
+        "ml": _model_payload(holdout, "ml_classifier", store,
+                             scorer=_bundle_scorer("logistic")),
+        "hgb": _model_payload(holdout, "hgb_classifier", store,
+                              scorer=_bundle_scorer("hgb")),
+    }
     return _clean(payload)
 
 
