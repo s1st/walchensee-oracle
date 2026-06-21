@@ -157,8 +157,30 @@ HGB block):
    imported pandas **at module level**. Fixed: `oracle.ml.dataset` now imports
    pandas lazily (`TYPE_CHECKING` + a local import in `load_replay_csv`).
 
-The no-pandas regression test must `_load_hgb.cache_clear()` first — otherwise a
-prior test's cached model hides the unpickle path (that's why trap #2 slipped
-through the first time). After re-pinning the job to the new image, an executed
-`oracle-forecast` writes `hgb_classifier` (verified 2026-06-21:
+The no-pandas regression test must `_load_bundle_model.cache_clear()` first —
+otherwise a prior test's cached model hides the unpickle path (that's why trap #2
+slipped through the first time). After re-pinning the job to the new image, an
+executed `oracle-forecast` writes `hgb_classifier` (verified 2026-06-21:
 `overall=no_go`, `hgb=go`).
+
+## Addendum — two-panel comparison (mismatched day counts looked off)
+
+With HGB held out to ≥2023 (715 days) while the rule and logistic ran
+full-history (1912), the three confusion matrices summed to different totals,
+which read as inconsistent. Fixed by splitting the panel in two, each with a
+single shared day set:
+
+- **`live`** — the deployed models over the whole season history (~1912 days):
+  the rule + the distilled logistic (`ml_coeffs.py`, all-years).
+- **`holdout`** — a like-for-like three-way head-to-head on the ≥2023 test era
+  (715 days), all genuinely out-of-sample: the rule + the bundle's **≤2022**
+  logistic and HGB. Reproduces the research ranking — **HGB +0.275 > logistic
+  +0.233 > rule +0.149** (binary Peirce).
+
+Implementation: `build_payload` does two `compile_report` walks (full + ≥2023)
+and adds a `holdout` block; `_model_payload` gained a `scorer` hook to run a
+bundle model on the fly; `hgb_shadow.classify_bundle(which, …)` generalises the
+loader to `hgb`|`logistic` (with `classify_hgb` a thin wrapper). The template
+uses one `stat_block` macro for all five cards. The `live` panel uses the
+all-years logistic (what's deployed); the `holdout` panel uses the bundle's
+≤2022 logistic so it's held out like HGB — a deliberate difference.
