@@ -129,3 +129,36 @@ gcloud run services update walchi-oracle-dash --region europe-west1 \
 
 Back up `runs/replay/` and `runs/_stats_cache.json` first (both done 2026-06-21:
 `runs-backup-rescore-*` and `_stats_cache.json.bak-*`).
+
+## Addendum — HGB now served at forecast time (no more manual backfill)
+
+Originally HGB was backfill-only (sklearn not in the prod images), so the
+*current* day's `/history` HGB cell was always empty until someone ran
+`oracle hgb-backfill`, and the per-day blocks carried the pre-fix swapped
+verdicts. We moved HGB into the Cloud Run **job** image:
+
+- `Dockerfile.job` installs the lean `[hgb]` extra (scikit-learn + numpy — **no
+  pandas/matplotlib**; the serve path is numpy-only), ships
+  `data/ml/replay_full.pkl` (committed via a `.gitignore` exception), and sets
+  `ML_PKL` + `ENABLE_HGB_SHADOW=1`. ~+45 MB compressed; the dashboard image is
+  untouched (it only reads the stored block).
+- `logger.forecast_to_dict` attaches `hgb_classifier` when `ENABLE_HGB_SHADOW`
+  is set, guarded so a shadow failure never breaks the forecast and so
+  local/dashboard/test runs are unchanged.
+- `hgb_shadow._load_hgb` is `lru_cache`d (unpickle the 2 MB bundle once/process).
+
+**Two pandas-import traps had to be cleared first** — both surfaced only
+in-cluster because the guard swallowed the ImportError (the job ran, wrote *no*
+HGB block):
+
+1. `hgb_shadow` imported `INT_TO_LABEL` from `oracle.ml.dataset` (pulls pandas).
+   Fixed: derive the map locally from `SIGNAL_ORDER`.
+2. Unpickling the bundle imports `oracle.ml.train` → `oracle.ml.dataset`, which
+   imported pandas **at module level**. Fixed: `oracle.ml.dataset` now imports
+   pandas lazily (`TYPE_CHECKING` + a local import in `load_replay_csv`).
+
+The no-pandas regression test must `_load_hgb.cache_clear()` first — otherwise a
+prior test's cached model hides the unpickle path (that's why trap #2 slipped
+through the first time). After re-pinning the job to the new image, an executed
+`oracle-forecast` writes `hgb_classifier` (verified 2026-06-21:
+`overall=no_go`, `hgb=go`).
