@@ -54,6 +54,16 @@ This matches the Phase-D distillation finding: the fire decision is linear;
 the models' edge is **strength-grading**, not a smarter storm gate
 (`docs/findings/ml-distill-cut{1,2,3}-2026-06-14.md`).
 
+**The LI absence is data-driven, not a design choice.** `min_lifted_index` /
+`max_lifted_index` are **100 % NaN in the replay archive** (one of the six
+truly-empty ICON-era columns — `ml-icon-coverage-shadow-2026-06-15.md`), so LI
+*cannot* be a model feature even if we wanted it. CAPE made it into the logistic
+only because it has partial coverage (≈15 %, ramping to 100 % from 2026). So the
+models don't "choose to ignore" storms — the explicit storm signal simply isn't
+in the data they were trained on. And per
+`hgb-coverage-experiment-2026-06-21.md`, even feeding HGB the sparse CAPE column
+doesn't help — it overfits it rather than learning to grade storm days.
+
 ## Why this is a double-edged advantage
 
 - **Upside:** on a day where instability is storm-favourable but a clean
