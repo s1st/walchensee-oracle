@@ -18,11 +18,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd  # type: ignore[import-untyped]
 
 from oracle.knowledge.rules import SIGNAL_ORDER, Signal
+
+if TYPE_CHECKING:  # pandas is only needed to *load* CSVs / train — see load_replay_csv.
+    import pandas as pd  # type: ignore[import-untyped]
+# NOTE: pandas is imported lazily (inside load_replay_csv), NOT at module level,
+# so that unpickling the model bundle — which imports oracle.ml.train →
+# oracle.ml.dataset — works in the lean [hgb] prod image that ships no pandas.
+# Module-level annotations stay valid as strings via `from __future__ import
+# annotations`. See docs/findings/stats-panel-season-scoping-2026-06-21.md.
 
 
 # --- feature / target / metadata column maps -----------------------------
@@ -182,6 +190,8 @@ def load_replay_csv(
     legacy records that have a peak reading but no buoy day-curve and
     therefore can't be labelled on the duration/thermal scale.
     """
+    import pandas as pd  # lazy — keeps module import pandas-free (see header note)
+
     if label_col not in TARGET_COLS:
         raise ValueError(
             f"label_col must be one of {TARGET_COLS} (got {label_col!r}). "

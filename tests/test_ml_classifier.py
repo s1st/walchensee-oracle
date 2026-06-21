@@ -165,15 +165,20 @@ def test_hgb_serve_path_needs_no_pandas(monkeypatch):
     if not _osp.exists(pkl):
         pytest.skip("HGB bundle not present")
     monkeypatch.setenv("ML_PKL", pkl)
-    # Make pandas (and the not-yet-imported oracle.ml.* tree) unavailable.
+
+    from oracle.hgb_shadow import _load_hgb, classify_hgb
+
+    # Clear the bundle cache so the call actually re-unpickles under the masked
+    # pandas — unpickling FittedClassifier imports oracle.ml.train→dataset, and
+    # without cache_clear() an earlier test's cached model hides that path.
+    _load_hgb.cache_clear()
     monkeypatch.setitem(sys.modules, "pandas", None)
     for mod in [m for m in list(sys.modules) if m == "oracle.ml" or m.startswith("oracle.ml.")]:
         monkeypatch.delitem(sys.modules, mod, raising=False)
 
-    from oracle.hgb_shadow import classify_hgb
-
     res = classify_hgb({"munich_hpa": 1013.0}, {"overnight_cloud_cover_pct": 50.0})
     assert res is not None and res["verdict"] in {"go", "maybe", "no_go"}
+    _load_hgb.cache_clear()  # don't leak the masked-pandas model to other tests
 
 
 def test_dashboard_renders_ml_card(tmp_path, monkeypatch):
