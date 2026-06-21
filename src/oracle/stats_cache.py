@@ -14,6 +14,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from oracle import config
 from oracle.calibration import (
     Report,
     _empty_confusion as _cal_empty_confusion,
@@ -145,6 +146,7 @@ def build_payload(store: RunStore | None = None) -> dict[str, Any]:
     store = store or default_store()
     report = compile_report(
         store, label="duration", resimulated=True, replayed=True,
+        months=config.ACTIVE_SEASON_MONTHS,
     )
     payload = _rule_payload(report)
     payload["ml"] = _model_payload(report, "ml_classifier", store)

@@ -154,5 +154,5 @@ def test_dashboard_renders_ml_card(tmp_path, monkeypatch):
     de = client.get("/?day=2026-06-12&lang=de").text
     assert "Stärkste Eingabemessgrößen" in de
     # The 30-day ML strip row moved to /history in the route split.
-    assert "ML classifier (exp.)" in client.get("/history?lang=en").text
-    assert "ML-Klassifikator (exp.)" in client.get("/history?lang=de").text
+    assert "ML-based forecast — logistic (experimental)" in client.get("/history?lang=en").text
+    assert "ML-basierte Vorhersage — Logistisch (experimentell)" in client.get("/history?lang=de").text

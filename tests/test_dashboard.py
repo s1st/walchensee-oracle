@@ -10,15 +10,14 @@ from starlette.requests import Request
 
 from oracle.calibration import Report
 from oracle.dashboard.main import (
-    _binary_rates,
     _fmt_date,
     _historical_chart_payload,
     _public_view,
     _resolve_lang,
     _samples_from_record,
-    _stats_payload,
     _summary_line,
 )
+from oracle.stats_cache import _binary_rates, _rule_payload as _stats_payload
 
 
 def test_public_view_returns_none_for_none():
