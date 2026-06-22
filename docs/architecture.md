@@ -19,9 +19,9 @@ data store. Both pieces live in the same GCP project (`walchi-oracle-prod`).
       (--horizon=3)        writes today + 2       │   ├─ pillars/pressure   │
                            days forward to GCS    │   ├─ pillars/meteo      │
                                                   │   ├─ pillars/measurements│
-    21:00 CET  ───────►  oracle-backfill  ───────►│   └─ knowledge/rules    │
-      (backfill today)     merges Urfeld peak     │                         │
-                           ground truth to GCS    └────────────┬────────────┘
+                                                  │   └─ knowledge/rules    │
+                                                  │                         │
+                                                  └────────────┬────────────┘
                                                                │
                                                     ┌──────────▼───────────┐
                                                     │  GCS bucket          │
@@ -52,7 +52,7 @@ Each pillar fetches one data source and returns a typed snapshot.
 |---|---|---|---|
 | `pressure` | Open-Meteo (MSL pressure for Munich / Innsbruck / Bolzano) | no | no — critical |
 | `meteo` | Open-Meteo (hourly cloud, radiation, wind-aloft, BLH, CAPE, LI, soil moisture …) | no | no — critical |
-| `measurements` | Bright Sky (DWD) + Addicted-Sports scrape (Urfeld) | no | yes — one source dropping is ok |
+| `measurements` | Bright Sky (DWD) — nearest synoptic station | no | yes — tolerant |
 
 ### Rules (`src/oracle/knowledge/rules.py`)
 
@@ -60,18 +60,18 @@ Fourteen heuristic rules turn pillar data into `Verdict{rule, signal, severity, 
 
 ### Logger (`src/oracle/logger.py`)
 
-`RunStore` protocol with two implementations: `LocalRunStore` for development, `GCSRunStore` activated when `RUNS_BUCKET` is set in the environment. Same read/write/ground-truth semantics, different backend. Every scheduled run writes one JSON file per target day; the 21:00 backfill merges `ground_truth.machine` (Urfeld peak / first ignition / duration above thresholds) into the existing file.
+`RunStore` protocol with two implementations: `LocalRunStore` for development, `GCSRunStore` activated when `RUNS_BUCKET` is set in the environment. Same read/write/ground-truth semantics, different backend. Every scheduled run writes one JSON file per target day. `ground_truth.machine` in historical records contains Urfeld buoy data from the former backfill pipeline; no new machine ground truth is written (Addicted-Sports refused data permission 2026-06-22, backfill command and Cloud Scheduler job removed/paused).
 
 ### Dashboard (`src/oracle/dashboard/main.py`)
 
 FastAPI + Jinja2 app reading the same `RunStore`, split into four routes:
 
-- **`/`** — landing page: three-day tab picker, live webcam + wind panel, verdict card with a bilingual one-line summary, and the experimental logistic-ML card.
+- **`/`** — landing page: three-day tab picker, live webcam (pending Addicted-Sports permission for embed), verdict card with a bilingual one-line summary, and the experimental logistic-ML card. The live Urfeld wind panel is disabled (no data source).
 - **`/history`** — 30-day strip with **four rows** on the shared go/maybe/no_go colour scale: rule-based forecast (re-scored), logistic ML (experimental), HGB ML (experimental black-box), and actual session outcome (≥ 1 h from Urfeld). Clicking a strip cell renders the selected day's wind chart + verdict inline on the same page.
 - **`/stats`** — forecast quality metrics (accuracy, confusion matrix, sensitivity/specificity) for all three model layers (rule, logistic, HGB).
 - **`/about`** — the 14 rules explained with `?` tooltips.
 
-In-memory caches: 60 s per-day file, 5 min for the live-Urfeld panel, 1 h for stats, 12 h for Cloud Logging visitor counts.
+In-memory caches: 60 s per-day file, 1 h for stats, 12 h for Cloud Logging visitor counts.
 
 **Shadow ML classifiers** — two models run alongside the rules in shadow mode (never drive the verdict):
 - `ml_classifier` (logistic regression): distilled to ~69 pure-Python floats in `ml_coeffs.py`; scored at forecast time in `forecast_to_dict`; shown on the landing page and the history strip.
@@ -84,7 +84,7 @@ The footer carries a friendly link to the windinfo.eu Wind-Wetter-Chat (login re
 All resources in project `walchi-oracle-prod`:
 
 - **Artifact Registry** `europe-west3-docker.pkg.dev/walchi-oracle-prod/walchi/` — stores two images: `oracle-job:latest` and `dashboard:latest`, built via Cloud Build from `cloudbuild.yaml` with a `_DOCKERFILE` substitution.
-- **Cloud Run Jobs** (region `europe-west3`): `oracle-forecast` (`forecast --horizon=3`) and `oracle-backfill` (`backfill`). Both bind to service account `walchi-oracle-job@…` with least-privilege IAM (`storage.objectAdmin` on the runs bucket).
+- **Cloud Run Jobs** (region `europe-west3`): `oracle-forecast` (`forecast --horizon=3`) binds to service account `walchi-oracle-job@…` with `storage.objectAdmin` on the runs bucket. `oracle-backfill` job still exists but is paused (Cloud Scheduler `oracle-backfill-daily` paused 2026-06-22 — no data source).
 - **Cloud Run Service** (region `europe-west1`, required for custom-domain mappings): `walchi-oracle-dash`. Scales to zero, ingress `all`, service account `walchi-oracle-dash@…` with read-only `storage.objectViewer`.
 - **Cloud Scheduler** (region `europe-west3`): two HTTP jobs, 08:00 and 21:00 Europe/Berlin, invoking the Cloud Run Jobs via the Run Admin API. Uses a dedicated `walchi-scheduler@…` service account with `run.invoker` per-job.
 - **Cloud Storage** `gs://walchi-oracle-prod-runs/runs/YYYY-MM-DD.json`.
@@ -92,4 +92,4 @@ All resources in project `walchi-oracle-prod`:
 
 ## Local development
 
-The same package runs locally without GCP. `RUNS_BUCKET` unset → `LocalRunStore` writes `data/runs/`. `oracle forecast` and `oracle backfill` commands work identically to the cloud jobs. The dashboard can be run with `uvicorn oracle.dashboard.main:app` for local testing.
+The same package runs locally without GCP. `RUNS_BUCKET` unset → `LocalRunStore` writes `data/runs/`. `oracle forecast` works identically to the cloud job. The dashboard can be run with `uvicorn oracle.dashboard.main:app` for local testing.

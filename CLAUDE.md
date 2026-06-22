@@ -22,9 +22,6 @@ oracle forecast                           # today, logs to data/runs/<date>.json
 oracle forecast --day 2026-05-15          # specific day
 oracle forecast --horizon 3               # today + 2 days (this is what the scheduled job runs)
 oracle forecast --json --no-log           # machine-readable, no log file
-oracle backfill                           # merge Urfeld wind curve as ground truth into today's log
-oracle backfill --day 2026-05-15
-
 # Dashboard locally
 uvicorn oracle.dashboard.main:app --reload
 
@@ -67,13 +64,13 @@ Each module in `src/oracle/pillars/` fetches one source and returns a typed snap
 |---|---|---|
 | `pressure.py` | Open-Meteo MSL pressure (Munich / Innsbruck / Bolzano) — drives `thermik` + `foehn_override` | yes |
 | `meteo.py` | Open-Meteo hourly (cloud, solar, wind aloft, BLH, CAPE, LI, soil moisture, precip) | yes |
-| `measurements.py` | Bright Sky (DWD) + Addicted-Sports Urfeld scrape; `fetch_urfeld_day_curve` powers backfill | no — one source may drop |
+| `measurements.py` | Bright Sky (DWD) — nearest synoptic station via Bright Sky API | no — tolerant |
 
 Note: Urfeld is flaky (webcam + anemometer share an outage mode). Don't treat a missing Urfeld reading as a bug.
 
 ### Calibration log
 
-`src/oracle/logger.py` writes one JSON per target day. `forecast_to_dict` is the canonical serialiser (used for both `--json` stdout and the stored file). `backfill_run` merges `ground_truth.machine` (Urfeld peak avg/gust, first ignition time, duration counts above 8 kt and 12 kt) into the existing record without touching `ground_truth.human` (hand-edited). The duration-metric thresholds (`_IGNITION_KT=8`, `_SESSION_KT=12`) are **intentionally separate** from `config.IGNITION_WIND_KNOTS` — tuning the forecaster's threshold must not silently rewrite historical metrics.
+`src/oracle/logger.py` writes one JSON per target day. `forecast_to_dict` is the canonical serialiser (used for both `--json` stdout and the stored file). `ground_truth.human` is hand-edited; `ground_truth.machine` in historical records contains Urfeld buoy data from the old backfill pipeline (no longer written — Addicted-Sports refused data permission 2026-06-22).
 
 Preserving `ground_truth` across re-runs is important: `write_run` reads the existing record first and carries the block forward.
 
@@ -103,7 +100,7 @@ Language toggle (DE/EN) auto-detects via `Accept-Language`; `Verdict.reason` def
 
 Two Docker images built from the same source tree via `cloudbuild.yaml` (`_DOCKERFILE` substitution):
 
-- `Dockerfile.job` → `oracle-job:latest`, run as Cloud Run Jobs `oracle-forecast` (08:00 CET, `forecast --horizon=3`) and `oracle-backfill` (21:00 CET, `backfill`), both in `europe-west3`.
+- `Dockerfile.job` → `oracle-job:latest`, run as Cloud Run Jobs `oracle-forecast` (08:00 CET, `forecast --horizon=3`) in `europe-west3`. `oracle-backfill` job still exists but is **paused** (Cloud Scheduler job `oracle-backfill-daily` paused 2026-06-22 — Addicted-Sports refused data permission).
 - `Dockerfile.dashboard` → `dashboard:latest`, run as Cloud Run service `walchi-oracle-dash` in `europe-west1` (region required for custom domain mapping to `walchensee.simon-stieber.de`).
 
 The service account split (`walchi-oracle-job@` read/write runs bucket, `walchi-oracle-dash@` read-only) is intentional; keep it when adding new resources. (Historical: `windinfo-user` / `windinfo-pass` Secret Manager entries and Cloud Run job env bindings can be deleted manually — no in-tree code consumes them after the chat pillar removal.)
@@ -115,7 +112,7 @@ Two Cloud Build triggers fire on push to `main`: `dashboard-deploy-on-main` and 
 - **The build updates the dashboard *service* but NOT the *jobs*.** `cloudbuild.yaml`'s deploy step only runs `gcloud run services update` (for `_DEPLOY_SERVICE`); the job trigger has `_DEPLOY_SERVICE=''`, so it builds+pushes `oracle-job:latest` but never re-points the jobs. Cloud Run jobs pin the digest at update time, so **after a build that changes rule logic you must re-pin both jobs** or the next scheduled forecast runs the old code:
   ```
   gcloud run jobs update oracle-forecast --region europe-west3 --image europe-west3-docker.pkg.dev/walchi-oracle-prod/walchi/oracle-job:latest
-  gcloud run jobs update oracle-backfill --region europe-west3 --image .../oracle-job:latest
+  # oracle-backfill job is paused; only re-pin oracle-forecast
   ```
 - **After any rule/threshold change, rescore the prod bucket** so the dashboard's stats panel (which reads `overall_resimulated`) reflects the deployed rules — otherwise it advertises rules that no longer run:
   ```
