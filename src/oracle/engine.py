@@ -21,7 +21,6 @@ from oracle.pillars.measurements import (
     LakeTempSnapshot,
     UrfeldSample,
     WindReading,
-    fetch_urfeld_day_curve,
 )
 from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureSnapshot
@@ -117,28 +116,21 @@ async def run_replay(
     *,
     source: ReplaySource = "historical-forecast",
 ) -> Forecast:
-    """Re-run the rules against the historical forecast (or reanalysis)
-    for `day`, paired with the historical Urfeld buoy day-curve.
+    """Re-run the rules against the historical forecast (or reanalysis) for `day`.
 
-    Differences from `run_forecast`:
-    - Pressure + meteo pull from the archive host, not the live forecast.
-    - The buoy is the *last* reading of the target day (mimics "the most
-      recent reading at the time the user checks the dashboard in the
-      evening") instead of the live current reading. Bright Sky's DWD
-      data is not on the public archive, so the `winds` list contains
-      only the Urfeld reading — `thermal_ignition` is happy with that.
-    - The result is tagged `replay_day` + `replay_source` so the logger
-      can route it to `runs/replay/<date>.json`.
+    Pressure + meteo pull from the archive host. Wind readings are empty
+    (no buoy source available); `thermal_ignition` and `air_lake_delta`
+    will return MAYBE. The result is tagged `replay_day` + `replay_source`
+    so the logger can route it to `runs/replay/<date>.json`.
     """
     host = _REPLAY_HOSTS[source]
     async with httpx.AsyncClient(timeout=15.0) as client:
-        snapshot, meteo_snap, samples = await asyncio.gather(
+        snapshot, meteo_snap = await asyncio.gather(
             pressure.fetch_snapshot(client=client, host=host, target_day=day),
             meteo.fetch_snapshot(day, client=client, host=host),
-            fetch_urfeld_day_curve(day, client=client),
         )
 
-    winds, lake_temp = _project_buoy_day_curve(samples)
+    winds, lake_temp = _project_buoy_day_curve([])
     # For replay, anchor `now` to noon on the target day so the
     # air_lake_delta staleness check measures against the replay day, not
     # the wall clock. A 4-year-old historical buoy reading is "current"

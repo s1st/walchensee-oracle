@@ -193,13 +193,10 @@ def test_dashboard_renders_ml_card(tmp_path, monkeypatch):
     write_run(_forecast(Signal.NO_GO), date(2026, 6, 12), store=store)
     monkeypatch.setattr(dash, "_store", lambda: store)
     # Keep the test hermetic/fast: stub the route's live external fetches.
-    async def _no_live():
-        return {}
     async def _no_views():
         return None
     async def _no_stats():
         return None
-    monkeypatch.setattr(dash, "_fetch_urfeld_live", _no_live)
     monkeypatch.setattr(dash, "_fetch_page_views", _no_views)
     monkeypatch.setattr(dash, "_forecast_stats", _no_stats)
     client = TestClient(dash.app)
