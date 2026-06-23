@@ -362,3 +362,4 @@ OPEN_METEO_HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo
 # so reanalysis is a fine input for threshold re-fitting.
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/forecast"
 BRIGHT_SKY_CURRENT_URL = "https://api.brightsky.dev/current_weather"
+ADDICTED_SPORTS_BASE_URL = "https://www.addicted-sports.com"

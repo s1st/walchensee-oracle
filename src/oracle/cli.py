@@ -16,7 +16,7 @@ from rich.table import Table
 
 from oracle import config
 from oracle.engine import Forecast, run_forecast, run_replay
-from oracle.logger import forecast_to_dict, load_run, write_run
+from oracle.logger import backfill_run, forecast_to_dict, load_run, write_run
 
 load_dotenv()
 
@@ -102,13 +102,14 @@ def replay(
 ) -> None:
     """Re-run the rules against the historical forecast (or reanalysis).
 
-    Single-day mode (--day): re-runs rules against the Open-Meteo archive
-    for `day`. Wind readings are empty (no live buoy source); thermal_ignition
-    and air_lake_delta return MAYBE.
+    Single-day mode (--day): pairs the Open-Meteo archive pillars with the
+    historical Urfeld buoy day-curve, scraped live.
 
     Batch mode (--from/--to): replays every stored ground-truth day in the
     range. Archive data is fetched once per year (two requests) instead of
-    per day. This is the path for calibration passes over the historical log.
+    per day, and the buoy curve is reconstructed from the stored ground
+    truth — no re-scraping. This is the path for calibration passes over
+    the historical backfill.
 
     Replay records land in `runs/replay/<day>.json` so the calibrate loop
     and the dashboard don't mistake them for live forecasts. See
@@ -157,6 +158,30 @@ def replay(
         sys.stdout.write(json.dumps(forecast_to_dict(result, target), ensure_ascii=False) + "\n")
         return
     _render_tables(result, target)
+
+
+@app.command()
+def backfill(
+    day: str = typer.Option(None, help="ISO date, defaults to today"),
+) -> None:
+    """Merge the day's Urfeld wind curve into the existing run log."""
+    target = date.fromisoformat(day) if day else date.today()
+    location = asyncio.run(backfill_run(target))
+    data = load_run(target)
+    machine = data.get("ground_truth", {}).get("machine") or {}
+    console.print(f"[bold]Backfilled:[/bold] {location}")
+    if not machine:
+        console.print("[yellow]no Urfeld samples landed in that day's window[/yellow]")
+        return
+    console.print(
+        f"  peak avg : {machine.get('peak_avg_knots')} kt @ {machine.get('peak_avg_at')}"
+    )
+    console.print(f"  peak gust: {machine.get('peak_gust_knots')} kt")
+    console.print(f"  first ignition (≥8 kt): {machine.get('first_ignition_at') or '—'}")
+    console.print(
+        f"  samples ≥8 kt: {machine.get('samples_above_8kt')}  "
+        f"≥12 kt: {machine.get('samples_above_12kt')}"
+    )
 
 
 @app.command()

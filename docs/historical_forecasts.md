@@ -30,10 +30,9 @@ The live pipeline (see `src/oracle/pillars/` + `src/oracle/logger.py`):
   wsavg/wsmax + wtemp/temp/dp/rh/rp/rain — only wind + wtemp are used by
   rules today, the rest are captured for replay.
 - **Ground truth log.** `data/runs/<date>.json` (or `gs://$RUNS_BUCKET/runs/`
-  in prod) contains historical Urfeld buoy data in `ground_truth.machine`
-  for records written before 2026-06-22. No new machine ground truth is
-  written — Addicted-Sports refused data permission; `oracle backfill` and
-  the Cloud Scheduler job are removed/paused.
+  in prod) merges Urfeld peak avg/gust, ignition time, and ≥8 kt / ≥12 kt
+  duration counts. Backfilled nightly by `oracle backfill` (Cloud Run Job,
+  21:00 CET).
 
 ### On the "buoy" naming
 
