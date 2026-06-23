@@ -31,7 +31,7 @@ from oracle.calibration import (
 from oracle.knowledge.rules import Severity, Signal
 from oracle.logger import RunStore, default_store
 from oracle.ml_classifier import reason_groups
-from oracle.pillars.measurements import UrfeldSample
+from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
 from oracle.traffic import real_browser_hit
 
 
@@ -262,6 +262,7 @@ _UI: dict[str, dict[str, str]] = {
         "stats_specificity_note": "Anteil der Flaute-Tage, die korrekt als FLAUTE vorhergesagt wurden — wie selten wir umsonst an den See schicken.",
         "stats_unavailable": "—",
         "footer_outline": "Schwellwerte gegen ~10 Jahre Urfeld-Historie (Apr–Okt) kalibriert; einzelne Seltenereignis-Regeln noch Schätzungen.",
+        "footer_urfeld": "Urfeld-Wind: © Panoramahotel Karwendelblick, via",
         "footer_dwd": "DWD-Synoptik via",
         "footer_openmeteo": "Druck- & Wetterdaten via",
         "footer_chat": "Lokaler Wind-Chat (Login bei",
@@ -387,6 +388,7 @@ _UI: dict[str, dict[str, str]] = {
         "stats_specificity_note": "Share of calm days correctly forecast as NO GO — how rarely we send you to the lake for nothing.",
         "stats_unavailable": "—",
         "footer_outline": "Thresholds calibrated against ~10 years of Urfeld history (Apr–Oct); some rare-event guardrails are still estimates.",
+        "footer_urfeld": "Urfeld wind: © Panoramahotel Karwendelblick, via",
         "footer_dwd": "DWD synoptic via",
         "footer_openmeteo": "Pressure & meteorology via",
         "footer_chat": "Local windsurf community chat (login at",
@@ -618,6 +620,84 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 _CACHE_TTL_S = 60.0
 _CACHE_MAX_ENTRIES = 64
 _cache: dict[str, tuple[dict | None, float]] = {}
+
+# Urfeld live wind cache — 5 min TTL to match the anemometer's ~10 min sample
+# cadence without hammering Addicted-Sports on every page load.
+_URFELD_LIVE_TTL_S = 300.0
+_urfeld_live: dict | None = None
+_urfeld_live_at: float = 0.0
+
+
+async def _fetch_urfeld_live() -> dict:
+    """Return a snapshot of the latest Urfeld samples: current / 1h avg / trend
+    plus an inline-SVG chart of the last 6 hours.
+
+    Result shape (keys absent on failure):
+      {available: True, latest_avg_kt, latest_gust_kt, latest_at,
+       last_hour_avg, prev_hour_avg, trend: "up"|"down"|"flat",
+       chart_svg: "<svg …>" (empty when too few samples)}
+    """
+    global _urfeld_live, _urfeld_live_at
+    now = time.time()
+    if _urfeld_live is not None and now - _urfeld_live_at < _URFELD_LIVE_TTL_S:
+        return _urfeld_live
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            samples = await fetch_urfeld_day_curve(date.today(), client=client)
+    except Exception as exc:  # network, CSRF, Addicted-Sports down — degrade gracefully
+        _urfeld_live = {"available": False, "error": str(exc)}
+        _urfeld_live_at = now
+        return _urfeld_live
+
+    if not samples:
+        _urfeld_live = {"available": False, "error": "no samples"}
+        _urfeld_live_at = now
+        return _urfeld_live
+
+    # Sort newest → oldest for easy windowing.
+    samples = sorted(samples, key=lambda s: s.measured_at, reverse=True)
+    latest = samples[0]
+    last_hour = [s for s in samples if (latest.measured_at - s.measured_at).total_seconds() <= 3600]
+    prev_hour = [
+        s for s in samples
+        if 3600 < (latest.measured_at - s.measured_at).total_seconds() <= 7200
+    ]
+    chart_window = [
+        s for s in samples
+        if (latest.measured_at - s.measured_at).total_seconds() <= 6 * 3600
+    ]
+
+    last_hour_avg = sum(s.avg_knots for s in last_hour) / len(last_hour)
+    prev_hour_avg = (
+        sum(s.avg_knots for s in prev_hour) / len(prev_hour) if prev_hour else None
+    )
+    if prev_hour_avg is None:
+        trend = "flat"
+    elif last_hour_avg > prev_hour_avg + 1.0:
+        trend = "up"
+    elif last_hour_avg < prev_hour_avg - 1.0:
+        trend = "down"
+    else:
+        trend = "flat"
+
+    chart_samples = list(reversed(chart_window))
+    _urfeld_live = {
+        "available": True,
+        "latest_avg_kt": round(latest.avg_knots, 1),
+        "latest_gust_kt": round(latest.gust_knots, 1),
+        "latest_water_temp_c": (
+            round(latest.water_temp_c, 1) if latest.water_temp_c is not None else None
+        ),
+        "latest_at": latest.measured_at.isoformat(),
+        "last_hour_avg": round(last_hour_avg, 1),
+        "prev_hour_avg": round(prev_hour_avg, 1) if prev_hour_avg is not None else None,
+        "trend": trend,
+        "chart_svg": _wind_chart_svgs(chart_samples),
+    }
+    _urfeld_live_at = now
+    return _urfeld_live
+
 
 # Page-views cache — 12 h TTL. One Cloud Logging walk costs a few seconds and
 # the number only needs to be roughly current; failures (e.g. local dev
@@ -1178,11 +1258,16 @@ async def index(request: Request) -> Response:
     selected_day = _selected_day(request, today)
     view = _selected_view(request)
 
+    # Warm the cache for every day this request will read (selected + horizon
+    # + 7-day fallback for `_most_recent`) in one parallel fan-out, alongside
+    # the live-Urfeld fetch. The 30-day strip moved to /history, so its days
+    # are no longer prefetched here.
     horizon_isos = [(today + timedelta(days=i)).isoformat() for i in range(3)]
     fallback_isos = [(today - timedelta(days=i)).isoformat() for i in range(8)]
     all_isos = horizon_isos + fallback_isos + [selected_day.isoformat()]
-    await _prefetch_days(all_isos)
-    live: dict = {"available": False}
+    _, live = await asyncio.gather(
+        _prefetch_days(all_isos), _fetch_urfeld_live()
+    )
 
     detail = _day_detail_context(selected_day, today, lang, view)
     horizon = _horizon_days(today, lang, selected_day.isoformat(), view)

@@ -1,18 +1,29 @@
-"""Unit tests for the measurements pillar (Bright Sky / DWD only)."""
+"""Unit tests for the measurements pillar.
+
+Covers:
+- Bright Sky (DWD) fetcher — km/h → knots conversion, fallback-station resolution.
+- Addicted-Sports Urfeld scraper — CSRF meta → CsrfToken header flow.
+- The aggregator: both succeed, and degraded mode when one source fails.
+"""
 from __future__ import annotations
+
+from datetime import date
 
 import httpx
 import pytest
 
-from oracle.config import BRIGHT_SKY_CURRENT_URL, StationRole
-from oracle.pillars.measurements import fetch_latest
+from oracle.config import ADDICTED_SPORTS_BASE_URL, BRIGHT_SKY_CURRENT_URL, StationRole
+from oracle.pillars.measurements import (
+    fetch_latest,
+    fetch_urfeld_day_curve,
+)
 
 
 _BRIGHT_SKY_PAYLOAD = {
     "weather": {
         "source_id": 332569,
         "timestamp": "2026-04-19T18:00:00+00:00",
-        "wind_speed_10": 14.4,
+        "wind_speed_10": 14.4,        # km/h → ~7.78 kt
         "wind_gust_speed_10": 20.9,
         "wind_direction_10": 160,
         "fallback_source_ids": {"wind_speed_10": 186686},
@@ -23,42 +34,296 @@ _BRIGHT_SKY_PAYLOAD = {
     ],
 }
 
+_URFELD_HTML = """<html><head>
+<meta name="csrf-token" content="TESTTOKEN12345">
+</head><body>ok</body></html>"""
+
+_URFELD_JSON = {
+    "measurment": {
+        "417 2026-04-19 16:01:00": {
+            "temp": "9.4", "wtemp": "12.8", "wsavg": "1.08", "wsmax": "1.62",
+            "dp": "4.1", "rh": "65", "rp": "913.2", "rain": "0.0",
+            "tsdatetime": "2026-04-19 16:01:00",
+            "utctstamp": "1776607260",
+        },
+        "417 2026-04-19 14:58:00": {
+            "temp": "11.3", "wtemp": "12.5", "wsavg": "12.78", "wsmax": "17.28",
+            "dp": "5.2", "rh": "58", "rp": "912.9", "rain": "0.0",
+            "tsdatetime": "2026-04-19 14:58:00",
+            "utctstamp": "1776603480",
+        },
+    }
+}
+
+
+def _dispatch(bright_sky_handler, urfeld_html_handler, urfeld_json_handler):
+    """Build an httpx.MockTransport that routes per-source via URL."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url.startswith(BRIGHT_SKY_CURRENT_URL):
+            return bright_sky_handler(request)
+        if url.startswith(f"{ADDICTED_SPORTS_BASE_URL}/fileadmin/webcam/src/getWeatherData.php"):
+            return urfeld_json_handler(request)
+        if url.startswith(f"{ADDICTED_SPORTS_BASE_URL}/webcam/walchensee/urfeld/"):
+            return urfeld_html_handler(request)
+        raise AssertionError(f"unexpected URL in test: {url}")
+
+    return httpx.MockTransport(handler)
+
 
 @pytest.mark.asyncio
-async def test_fetch_latest_returns_bright_sky_reading():
-    def handler(request: httpx.Request) -> httpx.Response:
-        if str(request.url).startswith(BRIGHT_SKY_CURRENT_URL):
-            return httpx.Response(200, json=_BRIGHT_SKY_PAYLOAD)
-        raise AssertionError(f"unexpected URL: {request.url}")
+async def test_fetch_latest_returns_readings_from_both_sources():
+    seen_urfeld_token = {}
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+    def bright_sky(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_BRIGHT_SKY_PAYLOAD)
+
+    def urfeld_html(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_URFELD_HTML)
+
+    def urfeld_json(req: httpx.Request) -> httpx.Response:
+        seen_urfeld_token["csrf"] = req.headers.get("CsrfToken") or req.headers.get("csrftoken")
+        return httpx.Response(200, json=_URFELD_JSON)
+
+    transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
+    async with httpx.AsyncClient(transport=transport) as client:
+        latest = await fetch_latest(client=client)
+
+    assert seen_urfeld_token["csrf"] == "TESTTOKEN12345"  # case-sensitive header carried through
+    by_role = {r.role: r for r in latest.winds}
+    assert StationRole.IGNITION_REFERENCE in by_role
+    assert StationRole.SHORE in by_role
+    assert by_role[StationRole.IGNITION_REFERENCE].station == "Mittenwald/Obb."
+    # Urfeld should pick the latest entry (utctstamp=1776607260).
+    urfeld = by_role[StationRole.SHORE]
+    assert urfeld.station == "Urfeld"
+    assert urfeld.avg_knots == pytest.approx(1.08)
+    assert urfeld.gust_knots == pytest.approx(1.62)
+    assert urfeld.direction_deg is None
+    # Water temp came from the same latest row.
+    assert urfeld.water_temp_c == pytest.approx(12.8)
+    # All buoy-side fields are captured too — round-trip fodder for future
+    # rules per docs/future-buoy-signals.md. The latest row is the one
+    # with utctstamp=1776607260.
+    assert urfeld.air_temp_c == pytest.approx(9.4)
+    assert urfeld.dew_point_c == pytest.approx(4.1)
+    assert urfeld.rel_humidity_pct == pytest.approx(65.0)
+    assert urfeld.pressure_hpa == pytest.approx(913.2)
+    assert urfeld.rain_mm == pytest.approx(0.0)
+    # And the engine-visible envelope has it projected into a LakeTempSnapshot.
+    assert latest.lake_temp is not None
+    assert latest.lake_temp.surface_temp_c == pytest.approx(12.8)
+    assert latest.lake_temp.source_station == "Urfeld"
+
+
+@pytest.mark.asyncio
+async def test_fetch_latest_tolerates_urfeld_failure():
+    def bright_sky(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_BRIGHT_SKY_PAYLOAD)
+
+    def urfeld_html(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>no meta here</html>")
+
+    def urfeld_json(_: httpx.Request) -> httpx.Response:
+        raise AssertionError("should not be reached when HTML has no token")
+
+    transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
+    async with httpx.AsyncClient(transport=transport) as client:
         latest = await fetch_latest(client=client)
 
     assert len(latest.winds) == 1
-    reading = latest.winds[0]
-    assert reading.role is StationRole.IGNITION_REFERENCE
-    assert reading.station == "Mittenwald/Obb."
-    assert reading.avg_knots == pytest.approx(14.4 * 0.5399568)
-    assert reading.direction_deg == pytest.approx(160.0)
+    assert latest.winds[0].role is StationRole.IGNITION_REFERENCE
+    # No Urfeld reading → no lake-temp signal, but the call still succeeded.
     assert latest.lake_temp is None
 
 
 @pytest.mark.asyncio
-async def test_fetch_latest_raises_when_bright_sky_missing_required_field():
-    bad_payload = {
-        "weather": {
-            "source_id": 1,
-            "timestamp": "2026-04-19T18:00:00+00:00",
-            "wind_speed_10": None,
-            "wind_gust_speed_10": None,
-            "wind_direction_10": None,
-        },
-        "sources": [{"id": 1, "station_name": "X"}],
+async def test_fetch_latest_raises_when_all_sources_fail():
+    def bright_sky(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "weather": {
+                "source_id": 1,
+                "timestamp": "2026-04-19T18:00:00+00:00",
+                "wind_speed_10": None,
+                "wind_gust_speed_10": None,
+                "wind_direction_10": None,
+            },
+            "sources": [{"id": 1, "station_name": "X"}],
+        })
+
+    def urfeld_html(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>no token</html>")
+
+    def urfeld_json(_: httpx.Request) -> httpx.Response:
+        raise AssertionError("not expected")
+
+    transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
+    async with httpx.AsyncClient(transport=transport) as client:
+        with pytest.raises(RuntimeError, match="All station sources failed"):
+            await fetch_latest(client=client)
+
+
+@pytest.mark.asyncio
+async def test_fetch_latest_rejects_urfeld_csrf_error_response():
+    def bright_sky(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_BRIGHT_SKY_PAYLOAD)
+
+    def urfeld_html(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_URFELD_HTML)
+
+    def urfeld_json(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "No CSRF token.", "result": {"webcams": []}})
+
+    transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
+    async with httpx.AsyncClient(transport=transport) as client:
+        latest = await fetch_latest(client=client)
+
+    # Bright Sky still returns; Urfeld source is dropped for this run.
+    assert len(latest.winds) == 1
+    assert latest.winds[0].role is StationRole.IGNITION_REFERENCE
+    assert latest.lake_temp is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_latest_skips_urfeld_metadata_only_rows():
+    """The newest Urfeld row is sometimes metadata-only (no wsavg/wsmax). It must
+    be skipped so the latest *usable* reading is reported, not dropped entirely."""
+    payload = {
+        "measurment": {
+            "417 2026-04-19 16:30:00": {  # newest, but no wind values → skip
+                "temp": "9.0",
+                "tsdatetime": "2026-04-19 16:30:00", "utctstamp": "1776609000",
+            },
+            "417 2026-04-19 16:01:00": {  # latest row that actually has wind
+                "wsavg": "1.08", "wsmax": "1.62",
+                "tsdatetime": "2026-04-19 16:01:00", "utctstamp": "1776607260",
+            },
+        }
+    }
+
+    def bright_sky(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_BRIGHT_SKY_PAYLOAD)
+
+    def urfeld_html(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_URFELD_HTML)
+
+    def urfeld_json(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
+    async with httpx.AsyncClient(transport=transport) as client:
+        latest = await fetch_latest(client=client)
+
+    urfeld = {r.role: r for r in latest.winds}[StationRole.SHORE]
+    assert urfeld.avg_knots == pytest.approx(1.08)  # the metadata-only newer row was skipped
+    # Metadata-only row also had no wtemp — lake_temp should be None.
+    assert urfeld.water_temp_c is None
+    assert latest.lake_temp is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_urfeld_day_curve_skips_metadata_only_rows():
+    """The retrospective day-curve fetch (used by backfill) also tolerates
+    metadata-only rows mid-curve instead of aborting the whole pull."""
+    day = date(2026, 4, 19)
+    payload = {
+        "measurment": {
+            "417 2026-04-19 10:00:00": {
+                "wtemp": "12.3", "wsavg": "5.0", "wsmax": "8.0",
+                "tsdatetime": "2026-04-19 10:00:00", "utctstamp": "1",
+            },
+            "417 2026-04-19 10:10:00": {  # metadata-only → skipped, not fatal
+                "temp": "9.0", "tsdatetime": "2026-04-19 10:10:00", "utctstamp": "2",
+            },
+        }
     }
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=bad_payload)
+        url = str(request.url)
+        if url.startswith(f"{ADDICTED_SPORTS_BASE_URL}/fileadmin/webcam/src/getWeatherData.php"):
+            return httpx.Response(200, json=payload)
+        if url.startswith(f"{ADDICTED_SPORTS_BASE_URL}/webcam/walchensee/urfeld/"):
+            return httpx.Response(200, text=_URFELD_HTML)
+        raise AssertionError(f"unexpected URL in test: {url}")
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        with pytest.raises(RuntimeError):
-            await fetch_latest(client=client)
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        samples = await fetch_urfeld_day_curve(day, client=client)
+
+    assert len(samples) == 1
+    assert samples[0].avg_knots == pytest.approx(5.0)
+    assert samples[0].water_temp_c == pytest.approx(12.3)
+
+
+@pytest.mark.asyncio
+async def test_fetch_latest_returns_no_lake_temp_when_latest_row_lacks_wtemp():
+    """A row with wind but no wtemp must still report wind — lake_temp just
+    stays None. The rule layer treats that as 'no signal'."""
+    payload = {
+        "measurment": {
+            "417 2026-04-19 16:01:00": {
+                "wsavg": "1.08", "wsmax": "1.62",  # no wtemp
+                "tsdatetime": "2026-04-19 16:01:00", "utctstamp": "1776607260",
+            },
+        }
+    }
+
+    def bright_sky(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_BRIGHT_SKY_PAYLOAD)
+
+    def urfeld_html(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_URFELD_HTML)
+
+    def urfeld_json(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
+    async with httpx.AsyncClient(transport=transport) as client:
+        latest = await fetch_latest(client=client)
+
+    urfeld = {r.role: r for r in latest.winds}[StationRole.SHORE]
+    assert urfeld.avg_knots == pytest.approx(1.08)
+    assert urfeld.water_temp_c is None
+    assert latest.lake_temp is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_latest_captures_all_buoy_fields_when_partial():
+    """The buoy sometimes posts wind + wtemp but no aux fields (sensor
+    offline, server partial update). Wind and lake_temp must still come
+    through; the aux fields stay None instead of crashing the parse."""
+    payload = {
+        "measurment": {
+            "417 2026-04-19 16:01:00": {
+                "wsavg": "1.08", "wsmax": "1.62", "wtemp": "12.8",
+                "tsdatetime": "2026-04-19 16:01:00", "utctstamp": "1776607260",
+            },
+        }
+    }
+
+    def bright_sky(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_BRIGHT_SKY_PAYLOAD)
+
+    def urfeld_html(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=_URFELD_HTML)
+
+    def urfeld_json(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    transport = _dispatch(bright_sky, urfeld_html, urfeld_json)
+    async with httpx.AsyncClient(transport=transport) as client:
+        latest = await fetch_latest(client=client)
+
+    urfeld = {r.role: r for r in latest.winds}[StationRole.SHORE]
+    assert urfeld.avg_knots == pytest.approx(1.08)
+    assert urfeld.water_temp_c == pytest.approx(12.8)
+    # Aux fields are None, not crashed.
+    assert urfeld.air_temp_c is None
+    assert urfeld.dew_point_c is None
+    assert urfeld.rel_humidity_pct is None
+    assert urfeld.pressure_hpa is None
+    assert urfeld.rain_mm is None
+    # Lake-temp projection still works.
+    assert latest.lake_temp is not None
+    assert latest.lake_temp.surface_temp_c == pytest.approx(12.8)
