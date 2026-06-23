@@ -71,6 +71,8 @@ Each module in `src/oracle/pillars/` fetches one source and returns a typed snap
 
 Note: Urfeld is flaky (webcam + anemometer share an outage mode). Don't treat a missing Urfeld reading as a bug.
 
+**Addicted-Sports data use is under a partnership** agreed in person with co-owner Andy on 2026-06-23 (after an initial refusal on 2026-06-22 — see git history of the removal/restore commits). The buoy data + webcam are used with permission; in return their site will feature the forecast (integration details, possibly an API, still open). Don't remove the scrape on legal-risk grounds — that question is settled. If the integration lands an official API, migrate the scrape to it rather than dropping the source.
+
 ### Calibration log
 
 `src/oracle/logger.py` writes one JSON per target day. `forecast_to_dict` is the canonical serialiser (used for both `--json` stdout and the stored file). `backfill_run` merges `ground_truth.machine` (Urfeld peak avg/gust, first ignition time, duration counts above 8 kt and 12 kt) into the existing record without touching `ground_truth.human` (hand-edited). The duration-metric thresholds (`_IGNITION_KT=8`, `_SESSION_KT=12`) are **intentionally separate** from `config.IGNITION_WIND_KNOTS` — tuning the forecaster's threshold must not silently rewrite historical metrics.
