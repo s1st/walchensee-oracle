@@ -27,7 +27,8 @@ from pathlib import Path
 
 from oracle import config
 from oracle.engine import aggregate, apply_rules
-from oracle.knowledge.rules import SIGNAL_ORDER, Signal, Verdict, is_storm_risk
+from oracle import storm_classifier
+from oracle.knowledge.rules import SIGNAL_ORDER, Signal, Verdict
 from oracle.logger import RunStore, default_store, verdict_to_dict
 from oracle.pillars.measurements import LakeTempSnapshot, WindReading
 from oracle.pillars.meteo import MeteoSnapshot
@@ -371,21 +372,20 @@ def _machine_from(record: dict) -> dict | None:
 
 
 def storm_suspected(record: dict) -> bool:
-    """Forecast-time thunderstorm flag for a stored record, read from the lifted
-    index in its meteo inputs.
+    """Forecast-time thunderstorm advisory for a stored record.
 
-    Drives the dashboard's yellow storm border and the storm-day tally in
-    `compile_report`. As of the LI-decouple experiment storm days are **no
-    longer quarantined** — they are scored on thermal merit like any other day
-    (the ground truth shows the thermal usually still fires before the gust
-    front), and `atmospheric_stability` stays GREEN on them rather than vetoing.
-    The flag is retained to label/count storm days and paint the advisory border.
-    Defensive against legacy records written before the lifted-index field
-    existed.
+    Single source of truth for the storm advisory (dashboard yellow border +
+    storm-day tally in `compile_report`), delegated to the calibrated
+    `storm_classifier` over the record's afternoon convective features, which
+    falls back to the LI ≤ −2 rule when those features are absent (archive host /
+    pre-2021 / legacy records). As of the LI-decouple experiment storm days are
+    **no longer quarantined** — they are scored on thermal merit like any other
+    day (the thermal usually still fires before the gust front), and
+    `atmospheric_stability` stays GREEN on them rather than vetoing. The flag is
+    retained to label/count storm days and paint the advisory border.
     """
     meteo = (record.get("inputs") or {}).get("meteo") or {}
-    li = meteo.get("min_lifted_index")
-    return li is not None and is_storm_risk(float(li))
+    return storm_classifier.storm_advisory_from_meteo_dict(meteo)
 
 
 def _label_record(record: dict, mode: str) -> str | None:

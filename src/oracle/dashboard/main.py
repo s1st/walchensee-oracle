@@ -107,8 +107,8 @@ _RULE_I18N: dict[str, RuleI18n] = {
     "atmospheric_stability": RuleI18n(
         label={"de": "Atmosphärische Stabilität", "en": "Atmospheric stability"},
         description={
-            "de": "Lifted Index 09:00–13:00. LI ≥ +10 = Atmosphäre zu stabil (Thermik gedeckelt); LI ≤ −2 = Gewittergefahr.",
-            "en": "Lifted index 09:00–13:00. LI ≥ +10 = atmosphere too stable (capped); LI ≤ −2 = thunderstorm risk.",
+            "de": "Lifted Index 09:00–13:00. LI ≥ +10 = Atmosphäre zu stabil (Thermik gedeckelt). Gewittergefahr bewertet ein eigener Klassifikator aus mehreren Nachmittags-Konvektionsfaktoren (CAPE, LI, Scherung, CIN …) — nicht der LI allein.",
+            "en": "Lifted index 09:00–13:00. LI ≥ +10 = atmosphere too stable (capped). Thunderstorm risk is judged by a separate classifier over several afternoon convective factors (CAPE, LI, shear, CIN …) — not LI alone.",
         },
     ),
     "daytime_clouds": RuleI18n(

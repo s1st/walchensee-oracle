@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
-from oracle import config
+from oracle import config, storm_classifier
 from oracle.pillars.measurements import LakeTempSnapshot, WindReading
 from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureSnapshot
@@ -237,14 +237,15 @@ def atmospheric_stability(meteo: MeteoSnapshot) -> Verdict:
             reason_de=f"LI {hi:.1f} — Atmosphäre zu stabil, Thermik gedeckelt",
             severity=Severity.SOFT,
         )
-    if is_storm_risk(lo):
+    if storm_classifier.storm_advisory_from_snapshot(meteo):
         # Thunderstorm risk no longer vetoes the thermal verdict. The day-ahead
         # ground truth (n=68 storm days in the replay corpus) shows the thermal
         # still fired on 45 GO / 21 MAYBE / 2 NO_GO — a storm day is a strong
         # thermal day until the gust front arrives. The danger is surfaced as a
-        # separate safety advisory (Caution box + storm border, via
-        # is_storm_risk); here the thermal is scored on its merits, so this rule
-        # stays GREEN and lets the other pillars speak.
+        # separate safety advisory (Caution box + storm border) driven by the
+        # calibrated storm classifier (afternoon convective features, falling
+        # back to LI ≤ −2); here the thermal is scored on its merits, so this
+        # rule stays GREEN and lets the other pillars speak.
         return Verdict(
             "atmospheric_stability", Signal.GO,
             reason_en=f"LI {lo:.1f} — convective: thunderstorm risk flagged separately, thermal not vetoed",

@@ -53,6 +53,17 @@ class MeteoSnapshot:
     # temperature for the air_lake_delta rule. `None` for records written before
     # this field shipped; the rule treats that as "no signal" (MAYBE).
     morning_air_temp_c: float | None = None
+    # Afternoon (12:00–18:00) convective features for the storm advisory's
+    # classifier (storm_classifier.py). All Optional — absent on the archive host
+    # / pre-2021 days and on records written before this shipped; the classifier
+    # falls back to the LI≤−2 rule when they are missing. These feed the Caution
+    # advisory only, never the verdict.
+    afternoon_cape_max_j_kg: float | None = None
+    afternoon_li_min: float | None = None
+    afternoon_cin_min_j_kg: float | None = None
+    afternoon_precip_mm: float | None = None
+    afternoon_shear_kn: float | None = None        # max 700 hPa − min 10 m wind
+    afternoon_low_cloud_max_pct: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -76,6 +87,12 @@ class MeteoSnapshot:
                 if self.morning_air_temp_c is not None
                 else None
             ),
+            "afternoon_cape_max_j_kg": self.afternoon_cape_max_j_kg,
+            "afternoon_li_min": self.afternoon_li_min,
+            "afternoon_cin_min_j_kg": self.afternoon_cin_min_j_kg,
+            "afternoon_precip_mm": self.afternoon_precip_mm,
+            "afternoon_shear_kn": self.afternoon_shear_kn,
+            "afternoon_low_cloud_max_pct": self.afternoon_low_cloud_max_pct,
         }
 
     @classmethod
@@ -121,7 +138,18 @@ class MeteoSnapshot:
                 if m.get("morning_air_temp_c") is not None
                 else None
             ),
+            afternoon_cape_max_j_kg=_opt_float(m, "afternoon_cape_max_j_kg"),
+            afternoon_li_min=_opt_float(m, "afternoon_li_min"),
+            afternoon_cin_min_j_kg=_opt_float(m, "afternoon_cin_min_j_kg"),
+            afternoon_precip_mm=_opt_float(m, "afternoon_precip_mm"),
+            afternoon_shear_kn=_opt_float(m, "afternoon_shear_kn"),
+            afternoon_low_cloud_max_pct=_opt_float(m, "afternoon_low_cloud_max_pct"),
         )
+
+
+def _opt_float(m: dict, key: str) -> float | None:
+    """Read an optional float from a serialised meteo dict (None if absent/null)."""
+    return float(m[key]) if m.get(key) is not None else None
 
 
 _OVERNIGHT = (time(22, 0), time(6, 0))
@@ -141,7 +169,18 @@ _HOURLY_VARS = ",".join([
     "cloud_cover_low",
     "wind_speed_700hPa",
     "wind_direction_850hPa",
+    # Afternoon convective-storm features (feed the storm advisory's classifier,
+    # not the verdict). convective_inhibition is the new pull; wind_speed_10m
+    # pairs with 700 hPa for deep-layer shear. (precipitation_probability is
+    # deliberately NOT used — it is all-null on the historical-forecast archive,
+    # so training on it would drift from the live API where it exists.)
+    "convective_inhibition",
+    "wind_speed_10m",
 ])
+
+# Afternoon convection window (local). Alpine thunderstorms fire 12:00–18:00 —
+# the morning 09:00–13:00 aggregates the rules use under-sample the peak CAPE/LI.
+_AFTERNOON = (time(12, 0), time(18, 0))
 
 
 async def fetch_snapshot(
@@ -276,6 +315,34 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
     )
     yesterday_rain = _in_window(times, hourly["precipitation"], yesterday_start, yesterday_end)
 
+    # Afternoon (12:00–18:00) convective aggregates for the storm advisory's
+    # classifier. Tolerant of missing keys/windows: the three new vars and the
+    # pressure-level fields are absent on the archive host / pre-2021 days, in
+    # which case the storm classifier falls back to the LI≤−2 rule.
+    aft_start = datetime.combine(target, _AFTERNOON[0])
+    aft_end = datetime.combine(target, _AFTERNOON[1])
+
+    def _aft(key: str) -> list[float]:
+        values = hourly.get(key)
+        if not values:
+            return []
+        return _in_window(times, values, aft_start, aft_end, inclusive_end=True)
+
+    aft_cape = _aft("cape")
+    aft_li = _aft("lifted_index")
+    aft_cin = _aft("convective_inhibition")
+    aft_precip = _aft("precipitation")
+    aft_wind_700 = _aft("wind_speed_700hPa")
+    aft_wind_10m = _aft("wind_speed_10m")
+    aft_low_cloud = _aft("cloud_cover_low")
+    # Deep-layer shear proxy: afternoon peak 700 hPa wind minus the lightest
+    # 10 m wind. Both must be present or shear is unknown (None).
+    aft_shear = (
+        round(max(aft_wind_700) - min(aft_wind_10m), 1)
+        if aft_wind_700 and aft_wind_10m
+        else None
+    )
+
     required_windows = {
         "cloud_cover": overnight_clouds,
         "shortwave_radiation": morning_radiation,
@@ -342,6 +409,12 @@ def _parse(payload: dict, target: date) -> MeteoSnapshot:
         wind_850_direction_at_peak_deg=wind_850_dir,
         max_wind_700_knots=max(morning_wind_700) if morning_wind_700 else None,
         morning_air_temp_c=mean_morning_air_temp,
+        afternoon_cape_max_j_kg=max(aft_cape) if aft_cape else None,
+        afternoon_li_min=min(aft_li) if aft_li else None,
+        afternoon_cin_min_j_kg=min(aft_cin) if aft_cin else None,
+        afternoon_precip_mm=round(sum(aft_precip), 2) if aft_precip else None,
+        afternoon_shear_kn=aft_shear,
+        afternoon_low_cloud_max_pct=max(aft_low_cloud) if aft_low_cloud else None,
     )
 
 
