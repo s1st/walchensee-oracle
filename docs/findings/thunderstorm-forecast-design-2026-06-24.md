@@ -27,11 +27,32 @@ No clean thunderstorm observation exists at lake resolution, so we use a composi
    (storms 3 km away often miss Urfeld), so it's a looser secondary.
 3. **CLIP webcam** (optional confirm): high precision, low recall — tie-breaker only.
 
-`storm = buoy_gust_front ∨ dwd_heavy_precip ∨ clip_visible`. Label caveats: buoy
-outages (37/68 storm days covered; shared webcam/buoy outage mode), small n, 2021–22
-only (IFS-era LI), seasonal (Apr–Oct). **Build the label for ALL in-season days, not
-just LI≤−2 days**, so we capture storms the current flag *misses* (the LI≤−2 selection
-is what we're trying to beat — training only on it bakes in its blind spots).
+`storm = buoy_gust_front ∨ dwd_heavy_precip ∨ clip_visible`. **Build the label for ALL
+in-season days, not just LI≤−2 days**, so we capture storms the current flag *misses*
+(the LI≤−2 selection is what we're trying to beat — training only on it bakes in its
+blind spots).
+
+### Dataset scope — corrected (the "68 in 10 years?" question)
+
+The spike's 68 was an **artifact of the replay records**, which stored `lifted_index`
+for **2021–2022 only** (214 in-season days each; all other years have none). It is 68
+LI≤−2 days across **2 seasons**, not 10 years. Re-fetching features fresh lifts this:
+
+| | coverage | in-season days |
+|---|---|---|
+| stored replay LI | 2021–2022 | 428 |
+| **Open-Meteo CAPE/LI (historical-forecast)** | **2021 → 2025** | **~1,070** |
+| buoy (gust/pressure) | ≥ 2019 | label, fetch gently |
+| Open-Meteo / ERA5 archive | — | **no CAPE/LI before 2021** (hard ceiling) |
+
+So the practical dataset is **2021–2025, ~5 seasons (~1,070 in-season days)** — ~2.5×
+the spike. Storm positives scale with it (~21 → ~50). Still small-n (treat as a
+research advisory; grow with the 2026 live season), but no longer 2 seasons. **Pre-2021
+can't be used**: Open-Meteo exposes no CAPE/lifted_index there, and ERA5 archive
+doesn't either, so the deep buoy/DWD history has no features to pair with.
+
+Operational caveat learned: the Addicted-Sports buoy endpoint **429-rate-limits** bulk
+pulls — fetch sequentially with a delay (a 4-wide pull got only 40/428 days).
 
 ## Features (independent variables)
 
@@ -94,10 +115,12 @@ below today's ~70%.
 
 ## Work breakdown
 
-1. **Label set** — extend the buoy fetch to *all* in-season replay days (not just
-   LI≤−2); build `storm` label JSON + a small hand-checked validation sample.
-2. **Feature set** — re-fetch afternoon-window convective aggregates (CAPE/LI/precip/
-   CIN/precip-prob) + deep shear for those days from the archive host.
+1. **Label set** — buoy gust+pressure label for **all 2021–2025 in-season days**
+   (~1,070), fetched *sequentially with delay* (429 limit) + DWD precip; small
+   hand-checked validation sample.
+2. **Feature set** — afternoon-window convective aggregates (CAPE/LI/precip/CIN/
+   precip-prob) + deep shear for the same 2021–2025 days from the historical-forecast
+   host (no live API cost). Not limited to the replay records (those stop at 2022).
 3. **Fit + sweep** — baseline vs CAPE×LI vs logistic; FA/hit curve; pick operating pt.
 4. **Wire** — export coeffs, rewrite `is_storm_risk`, update tooltip + tests, rescore.
 
