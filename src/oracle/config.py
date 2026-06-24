@@ -209,7 +209,11 @@ MAX_LIFTED_INDEX = 10.0          # above = atmosphere too stable, thermal capped
                                  # Was 6.0; raised after n=22 calibration showed full
                                  # sessions at li_max up to 8.9 (and rideable up to 12.3).
                                  # Spring surface heating overpowers a "textbook" cap here.
-MIN_LIFTED_INDEX = -2.0          # below = thunderstorm risk, thermal destroyed
+MIN_LIFTED_INDEX = -2.0          # below = thunderstorm risk. No longer a verdict
+                                 # veto (LI-decouple experiment): the thermal is
+                                 # scored on its merits and the storm shows as a
+                                 # separate Caution advisory. This is now the
+                                 # advisory's trigger threshold (is_storm_risk).
 MAX_DAYTIME_LOW_CLOUD_PCT = 75.0 # max cloud_cover_low 09:00–13:00; above = slopes shaded
                                  # Was 60.0 (research-analogue guess); refitted from
                                  # n=3,263 replay baseline (2026-06-12, branch

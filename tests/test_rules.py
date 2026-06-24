@@ -168,23 +168,28 @@ def test_atmospheric_stability_too_stable_no_go():
     assert atmospheric_stability(_meteo(max_li=11.0, min_li=5.0)).signal is Signal.NO_GO
 
 
-def test_atmospheric_stability_storm_risk_no_go():
-    assert atmospheric_stability(_meteo(max_li=0.0, min_li=-3.0)).signal is Signal.NO_GO
+def test_atmospheric_stability_storm_risk_does_not_veto():
+    # LI-decouple: thunderstorm risk no longer vetoes the thermal verdict. The
+    # rule stays GREEN (the thermal usually still fires until the front arrives);
+    # the storm is surfaced as a separate Caution advisory via is_storm_risk.
+    v = atmospheric_stability(_meteo(max_li=0.0, min_li=-3.0))
+    assert v.signal is Signal.GO
+    assert v.severity is not Severity.HARD
 
 
 def test_atmospheric_stability_normal_go():
     assert atmospheric_stability(_meteo(max_li=3.0, min_li=1.0)).signal is Signal.GO
 
 
-def test_is_storm_risk_matches_atmospheric_stability_hard_veto():
-    # The predicate must agree with the rule's HARD branch at the threshold:
-    # LI ≤ MIN_LIFTED_INDEX (−2) is a storm; just above it is not.
+def test_is_storm_risk_is_advisory_only():
+    # The predicate keeps the LI ≤ MIN_LIFTED_INDEX (−2) threshold for the
+    # Caution advisory, but a storm day no longer produces a verdict veto:
+    # the rule is GREEN even when is_storm_risk is True.
     assert is_storm_risk(-3.0) is True
     assert is_storm_risk(-2.0) is True
     assert is_storm_risk(-1.9) is False
-    assert (
-        atmospheric_stability(_meteo(max_li=0.0, min_li=-3.0)).severity is Severity.HARD
-    ) == is_storm_risk(-3.0)
+    v = atmospheric_stability(_meteo(max_li=0.0, min_li=-3.0))
+    assert is_storm_risk(-3.0) and v.signal is Signal.GO
 
 
 def test_daytime_clouds_clear_go():
@@ -279,9 +284,13 @@ def test_atmospheric_stability_capped_is_soft():
     assert atmospheric_stability(_meteo(max_li=11.0, min_li=5.0)).severity is Severity.SOFT
 
 
-def test_atmospheric_stability_storm_is_hard():
-    # LI ≤ −2 means thunderstorm risk — unsafe regardless of thermal viability.
-    assert atmospheric_stability(_meteo(max_li=0.0, min_li=-3.0)).severity is Severity.HARD
+def test_atmospheric_stability_storm_is_not_hard_veto():
+    # LI-decouple: LI ≤ −2 (thunderstorm risk) no longer flips the verdict. It is
+    # a separate safety advisory; the rule itself stays GREEN and never emits a
+    # HARD veto, so the other pillars drive the thermal verdict.
+    v = atmospheric_stability(_meteo(max_li=0.0, min_li=-3.0))
+    assert v.signal is Signal.GO
+    assert v.severity is not Severity.HARD
 
 
 def test_daytime_clouds_no_go_is_soft():

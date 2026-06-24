@@ -70,7 +70,7 @@ def _rule_payload(report: Report) -> dict[str, Any]:
         "accuracy": report.overall_accuracy if report.sample_size else None,
         "baseline_class": best,
         "baseline_accuracy": baselines[best]["accuracy"] if best else None,
-        "quarantined": len(report.quarantined_days),
+        "quarantined": len(report.storm_days),
         "matrix": matrix,
         "axis": [s.value for s in SIGNAL_ORDER],
         "sensitivity": sens,
@@ -131,7 +131,7 @@ def _model_payload(
     if n == 0:
         return {
             "n": 0, "accuracy": None, "baseline_class": None,
-            "baseline_accuracy": None, "quarantined": len(report.quarantined_days),
+            "baseline_accuracy": None, "quarantined": len(report.storm_days),
             "matrix": [], "axis": [s.value for s in SIGNAL_ORDER],
             "sensitivity": None, "specificity": None,
         }
@@ -149,7 +149,7 @@ def _model_payload(
         "accuracy": hits / n,
         "baseline_class": best,
         "baseline_accuracy": baselines[best]["accuracy"] if best else None,
-        "quarantined": len(report.quarantined_days),
+        "quarantined": len(report.storm_days),
         "matrix": matrix,
         "axis": [s.value for s in SIGNAL_ORDER],
         "sensitivity": sens,

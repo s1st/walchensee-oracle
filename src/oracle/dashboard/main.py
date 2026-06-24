@@ -171,9 +171,9 @@ _UI: dict[str, dict[str, str]] = {
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
         "strip_legend_no_go": "kein Wind",
         "strip_legend_empty": "keine Daten",
-        "strip_legend_storm": "Gewitter (aus Kalibrierung ausgenommen)",
-        "storm_hint": "⚡ Gewitter-Risiko — kein Thermik-Tag",
-        "storm_verdict_note": "⚡ Ausschlaggebend ist die Gewittergefahr — zur Sicherheit. Sobald Gewitter im Spiel ist, sagt der Regelansatz immer FLAUTE, egal wie gut die Thermik sonst wäre.",
+        "strip_legend_storm": "Gewitter-Hinweis (Thermik trotzdem gewertet)",
+        "storm_hint": "⚡ Gewitter-Risiko — Thermik läuft oft trotzdem, bis die Front kommt",
+        "storm_verdict_note": "⚡ Achtung: Gewittergefahr. Die Thermik kann bis zum Eintreffen der Front trotzdem gut laufen — der Regelansatz bewertet hier die Thermik wie immer und blendet die Gewittergefahr als separaten Sicherheitshinweis ein. Behalte den Himmel im Auge und brich rechtzeitig ab.",
         "live_header": "Aktuell in Urfeld",
         "live_now": "jetzt",
         "live_gust_label": "Böe",
@@ -243,7 +243,7 @@ _UI: dict[str, dict[str, str]] = {
         "stats_hgb_note": "Vorhersage = HistGradientBoosting. Trainiert auf den Jahren bis 2022, deshalb hier nur auf den Testjahren ab 2023 bewertet (anderes, kleineres Tages-Set als oben). Das stärkste Modell im Vergleich — läuft als Blackbox-Parallelmodell live mit, treibt die offizielle Vorhersage aber nie.",
         "stats_baseline": "Naiver Vergleich",
         "stats_baseline_note": "Was ein stumpfer „immer dasselbe\"-Tipp (die häufigste Kategorie) träfe. Die Vorhersage muss das schlagen, um nützlich zu sein.",
-        "stats_quarantined_note": "Gewittertage aus der Wertung ausgenommen",
+        "stats_quarantined_note": "Gewittertage, nach Thermik gewertet (LI entkoppelt)",
         "stats_advanced_label": "Erweiterte Statistik",
         "stats_advanced_rule_label": "Erweiterte Statistik — Regel-Ebene",
         "stats_advanced_ml_label": "Erweiterte Statistik — ML Logistisch (Parallelmodell)",
@@ -297,9 +297,9 @@ _UI: dict[str, dict[str, str]] = {
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
         "strip_legend_no_go": "no wind",
         "strip_legend_empty": "no data",
-        "strip_legend_storm": "thunderstorm (excluded from calibration)",
-        "storm_hint": "⚡ thunderstorm risk — not a thermal day",
-        "storm_verdict_note": "⚡ The decisive factor here is thunderstorm risk — a hard safety veto. Whenever storms are in play the rule-based forecast always says NO GO, however good the thermal would otherwise be.",
+        "strip_legend_storm": "thunderstorm advisory (thermal still scored)",
+        "storm_hint": "⚡ thunderstorm risk — the thermal often still fires until the front arrives",
+        "storm_verdict_note": "⚡ Heads up: thunderstorm risk. The thermal can still be good right up until the front arrives — the rule-based forecast scores the thermal as usual and shows the storm risk as a separate safety flag. Keep an eye on the sky and come in early.",
         "live_header": "Live at Urfeld",
         "live_now": "now",
         "live_gust_label": "gust",
@@ -369,7 +369,7 @@ _UI: dict[str, dict[str, str]] = {
         "stats_hgb_note": "Forecast = HistGradientBoosting. Trained on the years up to 2022, so scored here only on the test years from 2023 on (a different, smaller day set than above). The strongest model in the comparison — it runs live as a black-box shadow model but never drives the official verdict.",
         "stats_baseline": "Naive baseline",
         "stats_baseline_note": "What a blunt \"always the same\" guess (the most common outcome) would score. The forecast has to beat this to be useful.",
-        "stats_quarantined_note": "thunderstorm days excluded from scoring",
+        "stats_quarantined_note": "thunderstorm days, scored on thermal merit (LI decoupled)",
         "stats_advanced_label": "Advanced statistics",
         "stats_advanced_rule_label": "Advanced statistics — rule layer",
         "stats_advanced_ml_label": "Advanced statistics — ML logistic (parallel model)",
@@ -1211,12 +1211,14 @@ def _day_detail_context(selected_day: date, today: date, lang: str, view: str) -
     summary = _summary_line(display_overall, display_verdicts, lang) if raw else ""
     is_today = selected_day == today
     historical = None if is_today else _historical_chart_payload(raw)
-    # Whether this day's NO_GO is driven by the thunderstorm HARD veto. Same
-    # `is_storm_risk` trigger as the rule veto, the calibration quarantine and
-    # the strip's storm border (single source of truth) — so the card can spell
-    # out that storm risk alone is decisive here. Gated on a NO_GO display so the
-    # callout never contradicts a GO/MAYBE headline (e.g. in the 'original' view).
-    is_storm = bool(raw) and display_overall == Signal.NO_GO and _storm_suspected(raw)
+    # Whether this day carries a thunderstorm advisory. Same `is_storm_risk`
+    # trigger as the strip's storm border and the calibration storm tally (single
+    # source of truth). Since the LI-decouple experiment this no longer rides on
+    # the verdict: the thermal is scored on its merits (the headline may be GO),
+    # and the Caution box shows alongside it as a separate safety overlay —
+    # "good thermal, but a storm is coming, watch the sky." Shown for any storm
+    # day regardless of the GO/MAYBE/NO_GO headline.
+    is_storm = raw is not None and _storm_suspected(raw)
     return {
         "current": _public_view(raw),
         "display_overall": display_overall,

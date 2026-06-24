@@ -198,8 +198,10 @@ def aggregate(verdicts: list[Verdict]) -> Signal:
     """Consensus aggregation, severity-aware.
 
     Only HARD vetos (Föhn, synoptic > 25 kt, opposing/decoupling
-    upper-level flow, thunderstorm-risk LI) flip the overall to
-    NO_GO. A *single* SOFT veto on its own does not downgrade.
+    upper-level flow) flip the overall to NO_GO. A *single* SOFT
+    veto on its own does not downgrade. (Thunderstorm-risk LI was
+    a HARD veto until the LI-decouple experiment — it is now a
+    separate safety advisory and no longer touches the verdict.)
 
     The 2-soft-veto bar (the rule-of-thumb in the project's
     pre-replay history) was wrong on the n=3,331 replay

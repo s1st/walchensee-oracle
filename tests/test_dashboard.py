@@ -244,7 +244,7 @@ def test_stats_payload_shapes_matrix_and_rates():
         confusion=_conf(go_go=2, mb_mb=1, ng_ng=1),
         label_mode="duration",
         resimulated=True,
-        quarantined_days=["2026-05-05"],
+        storm_days=["2026-05-05"],
     )
     p = _stats_payload(report)
     assert p["n"] == 4
