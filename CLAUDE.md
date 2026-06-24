@@ -105,7 +105,7 @@ The 14-rule heuristic + severity-tiered aggregator is the **production** classif
 
 ### Dashboard
 
-`src/oracle/dashboard/main.py` (FastAPI + Jinja2, single `index.html`) reads from the same `RunStore` the CLI writes. Two in-process caches: 60 s per-day file, 5 min for the live-Urfeld panel — keep them in mind when changing endpoints, they mask staleness. The footer carries a friendly link to the windinfo.eu Wind-Wetter-Chat (login required) for users who want to read community chatter themselves; **do not reintroduce server-side scraping or republishing of that chat** — third-party user posts have DSGVO + § 87b UrhG (Datenbankschutz) implications, and the chat pillar was deliberately removed for that reason.
+`src/oracle/dashboard/main.py` (FastAPI + Jinja2, single `index.html`) reads from the same `RunStore` the CLI writes. Two in-process caches: 60 s per-day file, 5 min for the live-Urfeld panel — keep them in mind when changing endpoints, they mask staleness. **Do not reintroduce server-side scraping or republishing of the windinfo.eu Wind-Wetter-Chat** — third-party user posts have DSGVO + § 87b UrhG (Datenbankschutz) implications, and the chat pillar was deliberately removed for that reason. (The footer's friendly link to that chat was also removed 2026-06-24 — no longer needed.) The footer now credits the Addicted-Sports partnership explicitly ("used with kind permission of and in partnership with"), which doubles as a record of the data-use consent.
 
 Language toggle (DE/EN) auto-detects via `Accept-Language`; `Verdict.reason` defaults to English for CLI and legacy JSON readers.
 
