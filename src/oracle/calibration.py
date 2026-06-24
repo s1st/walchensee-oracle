@@ -482,7 +482,13 @@ def _iter_window_days(
     """
     days = store.list_replays() if replayed else store.list_days()
     for iso in days:
-        d = date.fromisoformat(iso)
+        # The bucket carries non-day blobs too (e.g. `runs/_stats_cache.json`,
+        # written by the dashboard). Skip anything that isn't an ISO date rather
+        # than crashing the whole walk.
+        try:
+            d = date.fromisoformat(iso)
+        except ValueError:
+            continue
         if since and d < since:
             continue
         if until and d > until:
