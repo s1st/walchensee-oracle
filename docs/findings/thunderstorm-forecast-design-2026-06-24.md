@@ -188,7 +188,29 @@ low_cloud + cape×−li, cape×shear, shear×−li), leave-one-year-out **POD 82
   records lack afternoon features → LI fallback → unchanged).
 
 Revisit later: a heavy-rain-inclusive label and 2026 live validation to firm up the
-operating point (the bootstrap CI on recall is wide: [74%, 90%]).
+operating point.
+
+### Robustness — bootstrap on the n=89 storm class
+
+n=1067 days sounds comfortable but the *positive* class is only **89 storms** (~8
+events per feature, ~10 floor for logistic; leave-one-year-out tests on as few as 9
+storms in 2025). Bootstrap (B=3000, resampling the 1067 days, fixed POD≈82%
+threshold):
+
+| Metric | Point | 95% CI |
+|---|---|---|
+| POD (recall) | 82% | **[74%, 90%]** |
+| FAR | 86% | [83%, 89%] |
+| Peirce (model) | 0.36 | ~[0.30, 0.43] |
+| Peirce (LI≤−2) | 0.20 | [0.10, 0.30] |
+
+Paired across resamples: **P(model beats the LI flag) = 99.8 %**, **P(true Peirce >
+0.30) = 91.5 %**. So *"better than the flag"* is settled and the ~2× recall is robust;
+the *exact* operating point is soft (recall really ∈ ~74–90 %). Two reasons the CIs
+are **optimistic** (true uncertainty is wider): the LOYO scores + threshold were fit
+once on the full data (understates model-fit variance), and days were resampled
+independently though storms cluster in multi-day synoptic episodes. Conclusion: ship
+labelled experimental, favour recall, let the 2026 live season firm the threshold.
 
 ## Risks
 

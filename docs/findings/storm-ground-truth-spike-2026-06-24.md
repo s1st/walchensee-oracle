@@ -129,6 +129,14 @@ Key cross-source findings:
 - Buoy + webcam archives both reach the 2021–22 replay window (with shared
   outage-mode gaps — 37/68 buoy, near-full webcam).
 
+> **Correction (during productionization):** the buoy data didn't need fetching at
+> all — the full curve (gust + **pressure**) is already stored locally in
+> `data/runs/<iso>.json` `ground_truth.machine.samples` for **3,693 days, 2016–2026**.
+> The `data/runs/replay/` dir holds forecast inputs only (no ground truth), which is
+> why the early probes here re-fetched. The live `getWeatherData.php` endpoint also
+> **429-rate-limits** bulk pulls. Use the stored samples. The thunderstorm model
+> (`thunderstorm-forecast-design-2026-06-24.md`) is built entirely from them.
+
 ### Bearing on the decouple + the production storm trigger
 This strongly reinforces the LI decouple (a ~70%-false-alarm signal must not HARD-
 veto the verdict). For the *advisory* itself, the **buoy gust + pressure-jump**
