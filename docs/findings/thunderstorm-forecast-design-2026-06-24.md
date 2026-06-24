@@ -124,6 +124,34 @@ below today's ~70%.
 3. **Fit + sweep** — baseline vs CAPE×LI vs logistic; FA/hit curve; pick operating pt.
 4. **Wire** — export coeffs, rewrite `is_storm_risk`, update tooltip + tests, rescore.
 
+## First results (2026-06-24, `scripts/thunderstorm_model_spike.py`)
+
+Built the dataset from **stored** buoy curves (`ground_truth.machine.samples` —
+gust + pressure, all years, no re-fetch) + a free Open-Meteo feature fetch.
+Dataset: **2021–2025 in-season, 1067 days, 89 gust-front storms (8.3% base rate)**.
+Label = afternoon buoy `max_gust ≥ 22 kt AND pressure_range ≥ 2 hPa`.
+Leave-one-year-out:
+
+| Model | POD | FAR | Peirce |
+|---|---|---|---|
+| **LI≤−2 (current flag)** | 44% | 87% | **0.178** |
+| CAPE × (−LI) | 40% | 84% | 0.213 |
+| **Logistic (7 features)** | **63%** | 78% | **0.429** |
+| Logistic @ matched recall (44%) | 44% | **75%** | 0.319 |
+
+**The multi-feature logistic ≈ doubles Peirce (0.178 → 0.429)** and at the current
+flag's recall cuts FAR 87% → 75%. The LI flag is genuinely poor: it misses 56% of
+real gust-fronts *and* 87% of its alarms are false. `precip_prob` alone is noisy
+(heavy median separation but large overlap); the *combination* (CAPE + LI + CIN +
+precip + precip-prob + shear + low-cloud) is what carries it. FAR stays high (~75%)
+because storms are rare and hard — but it's a warning, so it can choose its recall/
+FAR operating point with the rider.
+
+Next: regularise / drop weak features, pick the operating point, export coeffs
+(pure-Python scorer), rewrite `is_storm_risk`, update tooltip + tests, rescore.
+Open question — the gust-front label (gust≥22 ∧ dP≥2) is one choice; revisit with a
+heavy-rain-inclusive label and a 2026 live validation.
+
 ## Risks
 
 Small labelled n (≈ tens of real storms), buoy outages, label noise (lake-local vs
