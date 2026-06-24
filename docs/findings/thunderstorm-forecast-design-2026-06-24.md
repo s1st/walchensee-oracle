@@ -147,10 +147,26 @@ precip + precip-prob + shear + low-cloud) is what carries it. FAR stays high (~7
 because storms are rare and hard — but it's a warning, so it can choose its recall/
 FAR operating point with the rider.
 
-Next: regularise / drop weak features, pick the operating point, export coeffs
-(pure-Python scorer), rewrite `is_storm_risk`, update tooltip + tests, rescore.
-Open question — the gust-front label (gust≥22 ∧ dP≥2) is one choice; revisit with a
-heavy-rain-inclusive label and a 2026 live validation.
+### Iteration (recall-favoring; the chosen operating posture)
+
+Added interaction features (CAPE×−LI, CAPE×shear, CAPE×precip-prob, shear×−LI) and
+compared logistic vs HGB; tested a looser label. Findings:
+
+- **Strict gust-front label (gust≥22 ∧ dP≥2, 89 storms) is more learnable** than the
+  looser one (gust≥20 ∧ dP≥1.5, 156 storms; Peirce only ~0.24–0.32) — the strong
+  gust+pressure events tie tightest to the convective features. Keep the strict label.
+- **Logistic + interactions, recall-favoring operating point: POD 82%, FAR 84%,
+  Peirce 0.418.** vs LI≤−2's POD 44% / FAR 87%. → **~2× the recall (44→82%) at a
+  *lower* false-alarm ratio** — strictly better on both axes at the chosen point.
+- HGB nudges Peirce (0.451) but is a black box (can't export to pure-Python coeffs);
+  the gap is small, so **logistic wins for production** (interpretable, frozen coeffs).
+- FAR ~84% is inherent to an 8.3%-base-rate event at high recall — acceptable for a
+  *warning* (favor recall: missing a gust-front costs more than crying wolf).
+
+**Decision: ship the logistic at POD≈82%.** Next (productionize): export coeffs →
+pure-Python scorer → rewrite `is_storm_risk` (advisory only; verdict stays
+decoupled) → tooltip + tests → rescore. Revisit later with a heavy-rain-inclusive
+label and 2026 live validation.
 
 ## Risks
 
