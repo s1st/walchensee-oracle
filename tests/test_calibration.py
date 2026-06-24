@@ -54,6 +54,19 @@ def test_observed_storm_none_without_enough_buoy_data():
     assert observed_storm(None) is None
 
 
+def test_rescore_skips_non_date_blobs(tmp_path: Path):
+    # The prod bucket carries `runs/_stats_cache.json`; the day-walk must skip it
+    # rather than crash on date.fromisoformat('_stats_cache').
+    store = LocalRunStore(tmp_path)
+    store.write("2026-06-01", {
+        "day": "2026-06-01", "overall": "no_go",
+        "inputs": _full_inputs(day="2026-06-01", li_min=1.0),
+    })
+    (tmp_path / "_stats_cache.json").write_text("{}")  # non-date blob in runs/
+    report = rescore_all(store=store)   # must not raise
+    assert "2026-06-01" in report["rewritten"] or "2026-06-01" in report["unchanged"]
+
+
 def test_actual_verdict_thresholds():
     assert actual_verdict(None) is None
     assert actual_verdict(7.9) == "no_go"
