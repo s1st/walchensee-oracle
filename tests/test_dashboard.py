@@ -10,6 +10,7 @@ from starlette.requests import Request
 
 from oracle.calibration import Report
 from oracle.dashboard.main import (
+    _base_context,
     _fmt_date,
     _historical_chart_payload,
     _public_view,
@@ -235,6 +236,39 @@ def test_binary_rates_empty_matrix():
     sens, spec = _binary_rates(_conf())
     assert sens is None
     assert spec is None
+
+
+def _req(host: str) -> Request:
+    return Request({
+        "type": "http", "method": "GET", "path": "/", "query_string": b"",
+        "headers": [(b"host", host.encode())] if host else [],
+    })
+
+
+def test_personal_link_flag_fail_closed():
+    # Shown ONLY on the real-name host; hidden on the pseudonymous face, dev, and
+    # anything ambiguous (a leak would de-anonymise the Reddit persona).
+    def shown(host):
+        return _base_context(_req(host), "today")["show_personal_link"]
+    assert shown("walchensee.simon-stieber.de") is True
+    assert shown("simon-stieber.de") is True
+    assert shown("walchensee.s1st.de") is False
+    assert shown("localhost") is False
+    assert shown("") is False
+    assert shown("evil-simon-stieber.de") is False   # suffix-spoof must not match
+
+
+def test_personal_link_absent_on_pseudonymous_host():
+    # End-to-end anti-leak: the rendered page must not carry the personal link
+    # on the s1st.de face, but must on simon-stieber.de.
+    from starlette.testclient import TestClient
+
+    from oracle.dashboard import main as dash
+    client = TestClient(dash.app)
+    on_real = client.get("/about", headers={"host": "walchensee.simon-stieber.de"}).text
+    on_anon = client.get("/about", headers={"host": "walchensee.s1st.de"}).text
+    assert "https://simon-stieber.de/" in on_real
+    assert "https://simon-stieber.de/" not in on_anon
 
 
 def test_stats_payload_shapes_matrix_and_rates():

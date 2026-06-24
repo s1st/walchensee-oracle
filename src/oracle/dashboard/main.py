@@ -267,6 +267,7 @@ _UI: dict[str, dict[str, str]] = {
         "footer_urfeld": "Urfeld-Wind & Webcam (Webcam © Panoramahotel Karwendelblick) — mit freundlicher Genehmigung und in Partnerschaft mit",
         "footer_dwd": "DWD-Synoptik via",
         "footer_openmeteo": "Druck- & Wetterdaten via",
+        "footer_by": "Ein Projekt von",
         "nav_today": "Heute",
         "nav_history": "Verlauf",
         "nav_stats": "Statistik",
@@ -392,6 +393,7 @@ _UI: dict[str, dict[str, str]] = {
         "footer_urfeld": "Urfeld wind & webcam (webcam © Panoramahotel Karwendelblick) — used with kind permission of and in partnership with",
         "footer_dwd": "DWD synoptic via",
         "footer_openmeteo": "Pressure & meteorology via",
+        "footer_by": "A project by",
         "nav_today": "Today",
         "nav_history": "History",
         "nav_stats": "Stats",
@@ -1264,6 +1266,11 @@ def _base_context(request: Request, active: str, lang: str | None = None) -> dic
         "t": _UI[lang],
         "active": active,
         "show_github": not host.endswith("s1st.de"),
+        # Personal-page credit: **fail-closed** — shown ONLY on the real-name host,
+        # never on the pseudonymous s1st.de (Reddit/forum face), localhost, or an
+        # unknown/missing Host. A leak here would de-anonymise the Reddit persona,
+        # so default to hidden everywhere except an explicit simon-stieber.de.
+        "show_personal_link": host == "simon-stieber.de" or host.endswith(".simon-stieber.de"),
     }
 
 
