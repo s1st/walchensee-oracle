@@ -68,6 +68,34 @@ Caution advisory the false alarms are far cheaper — but the advisory itself st
 over-warns, which is worth telling users (and a reason to tighten the trigger,
 e.g. fold in CAPE / precip-probability, once we have a real label).
 
+## Webcam archive — access confirmed + visually validated (2026-06-24)
+
+The Addicted-Sports webcam archive is **directly fetchable, programmatically, and
+reaches the replay window** — so it *can* backfill an observed-storm label for the
+2021–22 days. Confirmed from the archive's network calls:
+
+- **Frame URL:** `https://www.addicted-sports.com/fileadmin/webcam/walchensee/{YYYY}/{MM}/{DD}/{HHMM}_hd.jpg`
+  (sizes `_sm` ~15 KB / `_lm` ~40 KB / `_hd` ~185 KB; plain GET, no auth).
+- **Cadence:** every 10 min (`HHMM`, MM ∈ {00,10,20,30,40,50}).
+- **Listing/metadata (JSONP):** `…/fileadmin/webcam/v14include/list.php?img={YYYY}/{MM}/{DD}/{HHMM}&wc=walchensee&exif=1&samehour=1`
+  (also 10-min `.mp4` timelapse clips per slot).
+- **Coverage:** 2021 and 2022 both present; per-day gaps exist (webcam shares the
+  buoy's outage mode — e.g. 2021-06-19 is missing all afternoon).
+
+**Visual validation** (predicted-storm days, `_hd`): 2022-06-24 16:00 (DWD 26.6 mm)
+shows raindrops on the lens + dark low cloud + a rain shaft — unmistakable storm.
+2021-06-20 14:00 (the 0 mm false alarm) shows high flat overcast but dry, with the
+Karwendel visible to the horizon. The storm/no-storm contrast is obvious; a vision
+classifier should separate them easily. This closes the gap the DWD `condition`
+field left.
+
+Proposed backfill: afternoon frames (≈11–21 local, hourly is enough — every 6th
+10-min slot) for the 68 predicted-storm days → vision-classify
+(storm / convective / rain / clear) → day label → real hit/false-alarm for LI≤−2.
+Hand-label ~20 days first to measure the classifier. Bulk archive access is a
+partnership courtesy — give Andy a heads-up before scaling, and offer the
+classifier back as a "storm cam" feature.
+
 ## To actually measure storm prediction (proper follow-ups)
 
 1. **DWD present-weather (ww) codes from CDC directly** (not via Bright Sky) —
