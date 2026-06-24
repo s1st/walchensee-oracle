@@ -15,6 +15,7 @@ from oracle.calibration import (
     mcnemar,
     mcnemar_keys,
     mean_cost,
+    observed_storm,
     parse_months,
     peirce_skill_score,
     reports_by_era,
@@ -25,6 +26,32 @@ from oracle.calibration import (
 )
 from oracle.calibration import _months_label, era_of
 from oracle.logger import LocalRunStore
+
+
+def _samples(*triples):
+    # (hour, gust_kt, pressure_hpa) → buoy sample rows
+    return [
+        {"t": f"2022-06-24T{h:02d}:00:00", "gust_kt": g, "pressure_hpa": p}
+        for h, g, p in triples
+    ]
+
+
+def test_observed_storm_gust_front_detected():
+    # Afternoon gust ≥ 22 kt AND pressure jump ≥ 2 hPa → observed storm.
+    m = {"samples": _samples((13, 12, 1010.0), (15, 25.0, 1013.0), (17, 14.0, 1011.0))}
+    assert observed_storm(m) is True
+
+
+def test_observed_storm_windy_but_no_pressure_jump_is_thermal():
+    # Strong gust but flat pressure → a thermal, not a gust front.
+    m = {"samples": _samples((13, 18, 1012.0), (15, 26.0, 1012.5), (17, 22.0, 1012.2))}
+    assert observed_storm(m) is False
+
+
+def test_observed_storm_none_without_enough_buoy_data():
+    assert observed_storm({"samples": _samples((15, 25.0, 1013.0))}) is None  # <3 afternoon pts
+    assert observed_storm({}) is None
+    assert observed_storm(None) is None
 
 
 def test_actual_verdict_thresholds():

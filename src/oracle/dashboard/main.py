@@ -26,6 +26,7 @@ from fastapi.templating import Jinja2Templates
 
 from oracle.calibration import (
     actual_verdict_duration as _actual_verdict_duration,
+    observed_storm as _observed_storm,
     storm_suspected as _storm_suspected,
 )
 from oracle.knowledge.rules import Severity, Signal
@@ -171,8 +172,9 @@ _UI: dict[str, dict[str, str]] = {
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
         "strip_legend_no_go": "kein Wind",
         "strip_legend_empty": "keine Daten",
-        "strip_legend_storm": "Gewitter-Hinweis (Thermik trotzdem gewertet)",
+        "strip_legend_storm": "Gewitter (Prognose-Zeilen: vorhergesagt · Mess-Zeile: tatsächlich)",
         "storm_hint": "⚡ Gewitter-Risiko — Thermik läuft oft trotzdem, bis die Front kommt",
+        "storm_observed_hint": "⚡ Gewitter/Böenfront gemessen (Urfeld-Boje)",
         "storm_verdict_note": "⚡ Achtung: Gewittergefahr. Die Thermik kann bis zum Eintreffen der Front trotzdem gut laufen — der Regelansatz bewertet hier die Thermik wie immer und blendet die Gewittergefahr als separaten Sicherheitshinweis ein. Behalte den Himmel im Auge und brich rechtzeitig ab.",
         "live_header": "Aktuell in Urfeld",
         "live_now": "jetzt",
@@ -297,8 +299,9 @@ _UI: dict[str, dict[str, str]] = {
         "strip_legend_maybe": "marginal (≥ 1 h ≥ 8 kt)",
         "strip_legend_no_go": "no wind",
         "strip_legend_empty": "no data",
-        "strip_legend_storm": "thunderstorm advisory (thermal still scored)",
+        "strip_legend_storm": "thunderstorm (forecast rows: predicted · actual row: observed)",
         "storm_hint": "⚡ thunderstorm risk — the thermal often still fires until the front arrives",
+        "storm_observed_hint": "⚡ thunderstorm / gust front recorded (Urfeld buoy)",
         "storm_verdict_note": "⚡ Heads up: thunderstorm risk. The thermal can still be good right up until the front arrives — the rule-based forecast scores the thermal as usual and shows the storm risk as a separate safety flag. Keep an eye on the sky and come in early.",
         "live_header": "Live at Urfeld",
         "live_now": "now",
@@ -1008,7 +1011,11 @@ def _history(today: date, lang: str, days: int = 30) -> list[dict]:
             "hgb": hgb,
             "peak_avg_knots": peak,
             "actual": _actual_verdict_duration(machine),
+            # Forecast storm advisory (predicted) — borders the forecast/ML/HGB rows.
             "storm": _storm_suspected(record) if record else False,
+            # Observed gust front from the buoy curve — borders the *actual* row,
+            # so the strip reads as forecast-vs-observed for storms too.
+            "actual_storm": _observed_storm(machine) is True,
         })
     return items
 
