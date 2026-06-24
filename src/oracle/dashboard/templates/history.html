@@ -56,13 +56,13 @@
   <div class="strip">
     {% for d in history %}
       {% if d.actual %}
-        <a class="cell {{ d.actual }}{% if d.iso == selected_iso %} selected{% endif %}{% if d.storm %} storm{% endif %}"
+        <a class="cell {{ d.actual }}{% if d.iso == selected_iso %} selected{% endif %}{% if d.actual_storm %} storm{% endif %}"
            href="/history?day={{ d.iso }}{% if lang != 'de' %}&lang={{ lang }}{% endif %}#day-detail"
-           title="{{ d.day }} — {{ t.strip_actual }}: {% if d.peak_avg_knots %}{{ '%.1f'|format(d.peak_avg_knots) }} kt peak{% else %}—{% endif %}{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
+           title="{{ d.day }} — {{ t.strip_actual }}: {% if d.peak_avg_knots %}{{ '%.1f'|format(d.peak_avg_knots) }} kt peak{% else %}—{% endif %}{% if d.actual_storm %} · {{ t.storm_observed_hint }}{% endif %}"></a>
       {% else %}
-        <a class="cell empty{% if d.iso == selected_iso %} selected{% endif %}{% if d.storm %} storm{% endif %}"
+        <a class="cell empty{% if d.iso == selected_iso %} selected{% endif %}{% if d.actual_storm %} storm{% endif %}"
            href="/history?day={{ d.iso }}{% if lang != 'de' %}&lang={{ lang }}{% endif %}#day-detail"
-           title="{{ d.day }} — {{ t.strip_actual }}: —{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
+           title="{{ d.day }} — {{ t.strip_actual }}: —{% if d.actual_storm %} · {{ t.storm_observed_hint }}{% endif %}"></a>
       {% endif %}
     {% endfor %}
   </div>

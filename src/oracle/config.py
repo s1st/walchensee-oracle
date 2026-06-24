@@ -214,6 +214,13 @@ MIN_LIFTED_INDEX = -2.0          # below = thunderstorm risk. No longer a verdic
                                  # scored on its merits and the storm shows as a
                                  # separate Caution advisory. This is now the
                                  # advisory's trigger threshold (is_storm_risk).
+# Observed gust-front label: a storm "actually hit the lake" when the afternoon
+# (12–18 local) buoy curve shows a gust spike AND a sharp MSL pressure jump.
+# Single definition shared by the storm classifier's training label
+# (scripts/export_storm_coeffs.py) and the dashboard's "actual" history row
+# (calibration.observed_storm) — keep them in lockstep.
+STORM_OBS_GUST_KT = 22.0
+STORM_OBS_PRESSURE_JUMP_HPA = 2.0
 MAX_DAYTIME_LOW_CLOUD_PCT = 75.0 # max cloud_cover_low 09:00–13:00; above = slopes shaded
                                  # Was 60.0 (research-analogue guess); refitted from
                                  # n=3,263 replay baseline (2026-06-12, branch

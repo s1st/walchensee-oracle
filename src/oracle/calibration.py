@@ -388,6 +388,30 @@ def storm_suspected(record: dict) -> bool:
     return storm_classifier.storm_advisory_from_meteo_dict(meteo)
 
 
+def observed_storm(machine: dict | None) -> bool | None:
+    """Whether a thunderstorm/gust front **actually** hit the lake, from the
+    stored buoy curve — the observed counterpart to `storm_suspected` (forecast).
+
+    True when the afternoon (12–18 local) buoy samples show a gust spike
+    (≥ `STORM_OBS_GUST_KT`) AND a sharp MSL pressure jump
+    (≥ `STORM_OBS_PRESSURE_JUMP_HPA`). Returns None when there isn't enough buoy
+    data to decide (so the dashboard shows no border and training skips the day,
+    rather than scoring a gap as "no storm"). Same definition as the storm
+    classifier's training label.
+    """
+    samples = (machine or {}).get("samples") or []
+    aft = [
+        s for s in samples
+        if s.get("t") and 12 <= datetime.fromisoformat(s["t"]).hour <= 18
+    ]
+    gusts = [s["gust_kt"] for s in aft if s.get("gust_kt") is not None]
+    if len(gusts) < 3:
+        return None
+    press = [s["pressure_hpa"] for s in aft if s.get("pressure_hpa") is not None]
+    jump = (max(press) - min(press)) if len(press) > 1 else 0.0
+    return max(gusts) >= config.STORM_OBS_GUST_KT and jump >= config.STORM_OBS_PRESSURE_JUMP_HPA
+
+
 def _label_record(record: dict, mode: str) -> str | None:
     """Dispatch the configured labeller against one record's machine block."""
     if mode == "thermal":

@@ -19,12 +19,12 @@ import asyncio
 import datetime as dt
 import json
 import os
-from datetime import datetime
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 
 from oracle import storm_classifier as SC
+from oracle.calibration import observed_storm
 from oracle.config import OPEN_METEO_HISTORICAL_FORECAST_URL
 from oracle.pillars import meteo as M
 
@@ -33,16 +33,13 @@ _COEFFS_PATH = "src/oracle/knowledge/storm_coeffs.py"
 
 
 def buoy_gust_front(iso: str) -> bool | None:
+    # Same definition as the dashboard's "actual" history row — shared helper so
+    # the training label and the displayed observed-storm can't drift.
     f = f"data/runs/{iso}.json"
     if not os.path.exists(f):
         return None
-    s = (json.load(open(f)).get("ground_truth") or {}).get("machine", {}).get("samples") or []
-    aft = [r for r in s if 12 <= datetime.fromisoformat(r["t"]).hour <= 18]
-    g = [r["gust_kt"] for r in aft if r.get("gust_kt") is not None]
-    p = [r["pressure_hpa"] for r in aft if r.get("pressure_hpa") is not None]
-    if len(g) < 3:
-        return None
-    return max(g) >= 22 and (len(p) > 1 and (max(p) - min(p)) >= 2)
+    machine = (json.load(open(f)).get("ground_truth") or {}).get("machine") or {}
+    return observed_storm(machine)
 
 
 async def build_dataset():
