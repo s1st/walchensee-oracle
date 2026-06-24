@@ -96,6 +96,46 @@ Hand-label ~20 days first to measure the classifier. Bulk archive access is a
 partnership courtesy — give Andy a heads-up before scaling, and offer the
 classifier back as a "storm cam" feature.
 
+## Multi-signal triangulation — the LI flag's real false-alarm rate
+
+No single source is a clean thunderstorm label at lake resolution, so we
+triangulated four independent signals on the 68 LI-predicted-storm days
+(`scripts/storm_label_multisignal.py`). They converge:
+
+| Signal | What it measures | Verdict on the 68 |
+|---|---|---|
+| **Buoy gust + pressure jump** (lake-local, authoritative) | gust spike + sharp MSL dP = gust front | 8 storms / 37 covered → **78% FA** |
+| DWD precip (3.3 km) | convective wet proxy | 29/68 bone-dry; 17 ≥5 mm |
+| CLIP zero-shot (webcam `_hd`) | visible rain (high precision, low recall) | fires on 1 blatant day |
+| Frame density (webcam) | capture ramps on big-wind days (noisy) | 6→12/hr on one gust-front, not the other |
+| **Combined (any signal)** | — | **21 storms / 68 → 69% false alarm** |
+
+**The LI≤−2 storm flag is wrong ~70% of the time** (78% lake-local). Of the 68,
+~18–28 were *rideable, dry thermals* — the exact "storm day that's still a good
+thermal day" the decouple recovers.
+
+Key cross-source findings:
+- **The buoy is the right ground truth, not DWD.** Storms DWD logs 3.3 km away
+  often miss the lake: 2022-06-05 was DWD 36 kt / 14 mm but buoy **24 kt / 0 mm**;
+  2021-07-30 DWD 36 kt / 8 mm but buoy **13 kt / 0 mm**. DWD over-reads lake storms.
+- **Pressure jump catches what rain/vision miss.** 2021-06-29: buoy gust 43 kt,
+  **+7.2 hPa**, gustiness 1.79 — a textbook gust front — with DWD rain only 2 mm and
+  CLIP 0.00. Gust+pressure is the strongest lake-local storm detector.
+- **Pretrained weather CNNs fail** (`prithivMLmods/Weather-Image-Classification`,
+  `dima806/weather_types_image_detection`): rain prob ~0.3 vs ~0.3 storm-vs-dry —
+  domain shift from automotive/close-up training data; would need fine-tuning on
+  lake-cam frames (the 2017-thesis workflow). **CLIP zero-shot** separates the
+  hand-validated pair cleanly (0.95 vs 0.01) but has low recall without on-lens rain.
+- Buoy + webcam archives both reach the 2021–22 replay window (with shared
+  outage-mode gaps — 37/68 buoy, near-full webcam).
+
+### Bearing on the decouple + the production storm trigger
+This strongly reinforces the LI decouple (a ~70%-false-alarm signal must not HARD-
+veto the verdict). For the *advisory* itself, the **buoy gust + pressure-jump**
+signature is the cheapest reliable lake-local storm label and reuses the existing
+`fetch_urfeld_day_curve` scrape — the path to a real hit/false-alarm metric and a
+tightened Caution trigger (fold CAPE / precip-prob in, score against buoy fronts).
+
 ## To actually measure storm prediction (proper follow-ups)
 
 1. **DWD present-weather (ww) codes from CDC directly** (not via Bright Sky) —
