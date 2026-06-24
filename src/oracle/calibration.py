@@ -27,7 +27,8 @@ from pathlib import Path
 
 from oracle import config
 from oracle.engine import aggregate, apply_rules
-from oracle.knowledge.rules import SIGNAL_ORDER, Signal, Verdict, is_storm_risk
+from oracle import storm_classifier
+from oracle.knowledge.rules import SIGNAL_ORDER, Signal, Verdict
 from oracle.logger import RunStore, default_store, verdict_to_dict
 from oracle.pillars.measurements import LakeTempSnapshot, WindReading
 from oracle.pillars.meteo import MeteoSnapshot
@@ -271,7 +272,8 @@ def actual_verdict_thermal(machine: dict | None) -> str | None:
     wasn't a ragged frontal squall. Otherwise NO_GO — the wind fired, but not as
     a thermal. This de-contaminates the label so foehn/frontal days stop being
     counted as thermal sessions (Fable review #1). Season is applied upstream by
-    the `--season` filter; convective days by the storm quarantine.
+    the `--season` filter; convective (storm) days are scored on thermal merit
+    since the LI-decouple experiment, only tallied separately, not excluded.
 
     Records without the raw `samples` curve can't be character-assessed, so they
     keep the duration verdict unchanged (no evidence to downgrade on).
@@ -313,7 +315,7 @@ class Report:
     label_mode: str = "peak"
     resimulated: bool = False
     replayed: bool = False  # scored replay records joined with main-record ground truth
-    quarantined_days: list[str] = field(default_factory=list)  # storm-suspected, excluded
+    storm_days: list[str] = field(default_factory=list)  # storm-suspected, now scored (LI-decoupled)
     months: frozenset[int] | None = None  # season filter applied, if any
 
     @property
@@ -370,19 +372,20 @@ def _machine_from(record: dict) -> dict | None:
 
 
 def storm_suspected(record: dict) -> bool:
-    """Forecast-time thunderstorm flag for a stored record, read from the lifted
-    index in its meteo inputs.
+    """Forecast-time thunderstorm advisory for a stored record.
 
-    Drives both the calibration quarantine in `compile_report` and the
-    dashboard's yellow storm border. Storm days are excluded from the confusion
-    matrix and per-rule offender stats: the high wind a gust front delivers is
-    not a thermal session, so counting it would punish the very rules that
-    correctly vetoed the storm (e.g. `atmospheric_stability`). Defensive against
-    legacy records written before the lifted-index field existed.
+    Single source of truth for the storm advisory (dashboard yellow border +
+    storm-day tally in `compile_report`), delegated to the calibrated
+    `storm_classifier` over the record's afternoon convective features, which
+    falls back to the LI ≤ −2 rule when those features are absent (archive host /
+    pre-2021 / legacy records). As of the LI-decouple experiment storm days are
+    **no longer quarantined** — they are scored on thermal merit like any other
+    day (the thermal usually still fires before the gust front), and
+    `atmospheric_stability` stays GREEN on them rather than vetoing. The flag is
+    retained to label/count storm days and paint the advisory border.
     """
     meteo = (record.get("inputs") or {}).get("meteo") or {}
-    li = meteo.get("min_lifted_index")
-    return li is not None and is_storm_risk(float(li))
+    return storm_classifier.storm_advisory_from_meteo_dict(meteo)
 
 
 def _label_record(record: dict, mode: str) -> str | None:
@@ -643,7 +646,7 @@ def compile_report(
     confusion = _empty_confusion()
     rule_stats: dict[str, RuleStats] = {}
     sample_days: list[str] = []
-    quarantined: list[str] = []
+    storm_days: list[str] = []
 
     for iso in _iter_window_days(store, since, until, replayed=replayed, months=months):
         record = _merged_replay_record(store, iso) if replayed else store.read(iso)
@@ -658,10 +661,11 @@ def compile_report(
             # records that haven't been rescored yet when --resimulated is set.
             continue
         if storm_suspected(record):
-            # Gust-front wind isn't a thermal session; learning from it would
-            # punish the rules that correctly vetoed the storm. Quarantine it.
-            quarantined.append(iso)
-            continue
+            # LI-decouple experiment: storm days are no longer quarantined. The
+            # thermal usually still fires before the gust front, so we score the
+            # day on thermal merit like any other and only tally it as a storm
+            # day (for the count + the dashboard advisory).
+            storm_days.append(iso)
         confusion[forecast][actual] += 1
         sample_days.append(iso)
 
@@ -684,7 +688,7 @@ def compile_report(
         label_mode=label,
         resimulated=resimulated,
         replayed=replayed,
-        quarantined_days=quarantined,
+        storm_days=storm_days,
         months=frozenset(months) if months is not None else None,
     )
 
@@ -696,10 +700,10 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
             "No days with ground truth yet. Run `oracle backfill` to merge "
             "Urfeld peak data into the day's forecast log first."
         )
-        if report.quarantined_days:
+        if report.storm_days:
             msg += (
-                f" ({len(report.quarantined_days)} storm-suspected day(s) "
-                "quarantined — see `oracle backfill`.)"
+                f" ({len(report.storm_days)} storm-suspected day(s) seen — "
+                "see `oracle backfill`.)"
             )
         return msg
 
@@ -718,11 +722,11 @@ def format_text_report(report: Report, rule_filter: str | None = None) -> str:
         f"Calibration sample: {report.sample_size} days with ground truth "
         f"(label = {report.label_mode}: {label_desc}; view = {view}; season = {season})."
     )
-    if report.quarantined_days:
+    if report.storm_days:
         lines.append(
-            f"  ⚡ {len(report.quarantined_days)} storm-suspected day(s) quarantined "
-            f"(LI ≤ {config.MIN_LIFTED_INDEX:.0f}) — excluded from the matrix and "
-            "offender stats; gust-front wind isn't a thermal session."
+            f"  ⚡ {len(report.storm_days)} storm-suspected day(s) "
+            f"(LI ≤ {config.MIN_LIFTED_INDEX:.0f}) included and scored on thermal "
+            "merit (LI-decoupled) — the storm shows as a separate Caution advisory."
         )
     if report.sample_size < 14:
         lines.append(
@@ -808,7 +812,8 @@ _CSV_COLUMNS = [
     # onset + coherent gusts) so foehn/frontal days don't pollute the
     # positive class. Phase A/C: the ML spike trains on `actual_verdict_thermal`.
     "actual_verdict", "actual_verdict_duration", "actual_verdict_thermal",
-    # storm flag: True = gust-front-contaminated label, quarantined from calibration.
+    # storm flag: True = LI ≤ MIN_LIFTED_INDEX. Scored on thermal merit (LI-decoupled),
+    # tallied separately, and used to paint the dashboard's Caution advisory.
     # Kept in the export (not dropped) so the ML notebook can mask or model it.
     "storm_suspected",
     # what the rule layer said (for benchmarking ML against the heuristic)
@@ -987,8 +992,9 @@ def mcnemar_keys(
     layer (`overall_resimulated`) — run `oracle rescore` first to populate the
     latter. To test a single threshold change in isolation, snapshot
     `overall_resimulated` to a custom field before the change, re-score after,
-    and pass both field names here. Storm-quarantined days are excluded, as in
-    `compile_report`, so the two views are scored on an identical day set.
+    and pass both field names here. Storm days are scored (not excluded), as in
+    `compile_report` since the LI-decouple experiment, so the two views are
+    scored on an identical day set.
     """
     store = store or default_store()
     old_correct: list[bool] = []
@@ -998,7 +1004,7 @@ def mcnemar_keys(
         if record is None:
             continue
         actual = _label_record(record, label)
-        if actual is None or storm_suspected(record):
+        if actual is None:
             continue
         fo, fn = record.get(key_old), record.get(key_new)
         if fo not in _VALID_FORECASTS or fn not in _VALID_FORECASTS:

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
-from oracle import config
+from oracle import config, storm_classifier
 from oracle.pillars.measurements import LakeTempSnapshot, WindReading
 from oracle.pillars.meteo import MeteoSnapshot
 from oracle.pillars.pressure import PressureSnapshot
@@ -206,13 +206,15 @@ def post_rain_moisture(meteo: MeteoSnapshot) -> Verdict:
 def is_storm_risk(min_lifted_index: float) -> bool:
     """True when convective instability is high enough to flag thunderstorm risk.
 
-    Single source of truth for three things that must agree: the
-    `atmospheric_stability` HARD veto below, the calibration storm-quarantine
-    (`calibration.storm_suspected`), and the dashboard's yellow storm border.
-    Keyed on the lifted index (≤ MIN_LIFTED_INDEX) — the project's existing
-    thunderstorm signal. CAPE and target-day precipitation are captured but not
-    yet folded in (see config.py); tighten here when calibrated, and all three
-    consumers move together.
+    Single source of truth for the thunderstorm **advisory** — the dashboard's
+    Caution box and its yellow storm border. As of the LI-decouple experiment it
+    no longer drives a verdict veto: a storm day is usually a strong thermal day
+    right up until the gust front arrives, so the thermal is scored on its merits
+    and the storm shows as a separate safety overlay (see `atmospheric_stability`
+    below). Keyed on the lifted index (≤ MIN_LIFTED_INDEX) — the project's
+    existing thunderstorm signal. CAPE and target-day precipitation are captured
+    but not yet folded in (see config.py); tighten here when calibrated, and the
+    advisory's consumers move together.
     """
     return min_lifted_index <= config.MIN_LIFTED_INDEX
 
@@ -235,12 +237,19 @@ def atmospheric_stability(meteo: MeteoSnapshot) -> Verdict:
             reason_de=f"LI {hi:.1f} — Atmosphäre zu stabil, Thermik gedeckelt",
             severity=Severity.SOFT,
         )
-    if is_storm_risk(lo):
+    if storm_classifier.storm_advisory_from_snapshot(meteo):
+        # Thunderstorm risk no longer vetoes the thermal verdict. The day-ahead
+        # ground truth (n=68 storm days in the replay corpus) shows the thermal
+        # still fired on 45 GO / 21 MAYBE / 2 NO_GO — a storm day is a strong
+        # thermal day until the gust front arrives. The danger is surfaced as a
+        # separate safety advisory (Caution box + storm border) driven by the
+        # calibrated storm classifier (afternoon convective features, falling
+        # back to LI ≤ −2); here the thermal is scored on its merits, so this
+        # rule stays GREEN and lets the other pillars speak.
         return Verdict(
-            "atmospheric_stability", Signal.NO_GO,
-            reason_en=f"LI {lo:.1f} — thunderstorm risk destroys the thermal",
-            reason_de=f"LI {lo:.1f} — Gewittergefahr zerstört die Thermik",
-            severity=Severity.HARD,
+            "atmospheric_stability", Signal.GO,
+            reason_en=f"LI {lo:.1f} — convective: thunderstorm risk flagged separately, thermal not vetoed",
+            reason_de=f"LI {lo:.1f} — labil: Gewittergefahr separat ausgewiesen, Thermik nicht abgewertet",
         )
     return Verdict(
         "atmospheric_stability", Signal.GO,

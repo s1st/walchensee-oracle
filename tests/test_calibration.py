@@ -372,16 +372,16 @@ def test_storm_suspected_reads_lifted_index():
     assert storm_suspected({"day": "2026-06-01"}) is False
 
 
-def test_compile_report_quarantines_storm_days(tmp_path: Path):
+def test_compile_report_scores_storm_days_on_thermal_merit(tmp_path: Path):
     store = LocalRunStore(tmp_path)
-    # Storm day: forecast NO_GO via the atmospheric_stability HARD veto, but the
-    # Urfeld gust front peaked at 16 kt, which the peak label calls GO. This must
-    # be quarantined — otherwise atmospheric_stability is charged a false-positive
-    # veto for correctly calling the storm.
+    # LI-decouple: a storm day is no longer quarantined. The thermal usually
+    # still fires before the front, so the day is scored on thermal merit. Here
+    # atmospheric_stability stays GREEN (decoupled) and the Urfeld peak of 16 kt
+    # is a GO; the day is tallied as a storm day but counted in the matrix.
     store.write("2026-06-01", {
         "day": "2026-06-01",
-        "overall": "no_go",
-        "verdicts": [_verdict("atmospheric_stability", "no_go", "hard")],
+        "overall": "go",
+        "verdicts": [_verdict("atmospheric_stability", "go", "soft")],
         "inputs": _full_inputs(day="2026-06-01", li_min=-3.0),
         "ground_truth": {"machine": {"peak_avg_knots": 16.0}, "human": None},
     })
@@ -395,14 +395,15 @@ def test_compile_report_quarantines_storm_days(tmp_path: Path):
     })
 
     report = compile_report(store=store)
-    assert report.quarantined_days == ["2026-06-01"]
-    assert report.sample_size == 1
-    assert report.days_with_ground_truth == ["2026-06-02"]
-    # Storm rule was NOT charged a false-positive veto…
-    assert "atmospheric_stability" not in report.rule_stats
-    # …while the genuine over-veto on the clear-air day still surfaces.
+    # Storm day is tallied but NOT excluded — both days are scored.
+    assert report.storm_days == ["2026-06-01"]
+    assert report.sample_size == 2
+    assert set(report.days_with_ground_truth) == {"2026-06-01", "2026-06-02"}
+    # The storm day's correct GO contributes to the matrix (forecast go, actual go).
+    assert report.confusion["go"]["go"] == 1
+    # The genuine over-veto on the clear-air day still surfaces.
     assert report.rule_stats["post_rain_moisture"].false_positive_vetos == 1
-    assert "quarantined" in format_text_report(report)
+    assert "scored on thermal merit" in format_text_report(report)
 
 
 def test_format_text_report_handles_empty(tmp_path: Path):
