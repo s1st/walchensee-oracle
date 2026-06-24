@@ -94,7 +94,9 @@ def storm_advisory(raw: dict, li_fallback: float | None) -> bool:
     prob = storm_probability(raw)
     if prob is None:
         return _li_fallback(li_fallback)
-    return prob >= _C.THRESHOLD
+    # Operating point is the product knob in config (not the export's POD-matched
+    # storm_coeffs.THRESHOLD, which a retrain would overwrite).
+    return prob >= config.STORM_ADVISORY_THRESHOLD
 
 
 def storm_advisory_from_meteo_dict(m: dict) -> bool:

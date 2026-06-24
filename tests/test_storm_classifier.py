@@ -48,6 +48,16 @@ def test_partial_features_fall_back():
     assert SC.storm_advisory(raw, -3.0) is True     # via LI fallback
 
 
+def test_operating_point_comes_from_config_knob(monkeypatch):
+    # The advisory threshold is the product knob in config, not the export's
+    # storm_coeffs.THRESHOLD (which a retrain would overwrite). p(_STORM_RAW)≈0.85.
+    from oracle import config
+    monkeypatch.setattr(config, "STORM_ADVISORY_THRESHOLD", 0.99)
+    assert SC.storm_advisory(_STORM_RAW, -4.5) is False   # 0.85 < 0.99
+    monkeypatch.setattr(config, "STORM_ADVISORY_THRESHOLD", 0.10)
+    assert SC.storm_advisory(_STORM_RAW, -4.5) is True     # 0.85 ≥ 0.10
+
+
 def _meteo(**kw) -> MeteoSnapshot:
     base = dict(
         day=dt.date(2022, 6, 24), overnight_cloud_cover_pct=10.0, morning_solar_radiation_wm2=500.0,

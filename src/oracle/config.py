@@ -221,6 +221,16 @@ MIN_LIFTED_INDEX = -2.0          # below = thunderstorm risk. No longer a verdic
 # (calibration.observed_storm) — keep them in lockstep.
 STORM_OBS_GUST_KT = 22.0
 STORM_OBS_PRESSURE_JUMP_HPA = 2.0
+
+# Storm-advisory operating point (the per-rider knob from the design doc): the
+# classifier flags a storm when its probability ≥ this. The export's POD-favouring
+# value (0.398 in storm_coeffs.THRESHOLD) caught every storm but flagged ~half of
+# June days — alarm fatigue. Raised to 0.6 for a calmer dashboard advisory (~halves
+# the flags; we miss some storms, the tooltip frames it as a heads-up not a veto).
+# Lives here, NOT in the auto-generated storm_coeffs.py, so a retrain can't silently
+# reset this product decision. The storm border is computed live, so changing it
+# takes effect on the next deploy with no rescore.
+STORM_ADVISORY_THRESHOLD = 0.6
 MAX_DAYTIME_LOW_CLOUD_PCT = 75.0 # max cloud_cover_low 09:00–13:00; above = slopes shaded
                                  # Was 60.0 (research-analogue guess); refitted from
                                  # n=3,263 replay baseline (2026-06-12, branch
