@@ -76,9 +76,17 @@ e.g. fold in CAPE / precip-probability, once we have a real label).
 2. **Lightning data** — Blitzortung.org archive or DWD's lightning product:
    spatially complete, the gold-standard label, heavier integration.
 3. **Webcam** (Simon's idea, partnership asset) — classify the Urfeld (and other)
-   webcam frames for cumulonimbus / rain shaft / lightning. Only works for
-   **forward** ground truth (no historical frame archive for the 2021–22 replay),
-   but it would give a lake-local "storm actually arrived" label going forward,
-   which neither DWD station nor lightning grid gives at Walchensee resolution.
+   webcam frames for cumulonimbus / rain shaft / darkening. **An archive exists**
+   (Andy is reworking it to be more prominent, 2026-06), so this is *not* forward-
+   only: if the archive reaches back to the 2021–22 replay window we can backfill
+   a lake-local observed-storm label for the exact 68 predicted-storm days the
+   DWD `condition` field couldn't score — finally closing the loop. Pipeline:
+   pull afternoon frames (11–21 local, ~hourly) per day → vision-classify
+   (storm / convective cloud / rain shaft / clear) → day label → score the LI≤−2
+   flag for a real hit / false-alarm rate. Lightning from stills is unreliable
+   (ms flashes vs per-minute snapshots); pair with Blitzortung for the electrical
+   label. Needs from Andy: archive depth, access pattern (URL/API vs UI), frame
+   cadence. Within the partnership, and a candidate "storm cam" feature for his
+   site in return.
 4. **Precip + CAPE composite** — cheapest interim proxy; tighten the trigger and
    re-score, accepting it's "convective wet," not "thunderstorm."
