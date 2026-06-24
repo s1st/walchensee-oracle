@@ -111,11 +111,11 @@
     <div class="strip">
       {% for d in history %}
         {% if d.verdict %}
-          <a class="cell {{ d.verdict }}{% if d.iso == selected_iso %} selected{% endif %}{% if d.storm %} storm{% endif %}"
+          <a class="cell {{ d.verdict }}{% if d.iso == selected_iso %} selected{% endif %}{% if d.storm_li %} storm{% endif %}"
              href="/history?day={{ d.iso }}&view=original{% if lang != 'de' %}&lang={{ lang }}{% endif %}#day-detail"
-             title="{{ d.day }} — {{ t.strip_forecast_original }}: {{ d.verdict }}{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></a>
+             title="{{ d.day }} — {{ t.strip_forecast_original }}: {{ d.verdict }}{% if d.storm_li %} · {{ t.storm_hint }}{% endif %}"></a>
         {% else %}
-          <div class="cell empty{% if d.storm %} storm{% endif %}" title="{{ d.day }} — {{ t.strip_forecast_original }}: —{% if d.storm %} · {{ t.storm_hint }}{% endif %}"></div>
+          <div class="cell empty{% if d.storm_li %} storm{% endif %}" title="{{ d.day }} — {{ t.strip_forecast_original }}: —{% if d.storm_li %} · {{ t.storm_hint }}{% endif %}"></div>
         {% endif %}
       {% endfor %}
     </div>

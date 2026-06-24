@@ -29,7 +29,7 @@ from oracle.calibration import (
     observed_storm as _observed_storm,
     storm_suspected as _storm_suspected,
 )
-from oracle.knowledge.rules import Severity, Signal
+from oracle.knowledge.rules import Severity, Signal, is_storm_risk
 from oracle.logger import RunStore, default_store
 from oracle.ml_classifier import reason_groups
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
@@ -1012,7 +1012,18 @@ def _history(today: date, lang: str, days: int = 30) -> list[dict]:
             "peak_avg_knots": peak,
             "actual": _actual_verdict_duration(machine),
             # Forecast storm advisory (predicted) — borders the forecast/ML/HGB rows.
+            # The calibrated classifier where the record has afternoon features,
+            # else the LI≤−2 fallback.
             "storm": _storm_suspected(record) if record else False,
+            # Old LI≤−2 storm method — borders the "Vergangene Vorhersageart" strip
+            # only, so that historical-snapshot row stays faithful to how the day
+            # was flagged at the time (and is unaffected by the afternoon-feature
+            # backfill that moves the other rows to the classifier).
+            "storm_li": (
+                record is not None
+                and (li := (record.get("inputs") or {}).get("meteo", {}).get("min_lifted_index")) is not None
+                and is_storm_risk(float(li))
+            ),
             # Observed gust front from the buoy curve — borders the *actual* row,
             # so the strip reads as forecast-vs-observed for storms too.
             "actual_storm": _observed_storm(machine) is True,
