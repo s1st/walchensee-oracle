@@ -51,6 +51,45 @@ def _refresh_views_cache_best_effort() -> None:
         console.print(f"[dim]views cache refresh skipped: {exc}[/dim]")
 
 
+def _refresh_stats_panel_weekly_best_effort() -> None:
+    """Fold the trailing two weeks of ground truth into the stats-panel corpus.
+
+    Runs only on Sundays, in-season, in a cloud environment — piggybacked on
+    the nightly backfill job so the /stats forecast-quality panels pick up new
+    live days without a separate Cloud Run job. Re-replays a trailing 14-day
+    window (idempotent overwrite; the overlap covers a missed week), rescores
+    those days from stored inputs, then rebuilds _stats_cache.json. The
+    dashboard's 6 h stats TTL picks the new blob up on its own — no redeploy.
+
+    Best-effort: any failure is swallowed so it can never break the backfill.
+    The replay step hits the Open-Meteo archive; rescore + stats-update are pure
+    compute over the runs bucket (the job image ships the ML bundle + sklearn).
+    """
+    import os
+
+    today = date.today()
+    if today.weekday() != 6:  # Monday=0 … Sunday=6 — weekly on Sunday only
+        return
+    if today.month not in config.ACTIVE_SEASON_MONTHS:
+        return  # off-season: no new samples accrue (winter shutdown)
+    if not any(os.environ.get(k) for k in ("CLOUD_RUN_JOB", "K_SERVICE", "LOG_PROJECT")):
+        return  # local / non-cloud run — skip the multi-minute fold-in
+    try:
+        from oracle.calibration import rescore_all
+        from oracle.logger import default_store
+        from oracle.replay import run_replay_batch
+        from oracle.stats_cache import write_cache
+
+        cutoff = today - timedelta(days=14)
+        console.print(f"[dim]weekly stats fold-in: replaying {cutoff}..{today}[/dim]")
+        asyncio.run(run_replay_batch(cutoff, today))
+        rescore_all(since=cutoff, replayed=True)
+        payload = write_cache(default_store())
+        console.print(f"[dim]stats panel refreshed — n={payload.get('n', 0)} days[/dim]")
+    except Exception as exc:  # noqa: BLE001 — vanity refresh, must not break backfill
+        console.print(f"[dim]weekly stats fold-in skipped: {exc}[/dim]")
+
+
 def _resolve_months(season: bool, months: str | None) -> frozenset[int] | None:
     """Turn the --season/--all-year flag and optional --months spec into a month
     set. Explicit --months wins; otherwise --season → Apr–Oct, --all-year → None."""
@@ -200,16 +239,19 @@ def backfill(
     console.print(f"[bold]Backfilled:[/bold] {location}")
     if not machine:
         console.print("[yellow]no Urfeld samples landed in that day's window[/yellow]")
-        return
-    console.print(
-        f"  peak avg : {machine.get('peak_avg_knots')} kt @ {machine.get('peak_avg_at')}"
-    )
-    console.print(f"  peak gust: {machine.get('peak_gust_knots')} kt")
-    console.print(f"  first ignition (≥8 kt): {machine.get('first_ignition_at') or '—'}")
-    console.print(
-        f"  samples ≥8 kt: {machine.get('samples_above_8kt')}  "
-        f"≥12 kt: {machine.get('samples_above_12kt')}"
-    )
+    else:
+        console.print(
+            f"  peak avg : {machine.get('peak_avg_knots')} kt @ {machine.get('peak_avg_at')}"
+        )
+        console.print(f"  peak gust: {machine.get('peak_gust_knots')} kt")
+        console.print(f"  first ignition (≥8 kt): {machine.get('first_ignition_at') or '—'}")
+        console.print(
+            f"  samples ≥8 kt: {machine.get('samples_above_8kt')}  "
+            f"≥12 kt: {machine.get('samples_above_12kt')}"
+        )
+    # The nightly backfill job runs after the day's ground truth lands; on
+    # Sundays (in-season) fold the trailing fortnight into the stats panel.
+    _refresh_stats_panel_weekly_best_effort()
 
 
 @app.command()
