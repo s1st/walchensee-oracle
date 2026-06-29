@@ -707,6 +707,7 @@ async def _fetch_urfeld_live() -> dict:
 _VIEWS_TTL_S = 12 * 3600.0
 _views: dict | None = None
 _views_at: float = 0.0
+_views_computing: bool = False  # guard against concurrent Cloud Logging walks
 
 
 def _fetch_page_views_sync() -> dict:
@@ -743,16 +744,38 @@ def _fetch_page_views_sync() -> dict:
     return {"unique_visitors": len(ips), "total_hits": hits}
 
 
-async def _fetch_page_views() -> dict | None:
-    global _views, _views_at
-    now = time.time()
-    if _views_at and now - _views_at < _VIEWS_TTL_S:
-        return _views
+def _refresh_page_views_sync() -> None:
+    """Background worker: walk Cloud Logging and refresh the views cache.
+
+    Runs off the request path (the walk takes tens of seconds) so a cold or
+    expired cache never blocks a visitor. Caches None on failure (no ADC
+    locally, missing logging.viewer, API hiccup) so a creds-less box doesn't
+    retry on every request — same stale-for-the-full-TTL behaviour as before.
+    """
+    global _views, _views_at, _views_computing
     try:
-        _views = await asyncio.to_thread(_fetch_page_views_sync)
+        _views = _fetch_page_views_sync()
     except Exception:  # no ADC locally, missing IAM, API hiccup — show "—"
         _views = None
-    _views_at = now
+    finally:
+        _views_at = time.time()
+        _views_computing = False
+
+
+async def _fetch_page_views() -> dict | None:
+    """Return the cached visitor counts immediately; refresh in the background.
+
+    Mirrors the stats panel's non-blocking pattern: a cold or expired cache
+    returns the last value (or None) right away and fires the Cloud Logging
+    walk as a background task. The stats template polls every 8 s while a
+    refresh is in flight and picks up the number once it lands.
+    """
+    global _views_computing
+    now = time.time()
+    fresh = _views_at and now - _views_at < _VIEWS_TTL_S
+    if not fresh and not _views_computing:
+        _views_computing = True
+        asyncio.create_task(asyncio.to_thread(_refresh_page_views_sync))
     return _views
 
 
@@ -1355,11 +1378,14 @@ async def stats_page(request: Request) -> Response:
     so the user sees data once the walk completes."""
     lang = _resolve_lang(request)
     views, stats = await asyncio.gather(_fetch_page_views(), _forecast_stats())
+    # Poll only while a refresh is actually in flight; once the walk resolves
+    # (even to None — no creds / missing IAM) stop reloading and show "—".
+    views_pending = views is None and _views_computing
     ctx = _base_context(request, active="stats", lang=lang)
     response = templates.TemplateResponse(
         request=request,
         name="stats.html",
-        context={**ctx, "views": views, "stats": stats},
+        context={**ctx, "views": views, "stats": stats, "views_pending": views_pending},
     )
     _set_lang_cookie(request, response)
     return response

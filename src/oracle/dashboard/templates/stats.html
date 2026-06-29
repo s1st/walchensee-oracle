@@ -78,6 +78,8 @@
 <p class="advanced-note" id="stats-loading">
   {% if lang == 'de' %}Statistik wird berechnet — Seite lädt in Kürze nach…{% else %}Statistics are being computed — page will reload shortly…{% endif %}
 </p>
+{% endif %}
+{% if not stats or stats.n == 0 or views_pending %}
 <script>setTimeout(function(){ location.reload(); }, 8000);</script>
 {% endif %}
 

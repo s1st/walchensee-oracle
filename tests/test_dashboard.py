@@ -4,10 +4,12 @@ verdict-summary wording, language resolution, and date formatting.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 
 from starlette.requests import Request
 
+import oracle.dashboard.main as dash
 from oracle.calibration import Report
 from oracle.dashboard.main import (
     _base_context,
@@ -298,3 +300,70 @@ def test_stats_payload_empty_report():
     assert p["accuracy"] is None
     assert p["sensitivity"] is None
     assert p["specificity"] is None
+
+
+# --- Page-views non-blocking refresh (the stats page must never wait on the
+# multi-second Cloud Logging walk; it returns the cached value immediately and
+# refreshes in the background, mirroring the forecast-stats panel). ---
+
+
+async def test_fetch_page_views_returns_immediately_and_refreshes_in_background(
+    monkeypatch,
+):
+    started = asyncio.Event()
+
+    def slow_walk() -> dict:
+        # Signal entry, then block until the test releases us — stands in for
+        # the tens-of-seconds Cloud Logging walk.
+        loop.call_soon_threadsafe(started.set)
+        while not release_flag["go"]:
+            pass
+        return {"unique_visitors": 7, "total_hits": 42}
+
+    loop = asyncio.get_running_loop()
+    release_flag = {"go": False}
+    monkeypatch.setattr(dash, "_fetch_page_views_sync", slow_walk)
+    monkeypatch.setattr(dash, "_views", None)
+    monkeypatch.setattr(dash, "_views_at", 0.0)
+    monkeypatch.setattr(dash, "_views_computing", False)
+
+    # First call must NOT block on the walk: returns the (cold) cache right away.
+    result = await asyncio.wait_for(dash._fetch_page_views(), timeout=1.0)
+    assert result is None
+    assert dash._views_computing is True
+
+    # The background walk is in flight; let it finish and settle the cache.
+    await asyncio.wait_for(started.wait(), timeout=1.0)
+    release_flag["go"] = True
+    for _ in range(200):
+        if not dash._views_computing:
+            break
+        await asyncio.sleep(0.01)
+    assert dash._views_computing is False
+    assert dash._views == {"unique_visitors": 7, "total_hits": 42}
+
+    # A subsequent call now serves the warm cache without spawning a new walk.
+    assert await dash._fetch_page_views() == {"unique_visitors": 7, "total_hits": 42}
+
+
+async def test_fetch_page_views_caches_none_on_failure_without_retrying(monkeypatch):
+    calls = {"n": 0}
+
+    def boom() -> dict:
+        calls["n"] += 1
+        raise RuntimeError("no ADC")
+
+    monkeypatch.setattr(dash, "_fetch_page_views_sync", boom)
+    monkeypatch.setattr(dash, "_views", None)
+    monkeypatch.setattr(dash, "_views_at", 0.0)
+    monkeypatch.setattr(dash, "_views_computing", False)
+
+    assert await dash._fetch_page_views() is None
+    for _ in range(200):
+        if not dash._views_computing:
+            break
+        await asyncio.sleep(0.01)
+    assert calls["n"] == 1
+    # Cache resolved to None within the TTL: no further walks are spawned.
+    assert await dash._fetch_page_views() is None
+    assert calls["n"] == 1
