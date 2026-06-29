@@ -26,6 +26,31 @@ app.add_typer(ml_app, name="ml")
 console = Console()
 
 
+def _refresh_views_cache_best_effort() -> None:
+    """Refresh the dashboard's visitor-count cache — never fail the forecast.
+
+    Runs in the scheduled multi-day path so the /stats visitor counts stay
+    current on the existing daily schedule without a separate Cloud Run job.
+    Only attempted in a cloud environment (Cloud Run job/service); the walk
+    needs google-cloud-logging + logging.viewer, both absent locally. Any
+    failure is swallowed — this is a vanity metric and must not break the
+    forecast, and the dashboard falls back to its own walk if the blob is stale.
+    """
+    import os
+
+    if not any(os.environ.get(k) for k in ("CLOUD_RUN_JOB", "K_SERVICE", "LOG_PROJECT")):
+        return  # local / non-cloud run — skip the Cloud Logging walk
+    try:
+        from oracle.views_cache import write_cache
+
+        payload = write_cache()
+        console.print(
+            f"[dim]views cache refreshed — {payload['unique_visitors']} visitors (30 d)[/dim]"
+        )
+    except Exception as exc:  # noqa: BLE001 — vanity metric, must not break forecast
+        console.print(f"[dim]views cache refresh skipped: {exc}[/dim]")
+
+
 def _resolve_months(season: bool, months: str | None) -> frozenset[int] | None:
     """Turn the --season/--all-year flag and optional --months spec into a month
     set. Explicit --months wins; otherwise --season → Apr–Oct, --all-year → None."""
@@ -81,6 +106,9 @@ def forecast(
                 console.print(f"{target.isoformat()}: {result.overall.value}")
 
     asyncio.run(run_all())
+    # The scheduled forecast job runs this path daily; piggy-back the dashboard
+    # visitor-count refresh here so /stats stays current without a separate job.
+    _refresh_views_cache_best_effort()
 
 
 @app.command()
@@ -242,6 +270,26 @@ def stats_update() -> None:
 
     payload = write_cache(default_store())
     console.print(f"stats cache written — n={payload.get('n', 0)} days")
+
+
+@app.command(name="views-update")
+def views_update() -> None:
+    """Walk the dashboard's request logs and cache the visitor counts.
+
+    Writes _views_cache.json to the store so the /stats page reads a single
+    cheap blob instead of running the multi-second Cloud Logging walk on a
+    live request. Run from the scheduled forecast job (it calls this
+    best-effort after the forecast) or manually. Needs google-cloud-logging
+    and roles/logging.viewer on the running service account.
+    """
+    from oracle.views_cache import write_cache
+    from oracle.logger import default_store
+
+    payload = write_cache(default_store())
+    console.print(
+        f"views cache written — {payload['unique_visitors']} visitors / "
+        f"{payload['total_hits']} hits (30 d)"
+    )
 
 
 @app.command(name="hgb-backfill")

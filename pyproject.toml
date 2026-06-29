@@ -11,6 +11,11 @@ dependencies = [
     "typer>=0.12",
     "rich>=13.7",
     "google-cloud-storage>=2.18",
+    # Visitor-count walk over Cloud Run request logs. In base (not [dashboard])
+    # because the forecast job also writes the views cache via `oracle
+    # views-update` (see oracle/views_cache.py). Small; the job already pulls
+    # google-cloud-storage here.
+    "google-cloud-logging>=3.10",
 ]
 
 [project.optional-dependencies]
@@ -24,7 +29,8 @@ dashboard = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "jinja2>=3.1",
-    "google-cloud-logging>=3.10",  # stats panel: visitor count from Cloud Run request logs
+    # google-cloud-logging moved to base deps — the forecast job needs it too
+    # (it writes the views cache); the dashboard still gets it transitively.
 ]
 # ML thermal-wind classifier. Optional — not installed by either Dockerfile
 # (job runs `pip install .`; dashboard runs `pip install ".[dashboard]"`).

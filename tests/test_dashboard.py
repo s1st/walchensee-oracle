@@ -10,6 +10,7 @@ from datetime import date
 from starlette.requests import Request
 
 import oracle.dashboard.main as dash
+import oracle.views_cache as views_cache
 from oracle.calibration import Report
 from oracle.dashboard.main import (
     _base_context,
@@ -302,19 +303,42 @@ def test_stats_payload_empty_report():
     assert p["specificity"] is None
 
 
-# --- Page-views non-blocking refresh (the stats page must never wait on the
-# multi-second Cloud Logging walk; it returns the cached value immediately and
-# refreshes in the background, mirroring the forecast-stats panel). ---
+# --- Page-views cache. Steady state: the dashboard serves the precomputed
+# bucket blob (written by `oracle views-update`) with one cheap GCS read — the
+# multi-second Cloud Logging walk never touches the request path. The walk is a
+# fallback only, used until the blob exists, and even then runs in the
+# background (non-blocking, picked up by the template's 8 s poll). ---
 
 
-async def test_fetch_page_views_returns_immediately_and_refreshes_in_background(
-    monkeypatch,
-):
+def _reset_views() -> None:
+    dash._views = None
+    dash._views_at = 0.0
+    dash._views_computing = False
+
+
+async def test_fetch_page_views_serves_precomputed_blob_without_walking(monkeypatch):
+    """When the bucket blob exists, no Cloud Logging walk is spawned at all."""
+    _reset_views()
+    monkeypatch.setattr(views_cache, "read_cache", lambda store=None: {"unique_visitors": 9, "total_hits": 99})
+
+    def must_not_walk() -> dict:  # pragma: no cover - asserts it's never called
+        raise AssertionError("build_payload walked despite a precomputed blob")
+
+    monkeypatch.setattr(views_cache, "build_payload", must_not_walk)
+
+    assert await dash._fetch_page_views() == {"unique_visitors": 9, "total_hits": 99}
+    assert dash._views_computing is False
+
+
+async def test_fetch_page_views_falls_back_to_background_walk_when_no_blob(monkeypatch):
+    """No precomputed blob → return immediately, walk in the background."""
+    _reset_views()
+    monkeypatch.setattr(views_cache, "read_cache", lambda store=None: None)
     started = asyncio.Event()
 
     def slow_walk() -> dict:
-        # Signal entry, then block until the test releases us — stands in for
-        # the tens-of-seconds Cloud Logging walk.
+        # Signal entry, then block until released — stands in for the
+        # tens-of-seconds Cloud Logging walk.
         loop.call_soon_threadsafe(started.set)
         while not release_flag["go"]:
             pass
@@ -322,10 +346,7 @@ async def test_fetch_page_views_returns_immediately_and_refreshes_in_background(
 
     loop = asyncio.get_running_loop()
     release_flag = {"go": False}
-    monkeypatch.setattr(dash, "_fetch_page_views_sync", slow_walk)
-    monkeypatch.setattr(dash, "_views", None)
-    monkeypatch.setattr(dash, "_views_at", 0.0)
-    monkeypatch.setattr(dash, "_views_computing", False)
+    monkeypatch.setattr(views_cache, "build_payload", slow_walk)
 
     # First call must NOT block on the walk: returns the (cold) cache right away.
     result = await asyncio.wait_for(dash._fetch_page_views(), timeout=1.0)
@@ -342,21 +363,20 @@ async def test_fetch_page_views_returns_immediately_and_refreshes_in_background(
     assert dash._views_computing is False
     assert dash._views == {"unique_visitors": 7, "total_hits": 42}
 
-    # A subsequent call now serves the warm cache without spawning a new walk.
+    # A subsequent call now serves the warm in-memory value (TTL short-circuit).
     assert await dash._fetch_page_views() == {"unique_visitors": 7, "total_hits": 42}
 
 
 async def test_fetch_page_views_caches_none_on_failure_without_retrying(monkeypatch):
+    _reset_views()
+    monkeypatch.setattr(views_cache, "read_cache", lambda store=None: None)
     calls = {"n": 0}
 
     def boom() -> dict:
         calls["n"] += 1
         raise RuntimeError("no ADC")
 
-    monkeypatch.setattr(dash, "_fetch_page_views_sync", boom)
-    monkeypatch.setattr(dash, "_views", None)
-    monkeypatch.setattr(dash, "_views_at", 0.0)
-    monkeypatch.setattr(dash, "_views_computing", False)
+    monkeypatch.setattr(views_cache, "build_payload", boom)
 
     assert await dash._fetch_page_views() is None
     for _ in range(200):
@@ -367,3 +387,16 @@ async def test_fetch_page_views_caches_none_on_failure_without_retrying(monkeypa
     # Cache resolved to None within the TTL: no further walks are spawned.
     assert await dash._fetch_page_views() is None
     assert calls["n"] == 1
+
+
+def test_views_cache_write_read_roundtrips_via_store(monkeypatch, tmp_path):
+    """write_cache builds the payload and persists it under the views key;
+    read_cache returns it. The Cloud Logging walk is stubbed out."""
+    from oracle.logger import LocalRunStore
+
+    store = LocalRunStore(directory=tmp_path)
+    monkeypatch.setattr(views_cache, "build_payload", lambda: {"unique_visitors": 3, "total_hits": 12})
+
+    written = views_cache.write_cache(store)
+    assert written == {"unique_visitors": 3, "total_hits": 12}
+    assert views_cache.read_cache(store) == {"unique_visitors": 3, "total_hits": 12}

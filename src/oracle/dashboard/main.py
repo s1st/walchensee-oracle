@@ -10,11 +10,10 @@ Reads per-day records from the same store the scheduled job writes
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from datetime import time as dtime
 from functools import lru_cache
 from pathlib import Path
@@ -33,7 +32,6 @@ from oracle.knowledge.rules import Severity, Signal, is_storm_risk
 from oracle.logger import RunStore, default_store
 from oracle.ml_classifier import reason_groups
 from oracle.pillars.measurements import UrfeldSample, fetch_urfeld_day_curve
-from oracle.traffic import real_browser_hit
 
 
 @lru_cache(maxsize=1)
@@ -700,61 +698,31 @@ async def _fetch_urfeld_live() -> dict:
     return _urfeld_live
 
 
-# Page-views cache — 12 h TTL. One Cloud Logging walk costs a few seconds and
-# the number only needs to be roughly current; failures (e.g. local dev
-# without ADC, missing logging.viewer) cache None for the full TTL so a
-# creds-less box doesn't retry on every request.
+# Page-views cache — 12 h in-memory TTL over the precomputed bucket blob.
+# `oracle views-update` (scheduled job) writes _views_cache.json; the dashboard
+# serves it with one cheap GCS read, so the multi-second Cloud Logging walk
+# never runs on a request. If the blob isn't there yet (pre-migration, fresh
+# project, or the job hasn't run) we fall back to a background walk — failures
+# (no ADC, missing logging.viewer) cache None for the full TTL so a creds-less
+# box doesn't retry on every request.
 _VIEWS_TTL_S = 12 * 3600.0
 _views: dict | None = None
 _views_at: float = 0.0
-_views_computing: bool = False  # guard against concurrent Cloud Logging walks
-
-
-def _fetch_page_views_sync() -> dict:
-    """Count real-browser traffic over the last 30 days from Cloud Run logs.
-
-    Same classification as scripts/dashboard_traffic.py (shared via
-    oracle.traffic). Capped at 20k log entries — beyond that the count
-    silently undercounts, which is acceptable for a vanity metric.
-    On Cloud Run no configuration is needed: the project comes from ADC and
-    `K_SERVICE` is set by the platform; LOG_PROJECT/LOG_SERVICE are dev
-    overrides in the spirit of RUNS_BUCKET.
-    """
-    from google.cloud import logging as gcp_logging  # lazy: [dashboard] extra
-
-    client = gcp_logging.Client(project=os.environ.get("LOG_PROJECT") or None)
-    service = os.environ.get("LOG_SERVICE") or os.environ.get("K_SERVICE") or "walchi-oracle-dash"
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    flt = (
-        f'resource.type="cloud_run_revision" AND '
-        f'resource.labels.service_name="{service}" AND '
-        f'httpRequest.requestMethod="GET" AND httpRequest.status<400 AND '
-        f'timestamp>="{cutoff}"'
-    )
-    ips: set[str] = set()
-    hits = 0
-    for entry in client.list_entries(filter_=flt, page_size=1000, max_results=20000):
-        req = entry.http_request or {}
-        hit = real_browser_hit(
-            req.get("userAgent") or "", req.get("requestUrl") or "", req.get("remoteIp") or ""
-        )
-        if hit is not None:
-            hits += 1
-            ips.add(hit[0])
-    return {"unique_visitors": len(ips), "total_hits": hits}
+_views_computing: bool = False  # guard against concurrent fallback walks
 
 
 def _refresh_page_views_sync() -> None:
-    """Background worker: walk Cloud Logging and refresh the views cache.
+    """Background fallback worker: walk Cloud Logging when no precomputed blob.
 
-    Runs off the request path (the walk takes tens of seconds) so a cold or
-    expired cache never blocks a visitor. Caches None on failure (no ADC
-    locally, missing logging.viewer, API hiccup) so a creds-less box doesn't
-    retry on every request — same stale-for-the-full-TTL behaviour as before.
+    Runs off the request path (the walk takes tens of seconds) so a cold cache
+    never blocks a visitor. Only used until `oracle views-update` has written
+    the bucket blob; once it has, _fetch_page_views serves that instead and
+    this never runs. Caches None on failure so a creds-less box doesn't retry.
     """
     global _views, _views_at, _views_computing
     try:
-        _views = _fetch_page_views_sync()
+        from oracle.views_cache import build_payload
+        _views = build_payload()
     except Exception:  # no ADC locally, missing IAM, API hiccup — show "—"
         _views = None
     finally:
@@ -763,17 +731,30 @@ def _refresh_page_views_sync() -> None:
 
 
 async def _fetch_page_views() -> dict | None:
-    """Return the cached visitor counts immediately; refresh in the background.
+    """Serve visitor counts from the precomputed blob; walk only as a fallback.
 
-    Mirrors the stats panel's non-blocking pattern: a cold or expired cache
-    returns the last value (or None) right away and fires the Cloud Logging
-    walk as a background task. The stats template polls every 8 s while a
-    refresh is in flight and picks up the number once it lands.
+    Steady state: read _views_cache.json (one cheap GCS read, 12 h in-memory
+    TTL) — no Cloud Logging walk on the request path at all. If the blob is
+    absent, fall back to the stats panel's non-blocking pattern: return the
+    last value (or None) immediately and fire the walk in the background, which
+    the template's 8 s poll (views_pending) picks up once it lands.
     """
-    global _views_computing
+    global _views, _views_at, _views_computing
     now = time.time()
-    fresh = _views_at and now - _views_at < _VIEWS_TTL_S
-    if not fresh and not _views_computing:
+    if _views_at and now - _views_at < _VIEWS_TTL_S:
+        return _views
+    # Cheap path: the precomputed blob. One GCS read, no Cloud Logging walk.
+    try:
+        from oracle.views_cache import read_cache
+        precomputed = await asyncio.to_thread(read_cache, _store())
+    except Exception:
+        precomputed = None
+    if precomputed is not None:
+        _views = precomputed
+        _views_at = now
+        return _views
+    # Fallback: no precomputed blob yet — walk the logs in the background.
+    if not _views_computing:
         _views_computing = True
         asyncio.create_task(asyncio.to_thread(_refresh_page_views_sync))
     return _views
